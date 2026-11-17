@@ -41,7 +41,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 
 #### 高级训练
 
-- [x] **超级组**。Android `0.1.4` 已验证计划和训练中组合与拆分、不同组数的轮转、轮末休息、重开恢复、历史展示和同步。[验收记录](RN_ANDROID_EXECUTION.md#014-验收结果) · [新版验收目标](rn-p2-training-library/01_SUPERSETS.md#验收目标)
+- [x] **超级组**。Android `0.1.4` 已验证计划和训练中组合与拆分、不同组数的轮转、轮末休息、重开恢复、历史展示和同步；2026-11-17 新版 `superset-smoke.ps1` 在 `emulator-5556` 通过。 [验收记录](RN_ANDROID_EXECUTION.md#014-验收结果) · [新版验收目标](rn-p2-training-library/01_SUPERSETS.md#验收目标)
 - [ ] **递减组**。已实现，待按分段、训练量和同步目标验证。2026-11-17 模拟器已用 `fixture-advanced` 验证计划生成、训练页可编辑降重段、历史 `100×5 → 80×5 → 64×5` 摘要和 RPE 共存；API 同步、1220 训练量和单位换算待复验。[验收目标](rn-p2-training-library/02_DROP_SETS.md#验收目标)
 - [ ] **休息暂停组**。已实现，待按短休、总次数和训练量目标验证。2026-11-17 模拟器已验证 `12` 次生成 `6 + 3 + 2 + 1`、每段 15 秒和整组显示；完成落盘、720 训练量及同步待复验。[验收目标](rn-p2-training-library/03_REST_PAUSE.md#验收目标)
 - [ ] **RPE**。已实现，待验证评分录入、更正和清除。2026-11-17 模拟器已验证训练页 RPE 8 保存、历史显示 `RPE 8`；低于 6、清除、断网重开和 API 读回待复验。[验收目标](rn-p2-training-library/04_RPE.md#验收目标)
@@ -81,7 +81,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [x] **五 Tab 页面重构**。首页、计划、统计、动作库 + 中央开始，设置移入首页齿轮；计划/历史编辑器、全屏动作库、训练页 Stepper 和休息 dock 已完成。2026-11-17 Release `openGym-RN-0.1.4-five-tab.apk` 在 `emulator-5556` 通过五 Tab、首页、设置、计划、计划编辑、统计、动作库、筛选 Sheet、开始 Sheet 冒烟和 `opengym://plan` 深链。
 - [x] **RN 视觉测试流程**。`opengym://` 深链、`e2e=1` 冻结计时器、Debug fixture 和 `ui-capture.ps1` contact sheet 已落地；流程和设计系统硬性约束见 [RN_UI_VISUAL_TESTING.md](RN_UI_VISUAL_TESTING.md)。
 - [x] **Android 回归脚本五入口适配**。`android-regression.ps1` 已使用新版导航和菜单；`superset-smoke.ps1` 已在 `emulator-5556` 通过计划编辑、73 秒轮间休息、A1→B1→A2、草稿恢复、25/40→40 秒和新建组。最新合并版完整 P0/P1 联跑仍待记录。[脚本说明](../mobile-rn/scripts/README.md)
-- [x] **P2 高级训练与动作库（实现）**。设计系统、数据模型、训练/历史/设置/动作库接线完成；`npm.cmd run check`、`five-tab-smoke.ps1 -ResetAppData`、`ui-capture.ps1 -Fixture` 通过。RPE 8、递减段和 40 秒超级组休息已在模拟器验证；API 同步、自定义媒体和真机解码列为待验收项。
+- [x] **P2 高级训练与动作库（实现）**。设计系统、数据模型、训练/历史/设置/动作库接线完成；`npm.cmd run check`、`five-tab-smoke.ps1 -ResetAppData`、`ui-capture.ps1 -Fixture` 通过。RPE 8、递减段和 40 秒超级组休息已在模拟器验证；Release `openGym-RN-0.1.4-five-tab.apk`（SHA-256 `34CC3677552EFAB43094CCED4E8C0CC95F642C9CBA60A7DCDE2C49E80303FD09`）通过五 Tab 冒烟和动作详情占位检查。API 同步、自定义媒体和真机解码列为待验收项。
 - [ ] **Android 真机验收**。ADB 当前只识别专用模拟器。真机可用 `0.1.3` 验证实际训练、重启同步、锁屏通知显示及震动。
 
 每完成一项就更新对应条目，附上验证结果或记录链接。只完成一部分时，写明已经实现的能力和剩余工作。代码已实现、验收仍待完成的条目标记为「已实现，待验证」。
