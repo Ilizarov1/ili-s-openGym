@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
+import { favIds, isFav, sortFavouritesFirst } from '../../../frontend/src/lib/favourites.js';
 import {
   Button,
   Card,
@@ -24,17 +25,22 @@ import {
   EQUIPMENT,
   SEARCH_LIMIT,
   bodyPartName,
+  catalogueExercise,
   countCatalogue,
   equipmentName,
   searchCatalogue,
 } from '../catalogue';
+import type { Connection } from '../server';
 import type { CustomExercise, Profile, RoutineExercise } from '../training';
+import { ExerciseDetailScreen } from './ExerciseDetailScreen';
 
 export type ExerciseLibraryScreenProps = {
   profile: Profile;
   server: string | null;
+  connection?: Connection | null;
   onPick: (exercise: RoutineExercise) => void;
   onCustom: (exercise: CustomExercise, create: boolean) => void;
+  onFavorite: (id: string, favourite: boolean) => void;
   /** Shown as a back button when the library is used as a full-screen picker. */
   onBack?: () => void;
 };
@@ -65,70 +71,109 @@ function customName(exercise: CustomExercise) {
 export function ExerciseLibraryScreen({
   profile,
   server,
+  connection = null,
   onPick,
   onCustom,
+  onFavorite,
   onBack,
 }: ExerciseLibraryScreenProps) {
   const theme = useTheme();
   const [query, setQuery] = useState('');
   const [bodyPart, setBodyPart] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<string | null>(null);
+  const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [limit, setLimit] = useState(SEARCH_LIMIT);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editing, setEditing] = useState<CustomExercise | null>(null);
   const [customNameValue, setCustomNameValue] = useState('');
+  const [detail, setDetail] = useState<{ id: string; custom: boolean } | null>(null);
 
   const term = query.trim().toLowerCase();
+  const favouriteIds = useMemo(() => favIds(profile) as string[], [profile.favEx]);
+  const favouriteSet = useMemo(() => new Set(favouriteIds), [favouriteIds]);
+  const workspaceKey = connection ? `${connection.server}|${connection.user.id}` : 'practice';
 
-  // A new search or filter starts the list over at the first page.
+  // A new search, filter or workspace starts the visible selection fresh; media
+  // from the previous account/server must never stay on screen.
   useEffect(() => {
     setLimit(SEARCH_LIMIT);
-  }, [query, bodyPart, equipment]);
+    setDetail(null);
+  }, [query, bodyPart, equipment, favouritesOnly]);
+
+  useEffect(() => {
+    setDetail(null);
+    setFiltersOpen(false);
+    setEditing(null);
+    setCustomNameValue('');
+    setQuery('');
+    setBodyPart(null);
+    setEquipment(null);
+    setFavouritesOnly(false);
+  }, [workspaceKey]);
 
   const catalogue = useMemo(
-    () => searchCatalogue(query, bodyPart ?? undefined, equipment ?? undefined, limit) as CatalogueExercise[],
-    [query, bodyPart, equipment, limit],
+    () => searchCatalogue(query, bodyPart ?? undefined, equipment ?? undefined, limit, {
+      favourites: favouriteIds,
+      favouritesOnly,
+    }) as CatalogueExercise[],
+    [query, bodyPart, equipment, limit, favouriteIds, favouritesOnly],
+  );
+
+  const totalCatalogue = useMemo(
+    () => countCatalogue(query, bodyPart ?? undefined, equipment ?? undefined, {
+      favourites: favouriteIds,
+      favouritesOnly,
+    }) as number,
+    [query, bodyPart, equipment, favouriteIds, favouritesOnly],
   );
 
   const customRows = useMemo(
-    () => (profile.customEx ?? [])
-      .filter((exercise): exercise is CustomExercise => !!exercise && typeof exercise.id === 'string')
-      .filter(exercise => {
-        if (bodyPart && exercise.bp !== bodyPart) return false;
-        if (equipment && exercise.eq !== equipment) return false;
-        if (!term) return true;
-        const name = customName(exercise).toLowerCase();
-        return name.includes(term) || exercise.id.toLowerCase().includes(term);
-      }),
-    [profile.customEx, bodyPart, equipment, term],
+    () => sortFavouritesFirst(
+      (profile.customEx ?? [])
+        .filter((exercise): exercise is CustomExercise => !!exercise && typeof exercise.id === 'string')
+        .filter(exercise => {
+          if (favouritesOnly && !favouriteSet.has(exercise.id)) return false;
+          if (bodyPart && exercise.bp !== bodyPart) return false;
+          if (equipment && exercise.eq !== equipment) return false;
+          if (!term) return true;
+          const name = customName(exercise).toLowerCase();
+          return name.includes(term) || exercise.id.toLowerCase().includes(term);
+        }),
+      profile,
+    ) as CustomExercise[],
+    [profile.customEx, favouriteSet, bodyPart, equipment, term, favouritesOnly],
   );
 
-  const rows = useMemo<Row[]>(
-    () => [
+  const rows = useMemo<Row[]>(() => {
+    const list: Row[] = [
       ...customRows.map(exercise => ({ kind: 'custom' as const, exercise })),
       ...catalogue.map(exercise => ({ kind: 'catalogue' as const, exercise })),
-    ],
-    [catalogue, customRows],
-  );
+    ];
+    if (!favouriteIds.length) return list;
+    return [
+      ...list.filter(row => favouriteSet.has(row.exercise.id)),
+      ...list.filter(row => !favouriteSet.has(row.exercise.id)),
+    ];
+  }, [catalogue, customRows, favouriteIds, favouriteSet]);
 
-  const narrowed = term !== '' || bodyPart !== null || equipment !== null;
-  const activeFilters = (bodyPart ? 1 : 0) + (equipment ? 1 : 0);
-  const total = useMemo(
-    () => countCatalogue(query, bodyPart ?? undefined, equipment ?? undefined) + customRows.length,
-    [query, bodyPart, equipment, customRows],
-  );
+  const narrowed = term !== '' || bodyPart !== null || equipment !== null || favouritesOnly;
+  const activeFilters = (bodyPart ? 1 : 0) + (equipment ? 1 : 0) + (favouritesOnly ? 1 : 0);
+  const total = totalCatalogue + customRows.length;
   const subtitle = `${CATALOGUE_COUNT} 个动画动作 + ${(profile.customEx ?? []).filter(Boolean).length} 个自建`;
+  const noFavourites = favouritesOnly && favouriteIds.length === 0;
 
   const clearFilters = () => {
     setQuery('');
     setBodyPart(null);
     setEquipment(null);
+    setFavouritesOnly(false);
   };
 
   // The filter sheet clears the chips only; the search text lives outside it.
   const clearFilterChips = () => {
     setBodyPart(null);
     setEquipment(null);
+    setFavouritesOnly(false);
   };
 
   const pickCatalogue = (exercise: CatalogueExercise) => {
@@ -158,9 +203,46 @@ export function ExerciseLibraryScreen({
   };
 
   function rowView(item: Row) {
+    const exercise = item.exercise;
+    const name = item.kind === 'custom' ? customName(item.exercise) : item.exercise.name;
+    const favourite = isFav(profile, exercise.id) as boolean;
+    const actions = (
+      <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
+        <IconButton
+          accessibilityLabel={favourite ? `取消收藏 ${name}` : `收藏 ${name}`}
+          name={favourite ? 'starFill' : 'star'}
+          onPress={() => onFavorite(exercise.id, !favourite)}
+          size="sm"
+          testID={`library-fav-${exercise.id}`}
+          tone={favourite ? 'accent' : 'neutral'}
+        />
+        <IconButton
+          accessibilityLabel={`查看详情 ${name}`}
+          name="info"
+          onPress={() => setDetail({ id: exercise.id, custom: item.kind === 'custom' })}
+          size="sm"
+          testID={`library-detail-${exercise.id}`}
+        />
+        {item.kind === 'custom' ? (
+          <IconButton
+            accessibilityLabel={`编辑 ${name}`}
+            name="pencil"
+            onPress={() => startEdit(item.exercise)}
+            size="sm"
+          />
+        ) : (
+          <IconButton
+            accessibilityLabel={`选择 ${name}`}
+            name="plus"
+            onPress={() => pickCatalogue(item.exercise)}
+            size="sm"
+          />
+        )}
+      </View>
+    );
+
     if (item.kind === 'custom') {
       const custom = item.exercise;
-      const name = customName(custom);
       return (
         <Card padded={false}>
           <ListRow
@@ -170,37 +252,23 @@ export function ExerciseLibraryScreen({
             subtitle={subtitleOf(custom.bp, custom.eq)}
             testID={`library-ex-${custom.id}`}
             title={name}
-            trailing={(
-              <IconButton
-                accessibilityLabel={`编辑 ${name}`}
-                name="pencil"
-                onPress={() => startEdit(custom)}
-                size="sm"
-              />
-            )}
+            trailing={actions}
           />
         </Card>
       );
     }
 
-    const exercise = item.exercise;
+    const builtin = item.exercise;
     return (
       <Card padded={false}>
         <ListRow
-          accessibilityLabel={`选择 ${exercise.name}`}
-          leading={<MediaThumb exerciseId={exercise.id} server={server} size={44} radius={theme.radius.lg} />}
-          onPress={() => pickCatalogue(exercise)}
-          subtitle={subtitleOf(exercise.bodyPart, exercise.equipment)}
-          testID={`library-ex-${exercise.id}`}
-          title={exercise.name}
-          trailing={(
-            <IconButton
-              accessibilityLabel={`选择 ${exercise.name}`}
-              name="plus"
-              onPress={() => pickCatalogue(exercise)}
-              size="sm"
-            />
-          )}
+          accessibilityLabel={`选择 ${name}`}
+          leading={<MediaThumb exerciseId={builtin.id} server={server} size={44} radius={theme.radius.lg} />}
+          onPress={() => pickCatalogue(builtin)}
+          subtitle={subtitleOf(builtin.bodyPart, builtin.equipment)}
+          testID={`library-ex-${builtin.id}`}
+          title={name}
+          trailing={actions}
         />
       </Card>
     );
@@ -244,6 +312,15 @@ export function ExerciseLibraryScreen({
         >
           全部
         </Chip>
+        <Chip
+          icon={favouritesOnly ? 'starFill' : 'star'}
+          onPress={() => setFavouritesOnly(value => !value)}
+          selected={favouritesOnly}
+          testID="library-favourites-only"
+          tone="neutral"
+        >
+          仅收藏
+        </Chip>
         {BODY_PARTS.map(part => (
           <Chip
             key={part}
@@ -274,6 +351,31 @@ export function ExerciseLibraryScreen({
     </View>
   );
 
+  if (detail) {
+    const customExercise = detail.custom
+      ? (profile.customEx ?? []).find(exercise => exercise?.id === detail.id)
+      : undefined;
+    const cardio = detail.custom
+      ? customExercise?.bp === 'cardio'
+      : catalogueExercise(detail.id)?.bp === 'cardio';
+    return (
+      <ExerciseDetailScreen
+        key={`${detail.custom ? 'custom' : 'catalogue'}-${detail.id}`}
+        connection={connection}
+        custom={detail.custom}
+        exerciseId={detail.id}
+        onBack={() => setDetail(null)}
+        onFavorite={onFavorite}
+        onPick={() => {
+          onPick({ id: detail.id, mode: cardio ? 'cardio' : 'reps' });
+          setDetail(null);
+        }}
+        profile={profile}
+        server={server}
+      />
+    );
+  }
+
   return (
     <Screen scroll={false} testID="library-screen">
       <FlatList
@@ -285,9 +387,11 @@ export function ExerciseLibraryScreen({
         keyExtractor={item => `${item.kind}-${item.exercise.id}`}
         ListEmptyComponent={(
           <EmptyState
-            icon="magnifier"
-            text="换个关键词，或者清除筛选后再试。"
-            title="没有匹配的动作"
+            icon={noFavourites ? 'star' : 'magnifier'}
+            text={noFavourites
+              ? '点动作右侧的星标收藏动作，之后可以在这里快速找到。'
+              : '换个关键词，或者清除筛选后再试。'}
+            title={noFavourites ? '还没有收藏的动作' : '没有匹配的动作'}
           >
             {narrowed ? (
               <Button onPress={clearFilters} variant="secondary">
@@ -296,7 +400,7 @@ export function ExerciseLibraryScreen({
             ) : null}
           </EmptyState>
         )}
-        ListFooterComponent={catalogue.length >= limit ? (
+        ListFooterComponent={catalogue.length < totalCatalogue ? (
           <Button
             onPress={() => setLimit(value => value + SEARCH_LIMIT)}
             variant="secondary"
@@ -322,6 +426,29 @@ export function ExerciseLibraryScreen({
         visible={filtersOpen}
       >
         <View style={{ gap: theme.space.lg }}>
+          <View>
+            <SectionHeader
+              action={favouritesOnly ? (
+                <Button onPress={() => setFavouritesOnly(false)} size="xs" variant="ghost">
+                  清除
+                </Button>
+              ) : undefined}
+              title="收藏"
+            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              <Chip
+                icon={favouritesOnly ? 'starFill' : 'star'}
+                onPress={() => setFavouritesOnly(value => !value)}
+                selected={favouritesOnly}
+                size="sm"
+                testID="library-filters-favourites"
+                tone="neutral"
+              >
+                仅收藏
+              </Chip>
+            </View>
+          </View>
+
           <View>
             <SectionHeader
               action={bodyPart ? (

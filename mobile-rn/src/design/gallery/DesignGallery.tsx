@@ -29,7 +29,7 @@ import {
 } from '../components';
 import { ICON_NAMES } from '../icons/Icon';
 import { Icon } from '../icons/Icon';
-import { ActionSheet, BodyMap, MediaThumb, MiniBodyMap } from '../patterns';
+import { ActionSheet, BodyMap, ExerciseMedia, MediaThumb, MiniBodyMap } from '../patterns';
 import { useTheme, useThemeController } from '../ThemeProvider';
 import { palette, typography } from '../tokens';
 import type { AccentName, ThemeMode } from '../themes';
@@ -693,6 +693,19 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
               </Text>
             </View>
           </View>
+        </Card>
+      </GallerySection>
+
+      <GallerySection
+        title="动作演示"
+        description="详情页的演示舞台：视频、动图或静图；未配对、加载失败或没有素材时退回中性占位，播放控件始终可达。"
+        testID="gallery-exercise-media"
+      >
+        <Card>
+          <ExerciseMedia kind="none" testID="gallery-exercise-media-stage" />
+          <Text style={{ marginTop: theme.space.sm }} tone="secondary" variant="footnote">
+            占位状态。接入服务器或自定义媒体后，同一组件显示静图、动图或视频。
+          </Text>
         </Card>
       </GallerySection>
 

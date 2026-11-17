@@ -2,6 +2,7 @@ export * from './HomeScreen';
 export * from './PlanScreen';
 export * from './StatsScreen';
 export * from './ExerciseLibraryScreen';
+export * from './ExerciseDetailScreen';
 export * from './SettingsScreen';
 export * from './WorkoutScreen';
 export * from './PlanEditorScreen';

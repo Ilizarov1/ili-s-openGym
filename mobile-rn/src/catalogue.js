@@ -1,4 +1,5 @@
 import { EXDB, EXALIAS } from '../../frontend/src/lib/exercises-data.js';
+import { sortFavouritesFirst } from '../../frontend/src/lib/favourites.js';
 import chineseNames from '../../frontend/src/exercise-names/zh.js';
 
 const exercises = new Map(EXDB.map(exercise => [exercise.id, exercise]));
@@ -136,6 +137,14 @@ export function catalogueHas(id) {
   return exercises.has(EXALIAS[id] ?? id);
 }
 
+/**
+ * The catalogue entry behind an exercise id, resolving female/male drawing aliases.
+ * @param {string} id
+ */
+export function catalogueExercise(id) {
+  return exercises.get(EXALIAS[id] ?? id) ?? null;
+}
+
 /** @param {string} value */
 export function bodyPartName(value) {
   return BODY_PART_NAMES[value] ?? value;
@@ -156,17 +165,30 @@ function matches(exercise, term) {
  * Search the animated catalogue by name, optionally narrowed by the exact
  * `bp` body part and `eq` equipment values stored in `EXDB`.
  *
+ * Favourites always float to the top of whatever the filters left, before the
+ * page is cut at `limit`: a favourite that happens to sit at the end of the
+ * catalogue is still on the first page (issue #6). The filtering, ordering and
+ * counting therefore all run over the whole match set.
+ *
  * @param {string} [query]
  * @param {string} [bodyPart]
  * @param {string} [equipment]
  * @param {number} [limit]
+ * @param {{ favourites?: string[], favouritesOnly?: boolean }} [options]
  * @returns {{ id: string, name: string, bodyPart: string, equipment: string, cardio: boolean }[]}
  */
-export function searchCatalogue(query, bodyPart, equipment, limit = SEARCH_LIMIT) {
+export function searchCatalogue(query, bodyPart, equipment, limit = SEARCH_LIMIT, options = {}) {
+  if (limit && typeof limit === 'object') {
+    options = limit;
+    limit = SEARCH_LIMIT;
+  }
   const term = (query ?? '').trim().toLowerCase();
   const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : SEARCH_LIMIT;
+  const favourites = Array.isArray(options.favourites) ? options.favourites : [];
+  const favouriteSet = new Set(favourites);
   const results = [];
   for (const exercise of EXDB) {
+    if (options.favouritesOnly === true && !favouriteSet.has(exercise.id)) continue;
     if (bodyPart && exercise.bp !== bodyPart) continue;
     if (equipment && exercise.eq !== equipment) continue;
     if (!matches(exercise, term)) continue;
@@ -177,23 +199,29 @@ export function searchCatalogue(query, bodyPart, equipment, limit = SEARCH_LIMIT
       equipment: exercise.eq,
       cardio: exercise.bp === 'cardio',
     });
-    if (results.length >= max) break;
   }
-  return results;
+  const ordered = favourites.length ? sortFavouritesFirst(results, { favEx: favourites }) : results;
+  return ordered.slice(0, max);
 }
 
 /**
  * Total matches for the same query/filters, without building the result list.
  * Lets the library show an honest count while the list itself stays paged.
+ * Uses the same favourite filter as `searchCatalogue`, so the two never
+ * disagree.
  *
  * @param {string} [query]
  * @param {string} [bodyPart]
  * @param {string} [equipment]
+ * @param {{ favourites?: string[], favouritesOnly?: boolean }} [options]
  */
-export function countCatalogue(query, bodyPart, equipment) {
+export function countCatalogue(query, bodyPart, equipment, options = {}) {
   const term = (query ?? '').trim().toLowerCase();
+  const favourites = Array.isArray(options.favourites) ? options.favourites : [];
+  const favouriteSet = new Set(favourites);
   let count = 0;
   for (const exercise of EXDB) {
+    if (options.favouritesOnly === true && !favouriteSet.has(exercise.id)) continue;
     if (bodyPart && exercise.bp !== bodyPart) continue;
     if (equipment && exercise.eq !== equipment) continue;
     if (!matches(exercise, term)) continue;
