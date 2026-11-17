@@ -613,7 +613,7 @@ npm.cmd run design:check
 - `design-gallery-verify.ps1` 已更新为从首页齿轮进入设置再打开设计系统预览；已通过。
 - `npm run typecheck`、`npm run design:check` 通过。
 - 手动验证：计划训练记组、休息 dock、完成训练、统计记录、计划编辑、历史编辑、动作库选择动作、超级组组合。
-- Release APK 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1 -ResetAppData` 和 `opengym://plan` 深链：`mobile-rn/dist/openGym-RN-0.1.4-five-tab.apk`，versionCode 5，SHA-256 `34CC3677552EFAB43094CCED4E8C0CC95F642C9CBA60A7DCDE2C49E80303FD09`，包含 arm64-v8a 和 x86_64，Debug 证书签名。P2 训练/动作库批次已包含递减组、休息暂停、RPE/RIR、收藏、演示和 `expo-video`。
+- Release APK 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1 -ResetAppData` 和 `opengym://plan` 深链：`mobile-rn/dist/openGym-RN-0.1.4-five-tab.apk`，versionCode 5，SHA-256 `BF32CAD6C0834679B7F9EDC9CFBF810D81599D0FD05BBD4C533FC8E00E0FB96D`，包含 arm64-v8a 和 x86_64，Debug 证书签名。P2 训练/动作库批次已包含递减组、休息暂停、RPE/RIR、收藏、演示和 `expo-video`；内置 5,632 个目录动作的 180 px 静图、动画与介绍，Release APK 约 245 MB。
 
 已知限制：
 

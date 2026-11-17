@@ -12,25 +12,32 @@ import { AppState, StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import type { ImageSource } from 'expo-image';
 import { useTheme } from '../ThemeProvider';
 import { Icon } from '../icons/Icon';
 import { IconButton } from '../components/IconButton';
 import { Text } from '../components/Text';
 
 export type ExerciseMediaKind = 'video' | 'gif' | 'image' | 'none';
+export type ExerciseMediaSource = string | number;
 
 export type ExerciseMediaProps = {
   kind?: ExerciseMediaKind;
-  /** The main file: a remote URL for built-in clips/stills, a local URI otherwise. */
-  uri?: string | null;
+  /** A bundled require() id, a local URI or a remote URL. */
+  uri?: ExerciseMediaSource | null;
   /** A still shown while a video loads, after an error, or while a GIF is paused. */
-  posterUri?: string | null;
+  posterUri?: ExerciseMediaSource | null;
   autoPlay?: boolean;
   loading?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   accessibilityLabel?: string;
 };
+
+/** expo-image accepts a bundled asset id directly; URLs need the object form. */
+function imageSource(value: ExerciseMediaSource): ImageSource | number {
+  return typeof value === 'number' ? value : { uri: value };
+}
 
 const styles = StyleSheet.create({
   container: {
@@ -71,8 +78,8 @@ export function ExerciseMedia({
 }: ExerciseMediaProps): React.ReactElement {
   const theme = useTheme();
   const [playing, setPlaying] = useState(autoPlay);
-  const [failedMain, setFailedMain] = useState<string | null>(null);
-  const [failedPoster, setFailedPoster] = useState<string | null>(null);
+  const [failedMain, setFailedMain] = useState<ExerciseMediaSource | null>(null);
+  const [failedPoster, setFailedPoster] = useState<ExerciseMediaSource | null>(null);
   const [videoFailed, setVideoFailed] = useState(false);
 
   useEffect(() => {
@@ -140,7 +147,7 @@ export function ExerciseMedia({
           cachePolicy="memory-disk"
           contentFit="contain"
           onError={onMainError}
-          source={{ uri }}
+          source={imageSource(uri)}
           style={styles.fill}
         />
       ) : null}
@@ -151,7 +158,7 @@ export function ExerciseMedia({
           cachePolicy="memory-disk"
           contentFit="contain"
           onError={onPosterError}
-          source={{ uri: stillUri }}
+          source={imageSource(stillUri)}
           style={[styles.fill, styles.poster]}
         />
       ) : null}
@@ -183,8 +190,8 @@ export function ExerciseMedia({
 }
 
 type VideoStageProps = {
-  uri: string;
-  posterUri: string | null;
+  uri: ExerciseMediaSource;
+  posterUri: ExerciseMediaSource | null;
   playing: boolean;
   onPlayingChange: (playing: boolean) => void;
   onError: () => void;
@@ -211,8 +218,12 @@ function VideoStage({
   });
 
   useEffect(() => {
-    if (playing) player.play();
-    else player.pause();
+    try {
+      if (playing) player.play();
+      else player.pause();
+    } catch {
+      // The native player can already be released when a broken clip unmounts.
+    }
   }, [player, playing]);
 
   useEffect(() => {
@@ -242,8 +253,9 @@ function VideoStage({
 
   useEffect(() => () => {
     // The hook releases the native player when this unmounts; pausing first
-    // makes the hand-off to the still deterministic.
-    player.pause();
+    // makes the hand-off to the still deterministic. A missing/corrupt clip can
+    // release the player before this cleanup runs, so never let that throw.
+    try { player.pause(); } catch { /* already released */ }
   }, [player]);
 
   return (
@@ -265,7 +277,7 @@ function VideoStage({
           cachePolicy="memory-disk"
           contentFit="contain"
           onError={() => setPosterFailed(true)}
-          source={{ uri: posterRef.current }}
+          source={imageSource(posterRef.current)}
           style={styles.fill}
         />
       ) : null}

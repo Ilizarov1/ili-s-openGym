@@ -14,7 +14,7 @@ import {
   Text,
   useTheme,
 } from '../design';
-import { bodyPartName, catalogueExercise, equipmentName } from '../catalogue';
+import { bodyPartName, catalogueContent, catalogueExercise, equipmentName } from '../catalogue';
 import { customExerciseLink, useExerciseMedia } from '../exerciseMedia';
 import type { Connection } from '../server';
 import { exerciseName, type Profile } from '../training';
@@ -67,6 +67,9 @@ export function ExerciseDetailScreen({
   const favourite = (Array.isArray(profile.favEx) ? profile.favEx : []).includes(exerciseId);
   const link = custom ? customExerciseLink(customExercise) : null;
   const note = (customExercise?.desc ?? customExercise?.note ?? '').trim();
+  const content = custom ? null : catalogueContent(exerciseId);
+  const description = content?.description ?? '';
+  const instructions = content?.instructions ?? [];
   const media = useExerciseMedia({ profile, connection, server, exerciseId, custom });
   const backRef = useRef(onBack);
   backRef.current = onBack;
@@ -133,6 +136,36 @@ export function ExerciseDetailScreen({
           trailing={<Badge tone={custom ? 'neutral' : 'accent'}>{custom ? '自建' : '内置'}</Badge>}
         />
       </Card>
+
+      {description ? (
+        <Card style={{ marginTop: theme.space.md }}>
+          <Text variant="headline">动作介绍</Text>
+          <Text style={{ marginTop: theme.space.xs }} tone="secondary" variant="subhead">
+            {description}
+          </Text>
+          {content?.target ? (
+            <Text style={{ marginTop: theme.space.sm }} tone="tertiary" variant="footnote">
+              {`目标肌群：${content.target}${content.secondary?.length ? ` · 协同：${content.secondary.join('、')}` : ''}`}
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {instructions.length > 0 ? (
+        <Card style={{ marginTop: theme.space.md }}>
+          <Text variant="headline">执行步骤</Text>
+          {content?.instructionsSource === 'en' ? (
+            <Text style={{ marginTop: theme.space.xs }} tone="tertiary" variant="footnote">
+              该动作步骤暂无中文翻译，显示英文原文。
+            </Text>
+          ) : null}
+          {instructions.map((step: string, index: number) => (
+            <Text key={step} style={{ marginTop: theme.space.sm }} tone="secondary" variant="subhead">
+              {`${index + 1}. ${step}`}
+            </Text>
+          ))}
+        </Card>
+      ) : null}
 
       <ExerciseMedia
         accessibilityLabel={`${name} 演示`}

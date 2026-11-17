@@ -1,11 +1,11 @@
-// Exercise still thumbnail, ported from frontend/src/components/Media.jsx.
-// Images are not bundled; they come from the paired server and stay in expo-image's cache.
-
+// Exercise still thumbnail. The 180 px still is bundled in the APK; the paired
+// server is a fallback for a catalogue asset this build did not include.
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { Image } from 'expo-image';
 import { EXALIAS } from '../../../../frontend/src/lib/exercises-data.js';
+import { catalogueStill } from '../../catalogue';
 import { Icon } from '../icons/Icon';
 import { useTheme } from '../ThemeProvider';
 
@@ -59,7 +59,9 @@ export function MediaThumb({
     return `${base}/exercise-media/still/${canonicalId}.webp`;
   }, [exerciseId, server]);
 
-  const showPlaceholder = url === null || failed;
+  const local = useMemo(() => catalogueStill(exerciseId), [exerciseId]);
+  const source = local ?? (url ? { uri: url } : null);
+  const showPlaceholder = source === null || failed;
 
   return (
     <View
@@ -84,7 +86,7 @@ export function MediaThumb({
         />
       ) : (
         <Image
-          source={{ uri: url }}
+          source={source}
           style={[styles.image, { borderRadius: radius }]}
           contentFit="cover"
           cachePolicy="memory-disk"

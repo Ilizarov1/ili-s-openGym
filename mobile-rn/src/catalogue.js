@@ -1,6 +1,8 @@
 import { EXDB, EXALIAS } from '../../frontend/src/lib/exercises-data.js';
 import { sortFavouritesFirst } from '../../frontend/src/lib/favourites.js';
 import chineseNames from '../../frontend/src/exercise-names/zh.js';
+import contentData from './catalogueContent.generated.json';
+import { CATALOGUE_CLIPS, CATALOGUE_STILL } from './catalogueMedia.generated';
 
 const exercises = new Map(EXDB.map(exercise => [exercise.id, exercise]));
 
@@ -143,6 +145,22 @@ export function catalogueHas(id) {
  */
 export function catalogueExercise(id) {
   return exercises.get(EXALIAS[id] ?? id) ?? null;
+}
+
+/** Text and muscle names bundled for the RN detail screen. */
+export function catalogueContent(id) {
+  return contentData[EXALIAS[id] ?? id] ?? null;
+}
+
+/** A bundled 180 px still, or null when this build did not include it. */
+export function catalogueStill(id) {
+  return CATALOGUE_STILL[EXALIAS[id] ?? id] ?? null;
+}
+
+/** A bundled 180 px animation staged under Android assets, or null. */
+export function catalogueClip(id) {
+  const path = CATALOGUE_CLIPS[EXALIAS[id] ?? id];
+  return path ? `asset:///${path}` : null;
 }
 
 /** @param {string} value */

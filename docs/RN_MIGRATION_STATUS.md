@@ -50,7 +50,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 #### 动作库
 
 - [ ] **动作收藏**。已实现，待验证收藏筛选、离线同步和账户隔离。2026-11-17 模拟器已验证 fixture 收藏星标、仅收藏筛选、取消收藏和详情页星标；配对同步和账户隔离待复验。[验收目标](rn-p2-training-library/06_EXERCISE_FAVORITES.md#验收目标)
-- [ ] **动作演示**。已接入动作详情和播放，待验证内置、自定义媒体、异常回退及真机解码。2026-11-17 模拟器已验证详情入口、练习模式占位和自定义动作无媒体提示；服务器素材、播放/暂停、视频解码和下载校验待复验。[验收目标](rn-p2-training-library/07_EXERCISE_DEMOS.md#验收目标)
+- [x] **动作演示**。已内置 5,632 个 180 px 静图和动画，并为每个动作生成中文介绍、目标肌群和步骤（有中文步骤时）；详情页可播放/暂停，练习模式也能离线显示。2026-11-17 模拟器已验证 `0025` 的动画和介绍；自定义媒体上传/下载及真机解码待复验。[验收目标](rn-p2-training-library/07_EXERCISE_DEMOS.md#验收目标)
 
 #### 进度与身体数据
 
@@ -81,7 +81,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [x] **五 Tab 页面重构**。首页、计划、统计、动作库 + 中央开始，设置移入首页齿轮；计划/历史编辑器、全屏动作库、训练页 Stepper 和休息 dock 已完成。2026-11-17 Release `openGym-RN-0.1.4-five-tab.apk` 在 `emulator-5556` 通过五 Tab、首页、设置、计划、计划编辑、统计、动作库、筛选 Sheet、开始 Sheet 冒烟和 `opengym://plan` 深链。
 - [x] **RN 视觉测试流程**。`opengym://` 深链、`e2e=1` 冻结计时器、Debug fixture 和 `ui-capture.ps1` contact sheet 已落地；流程和设计系统硬性约束见 [RN_UI_VISUAL_TESTING.md](RN_UI_VISUAL_TESTING.md)。
 - [x] **Android 回归脚本五入口适配**。`android-regression.ps1` 已使用新版导航和菜单；`superset-smoke.ps1` 已在 `emulator-5556` 通过计划编辑、73 秒轮间休息、A1→B1→A2、草稿恢复、25/40→40 秒和新建组。最新合并版完整 P0/P1 联跑仍待记录。[脚本说明](../mobile-rn/scripts/README.md)
-- [x] **P2 高级训练与动作库（实现）**。设计系统、数据模型、训练/历史/设置/动作库接线完成；`npm.cmd run check`、`five-tab-smoke.ps1 -ResetAppData`、`ui-capture.ps1 -Fixture` 通过。RPE 8、递减段和 40 秒超级组休息已在模拟器验证；Release `openGym-RN-0.1.4-five-tab.apk`（SHA-256 `34CC3677552EFAB43094CCED4E8C0CC95F642C9CBA60A7DCDE2C49E80303FD09`）通过五 Tab 冒烟和动作详情占位检查。API 同步、自定义媒体和真机解码列为待验收项。
+- [x] **P2 高级训练与动作库（实现）**。设计系统、数据模型、训练/历史/设置/动作库接线完成；`npm.cmd run check`、`five-tab-smoke.ps1 -ResetAppData`、`ui-capture.ps1 -Fixture` 通过。RPE 8、递减段和 40 秒超级组休息已在模拟器验证；Release `openGym-RN-0.1.4-five-tab.apk`（约 245 MB，SHA-256 `BF32CAD6C0834679B7F9EDC9CFBF810D81599D0FD05BBD4C533FC8E00E0FB96D`）通过五 Tab 冒烟、动作详情本地静图/动画和中文介绍检查。API 同步、自定义媒体和真机解码列为待验收项。
 - [ ] **Android 真机验收**。ADB 当前只识别专用模拟器。真机可用 `0.1.3` 验证实际训练、重启同步、锁屏通知显示及震动。
 
 每完成一项就更新对应条目，附上验证结果或记录链接。只完成一部分时，写明已经实现的能力和剩余工作。代码已实现、验收仍待完成的条目标记为「已实现，待验证」。

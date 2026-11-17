@@ -7,6 +7,8 @@
     "android": "expo run:android",
     "lint": "eslint App.tsx index.ts src",
     "lint:rules": "node --test --test-reporter=dot scripts/eslint-rules.test.cjs",
+    "catalogue:generate": "node scripts/generate-catalogue-content.mjs",
+    "catalogue:stage": "node scripts/stage-catalogue-media.mjs",
     "check": "npm run lint && npm run lint:rules && npm run typecheck && npm run design:check",
     "typecheck": "tsc --noEmit",
     "design:check": "node scripts/check-design-system.mjs"

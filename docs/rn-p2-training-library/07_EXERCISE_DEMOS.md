@@ -20,6 +20,31 @@
 2. 为现有 [独立 API fixture](../../mobile-rn/scripts/loopback-api.mjs) 增加媒体启用的场景，准备已入库的视频、封面和动图。核对有效 Bearer、缺文件、损坏文件和换账号，确认临时文件清理和缓存隔离。
 3. 用可见模拟器验证播放、暂停、返回及切后台，再做 ARM64 真机解码检查。按 [共用验收](README.md#共用验收) 记录媒体加载结果、截图和候选 APK。
 
+## 本地内置（非商业 Fork）
+
+当前 RN 分支把 180 px 目录素材随客户端分发，离线也能播放：
+
+- **静图**：`src/catalogueMedia.generated.ts` 为 5,632 个动作生成静态 `require('../../catalogue/media/still/...')`，由 Metro 打进 bundle。
+- **动画**：MP4 不经过 Metro。`npm run catalogue:stage` 把它们复制到 `android/app/src/main/assets/exercise-media/clip/`，运行时用 `asset:///exercise-media/clip/<file>.mp4` 播放。这样避免 Metro 一次打开上万文件触发 Windows `EMFILE`。
+- **介绍**：`src/catalogueContent.generated.json` 由 `catalogue/exercises/*.json` 和 `catalogue/i18n/zh.json` 生成，包含中文名、中文简介（按目标/协同肌群生成）、中文步骤（有翻译时）和英文步骤回退。
+- **详情页**：内置动作优先显示本地媒体和介绍；本地缺失时才回退服务器，再回退占位。自定义动作仍走服务器上传的 `media`。
+
+构建顺序：
+
+```powershell
+cd mobile-rn
+npm.cmd run catalogue:generate
+npx.cmd expo prebuild --platform android --no-install
+npm.cmd run catalogue:stage
+cd android
+.\gradlew.bat :app:assembleDebug
+# Release: .\gradlew.bat :app:assembleRelease
+```
+
+`android/` 是 gitignore 的生成目录，`catalogue:stage` 必须在每次 `expo prebuild` 后重跑。静图仍来自仓库的 `catalogue/media`，不复制第二份。
+
+许可是非商业 Fork 使用范围：只随客户端分发**未修改的 180 px 素材**，保留 `catalogue/media/NOTICE.md`/`NOTICE.md`，不改图、不单独提取、不用于商业产品。商业发布或更大分辨率需要 Gym visual 授权。
+
 ## 验收目标
 
 | 编号 | 前置条件 | 操作 | 通过标准 |

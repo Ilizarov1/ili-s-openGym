@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
 import { cleanUrl, mediaOf } from '../../frontend/src/lib/media-refs.js';
-import { catalogueExercise } from './catalogue';
+import { catalogueClip, catalogueExercise, catalogueStill } from './catalogue';
 import type { Connection } from './server';
 import type { CustomExercise, Profile } from './training';
 
@@ -24,11 +24,14 @@ export type ExerciseMediaKind = 'video' | 'gif' | 'image' | 'none';
 
 export type ExerciseMediaUnavailable = 'practice' | 'disabled' | 'missing' | 'failed';
 
+/** A bundled `require()` asset id, a local file URI or a remote URL. */
+export type ExerciseMediaSource = string | number;
+
 export type ExerciseMediaState = {
   kind: ExerciseMediaKind;
-  /** A local file URI for custom media, a server URL for a built-in clip/still. */
-  uri: string | null;
-  posterUri: string | null;
+  /** A bundled asset id, a local file URI for custom media, or a server URL. */
+  uri: ExerciseMediaSource | null;
+  posterUri: ExerciseMediaSource | null;
   loading: boolean;
   origin: 'builtin' | 'custom' | 'none';
   unavailable?: ExerciseMediaUnavailable;
@@ -75,6 +78,30 @@ const configCache = new Map<string, { at: number; enabled: boolean }>();
 const configPending = new Map<string, Promise<boolean>>();
 
 export function builtinMedia(server: string | null, exerciseId: string): ExerciseMediaState {
+  // The RN package carries the curated 180 px catalogue. Prefer it so the
+  // detail screen works offline; the server remains a fallback for a build
+  // that omitted some files.
+  const bundledStill = catalogueStill(exerciseId);
+  const bundledClip = catalogueClip(exerciseId);
+  if (bundledClip != null) {
+    return {
+      kind: 'video',
+      uri: bundledClip,
+      posterUri: bundledStill,
+      loading: false,
+      origin: 'builtin',
+    };
+  }
+  if (bundledStill != null) {
+    return {
+      kind: 'image',
+      uri: bundledStill,
+      posterUri: bundledStill,
+      loading: false,
+      origin: 'builtin',
+    };
+  }
+
   const base = server?.trim().replace(/\/+$/, '') ?? '';
   if (!base) return { ...FALLBACK, unavailable: 'practice' };
   // catalogueExercise resolves a female/male drawing alias to the exercise the

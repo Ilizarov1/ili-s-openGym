@@ -91,6 +91,27 @@ item. Do not report a manual item as passed.
 On a failure the script writes `failure.png`, `failure-window.xml` and `logcat.txt` next to the
 screenshots in `mobile-rn/dist/ui/superset/`. `dist/` is gitignored.
 
+## Local catalogue demonstrations
+
+The RN build carries the 180 px catalogue media for offline exercise details:
+
+```powershell
+cd mobile-rn
+npm.cmd run catalogue:generate
+npx.cmd expo prebuild --platform android --no-install
+npm.cmd run catalogue:stage
+```
+
+`catalogue:generate` writes `src/catalogueContent.generated.json` and
+`src/catalogueMedia.generated.ts`. The 5,632 stills are static `require()` assets bundled by
+Metro. The 5,632 MP4 clips are copied to `android/app/src/main/assets/exercise-media/clip/` and
+played through `asset:///`; going through Metro's asset registry for both would exceed the
+Windows file-handle limit. Run `catalogue:stage` after every `expo prebuild`, because `android/`
+is generated.
+
+This is for the non-commercial openGym fork: keep the 180 px media unmodified, ship the Gym
+visual notice, and obtain a separate licence for commercial use or larger media.
+
 ## UI capture and design checks
 
 ```powershell

@@ -2,5 +2,9 @@ const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
-config.watchFolders = [...(config.watchFolders ?? []), path.resolve(__dirname, '../frontend/src')];
+config.watchFolders = [
+  ...(config.watchFolders ?? []),
+  path.resolve(__dirname, '../frontend/src'),
+  path.resolve(__dirname, '../catalogue/media'),
+];
 module.exports = config;
