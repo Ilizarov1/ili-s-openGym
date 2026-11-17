@@ -1,9 +1,13 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { darkTheme } from './design/themes';
+
+const theme = darkTheme;
 
 export const color = {
-  background: '#131714', panel: '#1D241F', border: '#354139', text: '#F1F6EF',
-  muted: '#ACB9AE', accent: '#CEF383', dark: '#19230F', danger: '#FFB49C',
+  background: theme.colors.bg, panel: theme.colors.surface, border: theme.colors.sep,
+  text: theme.colors.label, muted: theme.colors.label2, accent: theme.colors.accent,
+  dark: theme.colors.onAccent, danger: theme.colors.danger,
 };
 
 export const styles = StyleSheet.create({
@@ -13,26 +17,26 @@ export const styles = StyleSheet.create({
   between: { justifyContent: 'space-between' },
   stack: { gap: 8 },
   grow: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingVertical: 14, borderBottomColor: color.border, borderBottomWidth: 1 },
+  header: { paddingHorizontal: 20, paddingVertical: 14 },
   brand: { color: color.text, fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  heading: { color: color.text, fontSize: 29, fontWeight: '800', letterSpacing: -0.5 },
-  title: { color: color.text, fontSize: 17, fontWeight: '700' },
-  text: { color: color.text, fontSize: 15, lineHeight: 22 },
+  heading: { color: color.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.84 },
+  title: { color: color.text, fontSize: 17, fontWeight: '600' },
+  text: { color: color.text, fontSize: 17, lineHeight: 22 },
   muted: { color: color.muted, fontSize: 13, lineHeight: 19 },
   error: { color: color.danger, fontSize: 13, lineHeight: 19 },
-  card: { backgroundColor: color.panel, borderColor: color.border, borderWidth: 1, borderRadius: 16, padding: 16, gap: 10 },
+  card: { backgroundColor: color.panel, borderRadius: 14, padding: 16, gap: 10 },
   button: { minHeight: 46, borderRadius: 12, paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center' },
   primary: { backgroundColor: color.accent },
-  secondary: { borderColor: color.border, borderWidth: 1 },
+  secondary: { backgroundColor: theme.colors.surface2 },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.42 },
-  buttonLabel: { color: color.text, fontSize: 15, fontWeight: '700' },
+  buttonLabel: { color: color.text, fontSize: 17, fontWeight: '600' },
   primaryLabel: { color: color.dark },
-  input: { color: color.text, backgroundColor: color.background, borderColor: color.border, borderWidth: 1,
-    borderRadius: 10, minHeight: 46, paddingHorizontal: 12, fontSize: 15 },
+  input: { color: color.text, backgroundColor: theme.colors.surface2, borderRadius: 12,
+    minHeight: 46, paddingHorizontal: 12, fontSize: 17 },
   field: { flex: 1, gap: 3 },
   done: { backgroundColor: color.accent, borderColor: color.accent },
-  tabs: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 6, borderTopColor: color.border, borderTopWidth: 1 },
+  tabs: { flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 6, borderTopColor: theme.colors.sepOp, borderTopWidth: 0.5 },
   tab: { flex: 1, minHeight: 46, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   selectedTab: { backgroundColor: color.panel },
   selectedLabel: { color: color.accent, fontWeight: '700' },

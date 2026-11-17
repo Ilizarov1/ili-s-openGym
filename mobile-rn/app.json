@@ -9,7 +9,9 @@
       "package": "dev.opengym.rn",
       "versionCode": 5,
       "allowBackup": false,
-      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"],
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM"
+      ],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -32,7 +34,8 @@
       "expo-secure-store",
       "expo-sqlite",
       "expo-sharing",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-image"
     ]
   }
 }

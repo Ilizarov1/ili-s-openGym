@@ -3,6 +3,8 @@ import { Alert, BackHandler, FlatList, Linking, Modal, Pressable, ScrollView, Te
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { Card, Button, Field, styles } from './src/ui';
+import { ThemeProvider, useThemeController } from './src/design';
+import { DesignGallery } from './src/design/gallery/DesignGallery';
 import { RestTimer, resolveRestSeconds } from './src/restTimer';
 import { useGym } from './src/useGym';
 import { readLocal } from './src/storage';
@@ -24,7 +26,7 @@ import { supersetMeta } from '../frontend/src/lib/superset-meta';
 const tabs = ['训练', '历史', '服务器'] as const;
 type Tab = typeof tabs[number];
 type Panel = { kind: 'plan'; routine?: Routine } | { kind: 'schedule' } |
-  { kind: 'history'; workout: Workout; unit: Unit } | { kind: 'exercise'; replaceIndex?: number };
+  { kind: 'history'; workout: Workout; unit: Unit } | { kind: 'exercise'; replaceIndex?: number } | { kind: 'design' };
 
 function AppScreen() {
   const gym = useGym();
@@ -36,6 +38,7 @@ function AppScreen() {
   const [historyExercise, setHistoryExercise] = useState<string | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [dataBusy, setDataBusy] = useState(false);
+  const themeController = useThemeController();
   const connection = gym.workspace?.connection;
   const currentDraft = gym.workspace?.data.draft;
   const restAlertError = useRestNotification(gym.workspace ? gym.workspace.data.restAlerts === true : undefined, currentDraft?.rest?.endsAt);
@@ -68,7 +71,13 @@ function AppScreen() {
 
   const { profile, draft, queue, workoutDeletes } = gym.workspace.data;
   const disabled = gym.operation !== null || dataBusy;
-  const closePanel = () => setPanel(null);
+  const closePanel = () => {
+    if (panel?.kind === 'design') {
+      themeController.setMode('dark');
+      themeController.setAccent('green');
+    }
+    setPanel(null);
+  };
   const openWorkout = (next: Draft) => gym.change(data => ({ ...data, draft: next }));
   const onCustom = (exercise: CustomExercise, create: boolean) => { gym.commit([{ kind: 'custom', exercise, create }]); };
   const startFree = (backfill = false) => {
@@ -262,6 +271,10 @@ function AppScreen() {
         {gym.workspace.data.restAlerts && <Button label="闹钟与提醒设置" secondary
           onPress={() => void Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM').catch(() => Linking.openSettings())} />}
       </Card>
+      {__DEV__ && <Card>
+        <Text style={styles.title}>开发</Text>
+        <Button label="设计系统预览" secondary onPress={() => setPanel({ kind: 'design' })} />
+      </Card>}
     </ScrollView>}
 
     <View accessibilityRole="tablist" style={styles.tabs}>
@@ -296,6 +309,7 @@ function AppScreen() {
             } : target;
             if (openWorkout(addExercise(draft, next, profile, queue, panel.replaceIndex))) closePanel();
           }} />}
+        {panel.kind === 'design' && <DesignGallery onClose={closePanel} />}
       </SafeAreaView>
     </Modal>}
   </SafeAreaView>;
@@ -446,5 +460,7 @@ function WorkoutScreen({ profile, draft, queue, onChange, onFinish, onDiscard, o
 }
 
 export default function App() {
-  return <SafeAreaProvider><AppScreen /></SafeAreaProvider>;
+  return <ThemeProvider mode="dark" accent="green">
+    <SafeAreaProvider><AppScreen /></SafeAreaProvider>
+  </ThemeProvider>;
 }
