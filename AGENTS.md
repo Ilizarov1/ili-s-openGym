@@ -60,8 +60,24 @@ docs/
   RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
   RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
+  rn-p2/
+    README.md                            P2 功能导航、当前范围和共用流程
+    progress/
+      01_PERSONAL_RECORDS.md             个人纪录的比较规则和来源
+      02_ESTIMATED_1RM.md                估算 1RM 的公式、历史曲线及验收
+      03_WORKOUT_TRENDS.md               训练趋势的时间范围、汇总和动作指标
+      04_MUSCLE_MAP.md                   训练覆盖肌群、有效组数和前后视图
+      05_BODYWEIGHT.md                   体重读数、日值和周趋势
+      06_MEASUREMENTS.md                 按日记录围度、单位转换和同步
+      07_PROGRESS_PHOTOS.md              进度照片、日期归档和私有媒体同步
+    import-sharing-connection/
+      01_HISTORY_IMPORT.md               第三方历史文件预览、合并和去重
+      02_PLAN_SHARING.md                 计划文件互导、复制和周排程选择
+      03_QR_PAIRING.md                   移动端配对二维码、确认和账户隔离
+    platform/
+      01_TRAINING_REMINDERS.md           Android 训练日提醒、权限和时钟验收
   rn-p2-training-library/
-    README.md                            P2 高级训练与动作库的顺序和共用验收
+    README.md                            P2 高级训练与动作库的功能导航和验收顺序
     01_SUPERSETS.md                       超级组需求、设计及新版回归步骤
     02_DROP_SETS.md                       递减组的计划、分段记录和训练量
     03_REST_PAUSE.md                      休息暂停组的计划、短休和总次数
