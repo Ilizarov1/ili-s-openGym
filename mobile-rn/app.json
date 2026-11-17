@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "openGym RN",
+    "slug": "opengym-rn",
+    "version": "0.1.4",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "android": {
+      "package": "dev.opengym.rn",
+      "versionCode": 5,
+      "allowBackup": false,
+      "permissions": ["android.permission.SCHEDULE_EXACT_ALARM"],
+      "blockedPermissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true,
+            "buildArchs": [
+              "arm64-v8a",
+              "x86_64"
+            ]
+          }
+        }
+      ],
+      "expo-secure-store",
+      "expo-sqlite",
+      "expo-sharing",
+      "expo-notifications"
+    ]
+  }
+}

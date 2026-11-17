@@ -1,0 +1,107 @@
+# openGym 项目地图
+
+Windows 环境统一使用 PowerShell。普通问答只读资料和源码，不运行测试。
+
+## 代码
+
+```text
+mobile-rn/           Expo Android 工程与训练、历史、配对界面
+mobile-rn/src/       计划、动作与历史编辑，训练数据、备份、提醒和同步
+mobile-rn/scripts/   Android 模拟器回归与本地 API 测试环境
+frontend/src/        Web 与 Capacitor 共用的页面、状态、训练和同步逻辑
+frontend/android/    上游 Capacitor Android 工程与原生插件
+frontend/ios/        上游 iOS、Apple Watch 和小组件
+api/                 Node HTTP 路由、认证、设备配对、JSON 存储和同步
+api/coach/           AI Coach 服务与共用逻辑
+api/integrations/    外部集成和投递队列
+web/                 Web 镜像构建和 Nginx 配置
+catalogue/           动作原始数据、翻译和演示媒体
+mcp/                 可选的训练数据 MCP 服务
+watch-zepp/          Zepp OS 手表端
+website/             项目官网
+cloudflare/          站点边缘路由和故障切换
+scripts/             动作目录生成、构建和发布工具
+.github/、.gitlab/   CI、发布和贡献模板
+docker-compose.yml   自托管服务入口
+helm/、kubernetes/、contrib/nix/   其他部署方式
+```
+
+## 文档
+
+```text
+AGENTS.md                                项目地图
+README.md                                产品功能和快速启动
+CHANGELOG.md                             版本变更
+ROADMAP.md                               上游路线图
+CONTRIBUTING.md                          贡献流程
+CLA.md                                   贡献者许可协议
+CLAUDE.md                                上游开发指南
+LICENSE                                  项目许可证
+NOTICE.md                                第三方许可说明
+SECURITY.md                              安全报告方式
+.github/pull_request_template.md         GitHub PR 模板
+.gitlab/issue_templates/Bug.md           GitLab 缺陷模板
+.gitlab/issue_templates/Feature.md       GitLab 功能模板
+.gitlab/issue_templates/Question.md      GitLab 提问模板
+.gitlab/merge_request_templates/Default.md   GitLab 合并请求模板
+
+docs/
+  README.md                              文档入口
+  ARCHITECTURE.md                        上游架构、同步与平台边界
+  API.md                                 HTTP 接口使用说明
+  MOBILE.md                              Capacitor 客户端与配对
+  APP_STORES.md                          上游移动端构建和发布
+  RN_ANDROID_DESIGN.md                   RN Android 首版设计
+  RN_ANDROID_EXECUTION.md                RN Android 实施和验收
+  RN_MIGRATION_STATUS.md                 RN 已完成、待迁移和验收清单
+  SELF_HOSTING.md                        Docker 自托管指南
+  SELF_HOSTING_HTTPS.md                  局域网 HTTPS
+  SELF_HOSTING_KUBERNETES.md             Kubernetes 部署
+  SELF_HOSTING_MAC.md                    macOS 自托管
+  NIX.md                                 NixOS 部署
+  FAQ.md                                 常见问题
+  MODULES.md                             功能模块开关
+  DATA_IMPORTS.md                        数据导入导出
+  INTEGRATIONS.md                        外部服务集成
+  AI_COACH.md                            AI Coach 配置和使用
+  GARMIN.md                              Garmin 端
+  WEAR_OS.md                             Wear OS 端
+  ZEPP_OS.md                             Zepp OS 端
+  dev/COMBINE_ROUTINES.md                合并训练计划设计
+  dev/FATIGUE_SETS_MODEL.md              肌群疲劳计算模型
+  dev/LIST_VIEW.md                       训练界面的布局模式
+  dev/SET_TYPES.md                       递减组和休息暂停组
+
+api/openapi.yaml                         HTTP 接口契约
+api/coach/prompts/
+  common.md                              通用教练约束
+  ask.md                                 日常训练问答
+  adapt.md                               调整进行中的训练
+  create.md                              创建训练计划
+  review.md                              审查现有计划
+  refine.md                              按反馈修订提案
+  debrief.md                             复盘已结束训练
+  repair.md                              修复未通过验证的提案
+
+catalogue/
+  README.md                              动作数据结构与构建
+  i18n-glossary-pt-sv.md                  葡语和瑞典语翻译术语
+  media/NOTICE.md                        动作媒体许可
+  browse/README.md                       动作浏览入口
+  browse/back.md                         背部动作目录
+  browse/cardio.md                       有氧动作目录
+  browse/chest.md                        胸部动作目录
+  browse/full-body.md                    全身动作目录
+  browse/lower-arms.md                   前臂动作目录
+  browse/lower-legs.md                   小腿动作目录
+  browse/neck.md                         颈部动作目录
+  browse/shoulders.md                    肩部动作目录
+  browse/upper-arms.md                   上臂动作目录
+  browse/upper-legs.md                   大腿动作目录
+  browse/waist.md                        腰腹动作目录
+
+helm/README.md                           Helm 部署和参数
+mcp/README.md                            MCP 接入、工具与认证
+scripts/README.md                        构建和发布脚本索引
+website/README.md                        官网源码和维护方式
+```
