@@ -4,10 +4,12 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { useTheme } from '../ThemeProvider';
 import { Icon } from '../icons/Icon';
 import { Text } from './Text';
+import type { TextTone } from './Text';
 
 export type ListRowProps = {
   leading?: ReactNode;
   title: string;
+  titleTone?: TextTone;
   subtitle?: string;
   trailing?: ReactNode;
   onPress?: () => void;
@@ -33,6 +35,7 @@ const styles = StyleSheet.create({
 export function ListRow({
   leading,
   title,
+  titleTone,
   subtitle,
   trailing,
   onPress,
@@ -66,7 +69,7 @@ export function ListRow({
     >
       {leading}
       <View style={styles.textColumn}>
-        <Text variant="body">{title}</Text>
+        <Text tone={titleTone} variant="body">{title}</Text>
         {subtitle ? (
           <Text style={{ marginTop: theme.space.xxs }} tone="secondary" variant="footnote">
             {subtitle}

@@ -8,7 +8,7 @@ Windows 环境统一使用 PowerShell。普通问答只读资料和源码，不�
 mobile-rn/           Expo Android 工程与训练、历史、配对界面
 mobile-rn/src/       计划、动作与历史编辑，训练数据、备份、提醒和同步
 mobile-rn/src/design/  RN 设计系统：tokens、主题、图标、基础组件、身体图和开发画廊
-mobile-rn/scripts/   Android 模拟器回归、设计系统检查和本地 API 测试环境
+mobile-rn/scripts/   Android 模拟器回归、五 Tab UI 冒烟、设计系统检查和本地 API 测试环境
 frontend/src/        Web 与 Capacitor 共用的页面、状态、训练和同步逻辑
 frontend/android/    上游 Capacitor Android 工程与原生插件
 frontend/ios/        上游 iOS、Apple Watch 和小组件
@@ -57,6 +57,7 @@ docs/
   RN_MIGRATION_STATUS.md                 RN 已完成、待迁移和验收清单
   RN_UI_DESIGN_SYSTEM.md                 RN 设计系统架构、token、组件和治理
   RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
+  RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   SELF_HOSTING.md                        Docker 自托管指南
   SELF_HOSTING_HTTPS.md                  局域网 HTTPS
   SELF_HOSTING_KUBERNETES.md             Kubernetes 部署

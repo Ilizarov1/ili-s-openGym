@@ -1,0 +1,131 @@
+param(
+  [string]$Serial = 'emulator-5556',
+  [switch]$ResetAppData,
+  [string]$OutDir = (Join-Path $PSScriptRoot '..\dist\ui')
+)
+
+$ErrorActionPreference = 'Stop'
+$adb = Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain\android-sdk\platform-tools\adb.exe'
+if (-not (Test-Path $adb)) { throw "adb not found: $adb" }
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$xmlPath = Join-Path $OutDir 'smoke-window.xml'
+
+function Invoke-Adb {
+  param([Parameter(ValueFromRemainingArguments = $true)][string[]]$Args)
+  & $adb -s $Serial @Args
+  if ($LASTEXITCODE -ne 0) { throw "adb failed: $($Args -join ' ')" }
+}
+
+function Read-Ui {
+  Invoke-Adb shell uiautomator dump /sdcard/smoke-window.xml | Out-Null
+  Invoke-Adb pull /sdcard/smoke-window.xml $xmlPath | Out-Null
+  return [xml](Get-Content -Raw $xmlPath)
+}
+
+function Find-Node {
+  param($Xml, [string]$Text)
+  return $Xml.SelectSingleNode("//node[@text='$Text' or @content-desc='$Text']")
+}
+
+function Tap-Bounds {
+  param([string]$Bounds)
+  $m = [regex]::Match($Bounds, '\[(\d+),(\d+)\]\[(\d+),(\d+)\]')
+  if (-not $m.Success) { throw "invalid bounds: $Bounds" }
+  $x = [int]((([int]$m.Groups[1].Value) + ([int]$m.Groups[3].Value)) / 2)
+  $y = [int]((([int]$m.Groups[2].Value) + ([int]$m.Groups[4].Value)) / 2)
+  Invoke-Adb shell input tap $x $y
+}
+
+function Tap-Text {
+  param([string]$Text)
+  $node = Find-Node (Read-Ui) $Text
+  if (-not $node) { throw "text not found: $Text" }
+  Tap-Bounds $node.bounds
+}
+
+function Wait-Text {
+  param([string]$Text, [int]$Seconds = 20)
+  $deadline = (Get-Date).AddSeconds($Seconds)
+  while ((Get-Date) -lt $deadline) {
+    $node = Find-Node (Read-Ui) $Text
+    if ($node) { return $node }
+    Start-Sleep -Milliseconds 600
+  }
+  throw "timed out waiting for: $Text"
+}
+
+function Ensure-Text {
+  param([string]$Text, [int]$Scrolls = 12)
+  for ($i = 0; $i -le $Scrolls; $i++) {
+    $node = Find-Node (Read-Ui) $Text
+    if ($node) { return $node }
+    Invoke-Adb shell input swipe 540 1900 540 600 250 | Out-Null
+    Start-Sleep -Milliseconds 300
+  }
+  throw "text not found after scrolling: $Text"
+}
+
+function Screenshot {
+  param([string]$Name)
+  $remote = "/sdcard/$Name.png"
+  $local = Join-Path $OutDir "$Name.png"
+  & $adb -s $Serial shell screencap -p $remote | Out-Null
+  if ($LASTEXITCODE -ne 0) { throw "screencap failed: $Name" }
+  Invoke-Adb pull $remote $local | Out-Null
+  Invoke-Adb shell rm $remote | Out-Null
+  Write-Output "screenshot: $local"
+}
+
+Write-Output "device: $Serial"
+Invoke-Adb reverse tcp:8081 tcp:8081 | Out-Null
+if ($ResetAppData) { Invoke-Adb shell pm clear dev.opengym.rn | Out-Null }
+Invoke-Adb shell am force-stop dev.opengym.rn | Out-Null
+Invoke-Adb shell am start -n dev.opengym.rn/.MainActivity | Out-Null
+
+Wait-Text '首页' 90 | Out-Null
+foreach ($tab in @('计划', '统计', '动作库')) {
+  if (-not (Find-Node (Read-Ui) $tab)) { throw "missing tab: $tab" }
+}
+Screenshot 'five-tab-home'
+
+Tap-Text '设置'
+Wait-Text '设置' 20 | Out-Null
+Ensure-Text '服务器地址' | Out-Null
+Ensure-Text '配对码' | Out-Null
+Screenshot 'five-tab-settings'
+Invoke-Adb shell input keyevent 4 | Out-Null
+Wait-Text '首页' 15 | Out-Null
+
+Tap-Text '计划'
+Wait-Text '计划' 15 | Out-Null
+Tap-Text '训练计划'
+Wait-Text '新训练日' 15 | Out-Null
+Ensure-Text '全身力量 A' | Out-Null
+Screenshot 'five-tab-plan'
+Tap-Text '全身力量 A'
+Wait-Text '编辑计划' 15 | Out-Null
+Screenshot 'five-tab-plan-editor'
+Invoke-Adb shell input keyevent 4 | Out-Null
+Wait-Text '计划' 15 | Out-Null
+
+Tap-Text '统计'
+Wait-Text '统计' 15 | Out-Null
+Screenshot 'five-tab-stats'
+
+Tap-Text '动作库'
+Wait-Text '动作库' 15 | Out-Null
+Ensure-Text '5632 个动画动作 + 0 个自建' | Out-Null
+Screenshot 'five-tab-library'
+Tap-Text '筛选'
+Wait-Text '筛选' 15 | Out-Null
+Screenshot 'five-tab-library-filter'
+Tap-Text '完成'
+Wait-Text '动作库' 15 | Out-Null
+
+Tap-Text '开始'
+Wait-Text '开始训练' 15 | Out-Null
+Screenshot 'five-tab-start-sheet'
+Tap-Text '取消'
+Wait-Text '动作库' 15 | Out-Null
+
+Write-Output 'PASS: five-tab shell, home, plan, stats, library, filter and start sheet verified'

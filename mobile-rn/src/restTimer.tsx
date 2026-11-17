@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { AppState, Text, View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { ownExerciseRest } from '../../frontend/src/lib/supersetFlow.js';
-import { Button, Card, styles } from './ui';
+import { IconButton, IconTile, Text, useTheme } from './design';
 
 const DEFAULT_REST_SECONDS = 90;
 
@@ -17,12 +17,18 @@ export function resolveRestSeconds(
     : DEFAULT_REST_SECONDS;
 }
 
+/**
+ * Bottom rest dock for the running workout. It renders nothing without an active
+ * rest, and the countdown keeps ticking against `endsAt` so backgrounding the app
+ * or a restart cannot drift it.
+ */
 export function RestTimer({ endsAt, onCancel }: { endsAt: number | null; onCancel: () => void }) {
   if (endsAt === null) return null;
   return <RestCountdown key={endsAt} endsAt={endsAt} onCancel={onCancel} />;
 }
 
 function RestCountdown({ endsAt, onCancel }: { endsAt: number; onCancel: () => void }) {
+  const theme = useTheme();
   const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
@@ -48,13 +54,30 @@ function RestCountdown({ endsAt, onCancel }: { endsAt: number; onCancel: () => v
   if (seconds <= 0) return null;
 
   const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
-  return <Card>
-    <View style={[styles.row, styles.between]}>
-      <View style={styles.grow}>
-        <Text style={styles.muted}>组间休息</Text>
-        <Text accessibilityRole="timer" style={styles.title}>{time}</Text>
+  return (
+    <View
+      style={{
+        backgroundColor: theme.colors.bgEl,
+        borderTopColor: theme.colors.sepOp,
+        borderTopWidth: theme.sizes.hairline,
+        paddingHorizontal: theme.layout.pagePadding,
+        paddingVertical: theme.space.sm,
+      }}
+      testID="rest-dock"
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: theme.space.md }}>
+        <IconTile name="timer" size="sm" tone="soft" />
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text tone="secondary" variant="caption">组间休息</Text>
+          <Text accessibilityRole="timer" variant="title3">{time}</Text>
+        </View>
+        <IconButton
+          accessibilityLabel="取消休息"
+          name="xmark"
+          onPress={onCancel}
+          size="sm"
+        />
       </View>
-      <Button label="取消休息" onPress={onCancel} secondary />
     </View>
-  </Card>;
+  );
 }

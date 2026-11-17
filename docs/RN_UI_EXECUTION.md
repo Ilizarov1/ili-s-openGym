@@ -2,6 +2,8 @@
 
 本文是 [RN_UI_DESIGN_SYSTEM.md](RN_UI_DESIGN_SYSTEM.md) 的执行清单。按顺序执行；任务 1、2、3 可并行，任务 4 之后由主 Agent 完成。每个任务都写明了文件、接口、约束和验收命令。
 
+页面重构（五 Tab、首页、计划、统计、动作库、设置）见 [RN_UI_SCREEN_MIGRATION.md](RN_UI_SCREEN_MIGRATION.md)。五 Tab 冒烟脚本为 `mobile-rn/scripts/five-tab-smoke.ps1`。
+
 ## 0. 前置条件
 
 - 工作目录：`D:\dev\open-gym`。

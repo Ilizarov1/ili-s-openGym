@@ -21,12 +21,15 @@ import {
   Segmented,
   Sheet,
   StatTile,
+  Stepper,
+  SwitchRow,
   TabBar,
   Text,
+  TextField,
 } from '../components';
 import { ICON_NAMES } from '../icons/Icon';
 import { Icon } from '../icons/Icon';
-import { BodyMap, MediaThumb, MiniBodyMap } from '../patterns';
+import { ActionSheet, BodyMap, MediaThumb, MiniBodyMap } from '../patterns';
 import { useTheme, useThemeController } from '../ThemeProvider';
 import { palette, typography } from '../tokens';
 import type { AccentName, ThemeMode } from '../themes';
@@ -131,6 +134,11 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
   const [range, setRange] = useState('week');
   const [search, setSearch] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [serverAddress, setServerAddress] = useState('');
+  const [restAlerts, setRestAlerts] = useState(true);
+  const [weight, setWeight] = useState('82.5');
+  const [actionSheetOpen, setActionSheetOpen] = useState(false);
+  const [lastAction, setLastAction] = useState('未选择');
 
   const styles = useMemo(
     () =>
@@ -193,6 +201,12 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
         },
         searchResults: {
           marginTop: theme.space.sm,
+        },
+        formStack: {
+          gap: theme.space.md,
+        },
+        stepperStack: {
+          gap: theme.space.sm,
         },
         sheetText: {
           marginBottom: theme.space.md,
@@ -419,6 +433,113 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
       </GallerySection>
 
       <GallerySection
+        title="文本输入"
+        description="标签 + 输入框；错误文字优先于帮助文字。默认用标签作为 accessibilityLabel。"
+        testID="gallery-text-field"
+      >
+        <View style={styles.formStack}>
+          <TextField
+            autoCapitalize="none"
+            autoCorrect={false}
+            helper="局域网练习服务器建议使用 http，配对码一次有效。"
+            keyboardType="url"
+            label="服务器地址"
+            onChangeText={setServerAddress}
+            placeholder="http://192.168.1.10:3000"
+            testID="gallery-text-field-input"
+            value={serverAddress}
+          />
+          <TextField
+            defaultValue="7X4K-92"
+            error="配对码无效或已过期"
+            keyboardType="number-pad"
+            label="配对码"
+            testID="gallery-text-field-error"
+          />
+        </View>
+      </GallerySection>
+
+      <GallerySection
+        title="开关行"
+        description="ListRow 文字 + 原生 Switch；开启为强调色，关闭为 surface3。"
+        testID="gallery-switch-row"
+      >
+        <Card padded={false}>
+          <SwitchRow
+            title="组间休息提醒"
+            subtitle="休息结束时发送通知"
+            value={restAlerts}
+            onValueChange={setRestAlerts}
+          />
+          <Divider inset={theme.layout.listRowPaddingX} />
+          <SwitchRow
+            title="自动同步"
+            subtitle="不可用时显示禁用态"
+            value={false}
+            onValueChange={() => {}}
+            disabled
+          />
+        </Card>
+      </GallerySection>
+
+      <GallerySection
+        title="步进器"
+        description="左减右加、中间可直接输入；输入过程保留原始字符串，只有按钮解析和格式化。"
+        testID="gallery-stepper"
+      >
+        <Card>
+          <View style={styles.stepperStack}>
+            <Stepper
+              accessibilityLabel="重量"
+              value={weight}
+              onChangeText={setWeight}
+              step={2.5}
+              min={0}
+              precision={1}
+              unit="kg"
+            />
+            <Stepper
+              accessibilityLabel="次数"
+              value="8"
+              onChangeText={() => {}}
+              step={1}
+              min={1}
+              max={100}
+              keyboardType="number-pad"
+              unit="次"
+            />
+            <Stepper
+              accessibilityLabel="休息秒数"
+              value="90"
+              onChangeText={() => {}}
+              step={5}
+              min={0}
+              keyboardType="number-pad"
+              unit="秒"
+            />
+          </View>
+        </Card>
+      </GallerySection>
+
+      <GallerySection
+        title="操作菜单"
+        description="Sheet + ListRow 操作项；选择后先关闭 Sheet，再执行动作。"
+        testID="gallery-action-sheet"
+      >
+        <Button
+          variant="secondary"
+          icon="more"
+          onPress={() => setActionSheetOpen(true)}
+          testID="gallery-action-sheet-open"
+        >
+          打开操作菜单
+        </Button>
+        <Text variant="footnote" tone="secondary" style={styles.searchResults}>
+          {`最近操作：${lastAction}`}
+        </Text>
+      </GallerySection>
+
+      <GallerySection
         title="卡片与列表"
         description="Card、ListRow、Divider、Badge、SectionHeader 的标准组合。"
         testID="gallery-card"
@@ -637,6 +758,27 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
           </Chip>
         </View>
       </Sheet>
+
+      <ActionSheet
+        visible={actionSheetOpen}
+        title="计划操作"
+        items={[
+          {
+            label: '开始训练',
+            icon: 'play',
+            tone: 'accent',
+            onPress: () => setLastAction('开始训练'),
+          },
+          { label: '编辑计划', icon: 'pencil', onPress: () => setLastAction('编辑计划') },
+          {
+            label: '删除计划',
+            icon: 'trash',
+            tone: 'danger',
+            onPress: () => setLastAction('删除计划'),
+          },
+        ]}
+        onClose={() => setActionSheetOpen(false)}
+      />
     </Screen>
   );
 }

@@ -4,3 +4,5 @@ export { MiniBodyMap } from './MiniBodyMap';
 export type { MiniBodyMapProps, RoutineExercise, RoutineWithExercises } from './MiniBodyMap';
 export { MediaThumb } from './MediaThumb';
 export type { MediaThumbProps } from './MediaThumb';
+export { ActionSheet } from './ActionSheet';
+export type { ActionItem, ActionSheetProps } from './ActionSheet';

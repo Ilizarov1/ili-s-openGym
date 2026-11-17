@@ -85,8 +85,8 @@ Invoke-Adb reverse tcp:8081 tcp:8081 | Out-Null
 Invoke-Adb shell am force-stop dev.opengym.rn | Out-Null
 Invoke-Adb shell am start -n dev.opengym.rn/.MainActivity | Out-Null
 
-Wait-Text '服务器' 90 | Out-Null
-Tap-Text '服务器'
+Wait-Text '首页' 90 | Out-Null
+Tap-Text '设置'
 $dev = Ensure-Text '设计系统预览'
 Tap-Bounds $dev.bounds
 Wait-Text '设计系统' 30 | Out-Null
