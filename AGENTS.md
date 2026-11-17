@@ -59,6 +59,15 @@ docs/
   RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
   RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
+  rn-p2-training-library/
+    README.md                            P2 高级训练与动作库的顺序和共用验收
+    01_SUPERSETS.md                       超级组需求、设计及新版回归步骤
+    02_DROP_SETS.md                       递减组的计划、分段记录和训练量
+    03_REST_PAUSE.md                      休息暂停组的计划、短休和总次数
+    04_RPE.md                             组评分入口、RPE 录入和历史更正
+    05_RIR.md                             RIR 录入、尺度换算和旧数据兼容
+    06_EXERCISE_FAVORITES.md              动作收藏、筛选和同步
+    07_EXERCISE_DEMOS.md                  内置演示、自定义媒体和异常回退
   SELF_HOSTING.md                        Docker 自托管指南
   SELF_HOSTING_HTTPS.md                  局域网 HTTPS
   SELF_HOSTING_KUBERNETES.md             Kubernetes 部署
