@@ -99,13 +99,14 @@ screenshots in `mobile-rn/dist/ui/superset/`. `dist/` is gitignored.
 .\mobile-rn\scripts\design-gallery-verify.ps1 -Serial emulator-5556
 ```
 
-`ui-capture.ps1 -Fixture` writes the same fixture (now including the superset plans) and captures
-the five-tab screens and contact sheets. Deep links use `opengym://home|plan|stats|library|settings`.
+`ui-capture.ps1 -Fixture` writes the same fixture (superset plans plus a planned drop/rest-pause
+exercise) and captures the five-tab screens and contact sheets. Deep links use
+`opengym://home|plan|stats|library|settings`. Do not add `e2e=1` to scripts that assert real rest
+timers: it freezes the workout and rest countdowns for visual-only checks.
 
 Run the source gates before any device script:
 
 ```powershell
 cd mobile-rn
-npm.cmd run typecheck
-npm.cmd run design:check
+npm.cmd run check
 ```
