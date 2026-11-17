@@ -18,12 +18,14 @@ import {
   ListRow,
   Screen,
   SectionHeader,
+  Segmented,
   SwitchRow,
   Text,
   TextField,
   useTheme,
 } from '../design';
 import type { Connection } from '../server';
+import type { EffortScale } from '../training';
 
 export type SettingsOperation = 'pair' | 'sync' | 'disconnect' | null;
 
@@ -33,6 +35,7 @@ export type SettingsScreenProps = {
   lastSync: number | null;
   operation: SettingsOperation;
   restAlerts: boolean;
+  effort: EffortScale;
   onClose: () => void;
   onConnect: (address: string, code: string) => void;
   onSync: () => void;
@@ -41,6 +44,7 @@ export type SettingsScreenProps = {
   onRestore: () => void;
   onMergePractice: () => void;
   onToggleRestAlerts: () => void;
+  onChangeEffort: (effort: EffortScale) => void;
   onOpenAlarmSettings: () => void;
   onOpenGallery: () => void;
   /** 来自 `useGym` 的错误提示，例如同步失败。 */
@@ -77,6 +81,7 @@ export function SettingsScreen({
   lastSync,
   operation,
   restAlerts,
+  effort,
   onClose,
   onConnect,
   onSync,
@@ -85,6 +90,7 @@ export function SettingsScreen({
   onRestore,
   onMergePractice,
   onToggleRestAlerts,
+  onChangeEffort,
   onOpenAlarmSettings,
   onOpenGallery,
   notice,
@@ -232,6 +238,27 @@ export function SettingsScreen({
           ) : null}
         </Card>
       ) : null}
+
+      <SectionHeader style={{ marginTop: theme.space.sm }} title="训练" />
+      <Card gap={theme.space.sm}>
+        <Text variant="headline">训练评分</Text>
+        <Text tone="secondary" variant="subhead">
+          记录每组还剩几次（RIR）或主观用力程度（RPE）。有氧始终按 RPE 记录。
+        </Text>
+        <Segmented
+          onChange={onChangeEffort}
+          options={[
+            { value: 'none', label: '关闭' },
+            { value: 'rpe', label: 'RPE' },
+            { value: 'rir', label: 'RIR' },
+          ]}
+          testID="settings-effort"
+          value={effort}
+        />
+        <Text tone="secondary" variant="footnote">
+          切换只影响之后的新评分，已有历史仍按原尺度显示。
+        </Text>
+      </Card>
 
       <SectionHeader style={{ marginTop: theme.space.sm }} title="备份与数据" />
       <Card padded={false}>

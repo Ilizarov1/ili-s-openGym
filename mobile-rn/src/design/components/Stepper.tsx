@@ -14,6 +14,12 @@ export type StepperProps = {
   keyboardType?: 'decimal-pad' | 'number-pad';
   unit?: string;
   disabled?: boolean;
+  /**
+   * The value the first `+` writes when the field is empty (upstream stepEffort:
+   * an unrated RIR starts at 0, an unrated RPE at 6). Without it, `+`/`-` keep
+   * the old min-based behaviour.
+   */
+  emptyValue?: number;
   accessibilityLabel: string;
 };
 
@@ -69,6 +75,7 @@ export function Stepper({
   keyboardType = 'decimal-pad',
   unit,
   disabled = false,
+  emptyValue,
   accessibilityLabel,
 }: StepperProps) {
   const theme = useTheme();
@@ -77,11 +84,20 @@ export function Stepper({
   const parsed = value.trim() === '' ? Number.NaN : Number(value.replace(',', '.'));
   const current = Number.isFinite(parsed) ? parsed : undefined;
 
-  const minusDisabled = disabled || (current !== undefined && min !== undefined && current <= min);
+  const minusDisabled = disabled ||
+    (emptyValue !== undefined && current === undefined) ||
+    (current !== undefined && min !== undefined && current <= min);
   const plusDisabled = disabled || (current !== undefined && max !== undefined && current >= max);
 
   const adjust = (direction: 1 | -1) => {
     if (disabled) return;
+    // An empty effort field is unrated, not zero: the first `+` writes the scale's
+    // own floor (0 RIR / 6 RPE), and `-` leaves it empty.
+    if (current === undefined && emptyValue !== undefined) {
+      if (direction < 0) return;
+      onChangeText(format(clamp(emptyValue, min, max), places));
+      return;
+    }
     const base = current ?? clamp(min ?? 0, min, max);
     const next = clamp(base + step * direction, min, max);
     onChangeText(format(next, places));

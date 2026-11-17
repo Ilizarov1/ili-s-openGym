@@ -2,7 +2,7 @@ import { randomUUID } from 'expo-crypto';
 import { chooseFixedWeek, refillIfComplete, saveRotation } from '../../frontend/src/lib/rotation';
 import { deleteRoutine } from '../../frontend/src/lib/routines';
 import { effectiveRoutines } from '../../frontend/src/lib/history';
-import { inProfileUnit, localDate, unitOf, workoutKey, type CustomExercise, type Profile, type Routine, type Unit, type Workout } from './training';
+import { inProfileUnit, localDate, unitOf, workoutKey, type CustomExercise, type EffortScale, type Profile, type Routine, type Unit, type Workout } from './training';
 
 export type ProfileChange =
   | { kind: 'routine'; routine: Routine; create: true }
@@ -10,6 +10,7 @@ export type ProfileChange =
   | { kind: 'deleteRoutine'; key: string }
   | { kind: 'custom'; exercise: CustomExercise; create: boolean }
   | { kind: 'workout'; key: string; patch: Partial<Workout>; unit: Unit }
+  | { kind: 'effort'; effort: EffortScale }
   | { kind: 'week'; day: number; ids: string[]; onlyIfEmpty?: boolean }
   | { kind: 'rotation'; key: string; ids: string[]; at: number; onlyIfEmpty?: boolean };
 
@@ -65,6 +66,20 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
           const converted = entries ? inProfileUnit({ unit: change.unit, workout: { ...workout, id, entries, vol } }, unitOf(state)) : null;
           return { ...workout, ...details, id, ...(converted ? { entries: converted.entries, vol: converted.vol } : {}) };
         }) };
+      case 'effort': {
+        // Only the preference changes. History keeps whatever scale each row was
+        // saved in, and an old `showRir` is dropped so the explicit answer wins.
+        // Choosing a scale also lifts a synced web profile's Effort module switch:
+        // without that the row would look dead on this device.
+        const next = { ...state, effort: change.effort };
+        delete next.showRir;
+        if (change.effort !== 'none') {
+          const modules = state.modules && typeof state.modules === 'object' && !Array.isArray(state.modules)
+            ? state.modules : {};
+          next.modules = { ...modules, effort: true };
+        }
+        return next;
+      }
       case 'week': {
         if (change.onlyIfEmpty && state.week?.[String(change.day)]) return state;
         const next = editablePlan(state);
