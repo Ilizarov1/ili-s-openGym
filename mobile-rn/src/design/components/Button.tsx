@@ -115,6 +115,7 @@ function variantColors(theme: Theme, variant: ButtonVariant): VariantColors {
         foreground: colors.danger,
         tone: 'danger',
       };
+    case 'secondary':
     default:
       return {
         background: colors.surface2,

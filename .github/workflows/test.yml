@@ -44,6 +44,7 @@ jobs:
       mcp: ${{ steps.f.outputs.mcp == 'true' || github.event_name == 'workflow_dispatch' }}
       images: ${{ steps.f.outputs.images == 'true' || github.event_name == 'workflow_dispatch' }}
       android: ${{ steps.f.outputs.android == 'true' || github.event_name == 'workflow_dispatch' }}
+      rn: ${{ steps.f.outputs.rn == 'true' || github.event_name == 'workflow_dispatch' }}
       catalogue: ${{ steps.f.outputs.catalogue == 'true' || github.event_name == 'workflow_dispatch' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -109,6 +110,13 @@ jobs:
               - 'frontend/scripts/check-mobile-bundle.mjs'
               - 'scripts/android/**'
               - 'scripts/catalogue/stage-media.mjs'
+            rn:
+              - '.github/workflows/test.yml'
+              - 'mobile-rn/**'
+              # RN imports shared training and catalogue code and checks the upstream icon names.
+              - 'frontend/src/lib/**'
+              - 'frontend/src/exercise-names/**'
+              - 'frontend/src/components/Icon.jsx'
             catalogue:
               - '.github/workflows/test.yml'
               - 'catalogue/**'
@@ -475,6 +483,26 @@ jobs:
               | grep -o '<testsuite [^>]*' | sed -E 's/.*name="([^"]*)".*tests="([0-9]+)".*failures="([0-9]+)".*/- JVM: \1: \2 tests, \3 failed/' || true
           } >> "$GITHUB_STEP_SUMMARY"
 
+  rn:
+    needs: changes
+    if: needs.changes.outputs.rn == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile-rn
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: mobile-rn/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check
+
   # One summary of the numbers of every suite that ran.
   report:
     needs: [frontend, api, mcp]
@@ -506,7 +534,7 @@ jobs:
   # The single required check. Green when every job that ran passed and the others were
   # skipped because nothing they check changed.
   tests-ok:
-    needs: [changes, frontend, api, mcp, catalogue, images, android]
+    needs: [changes, frontend, api, mcp, catalogue, images, android, rn]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 2

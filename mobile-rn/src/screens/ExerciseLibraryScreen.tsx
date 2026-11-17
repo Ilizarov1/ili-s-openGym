@@ -277,7 +277,7 @@ export function ExerciseLibraryScreen({
   return (
     <Screen scroll={false} testID="library-screen">
       <FlatList
-        contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: 28 }}
+        contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: theme.layout.listBottomPadding }}
         data={rows}
         initialNumToRender={12}
         keyboardDismissMode="on-drag"

@@ -259,6 +259,8 @@ mobile-rn/src/design/
 | 卡片内边距 | 16 |
 | 卡片间距 | 12 |
 | 页面标题下方 | 18 |
+| 启动页内边距 `layout.loadingPadding` | 24 |
+| 动作库和统计列表底部内边距 `layout.listBottomPadding` | 28 |
 | 列表行左右内边距 | 14 |
 | 列表行上下内边距 | 11 |
 | 列表行最小高度 | 46（实际点击区不小于 44） |
@@ -860,26 +862,24 @@ type MediaThumbProps = {
 
 ### 11.1 硬规则
 
-1. `src/screens/**` 和 `App.tsx` 不允许出现十六进制颜色、`fontSize`、`borderRadius` 原始数字。
+1. 应用样式中的颜色、字号、间距和圆角使用设计 token。`flex: 1`、百分比布局和用于清零的间距可以直接写。
 2. 页面不允许从 `src/ui.tsx` 导入新组件；迁移完成后删除该文件。
 3. 列表行不允许直接堆多个全宽按钮；操作放详情、chevron 或 sheet。
 4. 新图标必须来自上游 `Icon.jsx`；新颜色必须来自 token。
 5. 组件新增或修改必须同步 `DesignGallery`。
 6. 只有 `design/` 内部可以写样式常量；页面只传布局相关的 `style`（如 `marginTop`）。
 
-### 11.2 检查脚本
+### 11.2 自动检查
 
-`mobile-rn/scripts/check-design-system.mjs`：
-
-- 解析上游 `Icon.jsx` 的图标名，与 `design/icons/icon-paths.tsx` 的 `ICON_NAMES` 比较，缺少时退出码 1。
-- 扫描 `src/screens/**` 和 `App.tsx`（存在时）中的十六进制颜色和 `fontSize`，发现后退出码 1；迁移期可对 `App.tsx` 设置白名单，清理后移除。
-- 输出检查摘要。
-
-`package.json`：
-
-```json
-"design:check": "node scripts/check-design-system.mjs"
+```powershell
+npm.cmd --prefix .\mobile-rn run check
 ```
+
+`eslint.config.js` 使用 Expo Flat Config。在 RN 源码中拦截 Hooks、类型诊断绕过、未处理的 Promise、遗漏的联合类型分支、裸文本、缺少状态的复选框，以及对 RN 内部路径、Node 内置模块、Capacitor 和 Web 界面的导入。在业务页面额外限制设计系统已封装的原生组件、`fetch` 和 SQLite 与 SecureStore 的直接访问。
+
+`open-gym/use-design-tokens` 检查 `src/design` 之外的 `StyleSheet.create`、`useThemedStyles` 和 JSX 样式属性中的静态值。`lint:rules` 运行规则回归用例。`design:check` 对照上游 `Icon.jsx` 和 RN 图标名。列表的 `react/no-array-index-key` 先作为告警，已有的历史组位置和固定列表可单独核对。
+
+GitHub Actions 在 RN 源码或共用依赖变更时运行 `check`，结果计入 `tests-ok`。
 
 ### 11.3 变更流程
 

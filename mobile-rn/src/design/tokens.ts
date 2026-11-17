@@ -140,6 +140,8 @@ export const shadows: Readonly<{
 /** Fixed layout metrics: page and card padding, the list-row box, section gaps. */
 export const layout = {
   pagePadding: 16,
+  loadingPadding: 24,
+  listBottomPadding: 28,
   cardPadding: 16,
   cardGap: 12,
   headerBottom: 18,

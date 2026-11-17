@@ -27,6 +27,7 @@ import {
   SectionHeader,
   StatTile,
   Text,
+  space,
   useTheme,
 } from '../design';
 import { exerciseUnits } from '../supersets';
@@ -68,7 +69,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: space.sm,
   },
 });
 
@@ -281,7 +282,7 @@ export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill }: 
   return (
     <Screen scroll={false} testID="stats-screen">
       <FlatList
-        contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: 28 }}
+        contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: theme.layout.listBottomPadding }}
         data={records}
         keyExtractor={item => workoutKey(item.workout)}
         keyboardShouldPersistTaps="handled"

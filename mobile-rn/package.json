@@ -5,6 +5,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
+    "lint": "eslint App.tsx index.ts src",
+    "lint:rules": "node --test --test-reporter=dot scripts/eslint-rules.test.cjs",
+    "check": "npm run lint && npm run lint:rules && npm run typecheck && npm run design:check",
     "typecheck": "tsc --noEmit",
     "design:check": "node scripts/check-design-system.mjs"
   },
@@ -27,8 +30,11 @@
     "react-native-svg": "15.15.3"
   },
   "devDependencies": {
+    "@eslint-community/eslint-utils": "^4.10.1",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~55.0.25",
+    "eslint": "^9.39.4",
+    "eslint-config-expo": "~55.0.1",
     "typescript": "~5.9.2"
   },
   "license": "AGPL-3.0-or-later",

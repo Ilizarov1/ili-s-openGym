@@ -20,6 +20,7 @@ import {
   SectionHeader,
   Segmented,
   Text,
+  space,
   useTheme,
 } from '../design';
 import type { Profile, Routine } from '../training';
@@ -37,7 +38,7 @@ export type PlanScreenProps = {
 
 type PlanView = 'schedule' | 'routines';
 
-const VIEW_OPTIONS: Array<{ value: PlanView; label: string }> = [
+const VIEW_OPTIONS: { value: PlanView; label: string }[] = [
   { value: 'schedule', label: '日程' },
   { value: 'routines', label: '训练计划' },
 ];
@@ -50,18 +51,18 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: space.sm,
   },
   trailing: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
   },
   hint: {
-    marginBottom: 12,
+    marginBottom: space.md,
   },
   footerButton: {
-    marginTop: 4,
+    marginTop: space.xs,
   },
 });
 

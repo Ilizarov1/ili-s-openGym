@@ -13,8 +13,7 @@
 5. 改完运行：
    ```powershell
    cd mobile-rn
-   npm.cmd run typecheck
-   npm.cmd run design:check
+   npm.cmd run check
    ```
 6. 涉及布局、颜色、字号、图标或页面结构时，补一次视觉截图验收；功能逻辑改动再补对应 smoke/regression。
 
@@ -124,7 +123,7 @@ URL 必须整条加单引号，否则 `adb shell` 会把 `&routine` 截断。深
 
 | 阶段 | 做什么 | 不做什么 |
 | --- | --- | --- |
-| 开发中 | `typecheck`、`design:check`、必要的 `uiautomator` 断言 | 每改一行就截图 |
+| 开发中 | `check`、必要的 `uiautomator` 断言 | 每改一行就截图 |
 | 完成一个页面/阶段 | 深链打开该页面，截 1 张；跑一次 smoke | 截图每个点击步骤 |
 | 完成一组页面 | `ui-capture` 生成 contact sheet，只看拼图 | 逐张读全分辨率图 |
 | 功能改动 | `five-tab-smoke.ps1` 或对应回归 | 用截图证明数据写入 |
@@ -159,7 +158,7 @@ URL 必须整条加单引号，否则 `adb shell` 会把 `&routine` 截断。深
 截图和日志放在 `mobile-rn/dist/ui/`（gitignore）。交付记录写：
 
 - 模拟器序列号、Android 版本、分辨率/密度。
-- `typecheck`、`design:check`、smoke 脚本结果。
+- `check`、smoke 脚本结果。
 - contact sheet 或单张截图路径。
 - APK 路径、版本、`apksigner` 结果和 SHA-256。
 - 已知问题：例如浅色主题状态栏、fixture 依赖 Debug APK、旧 regression 未适配。

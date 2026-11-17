@@ -79,6 +79,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 
 ## 工程验收
 
+- [x] **RN 静态检查**。`mobile-rn` 的 `npm.cmd run check` 已通过 ESLint、规则回归、类型和图标检查。GitHub Actions 的 RN job 汇入 `tests-ok`。[规则和执行入口](RN_UI_DESIGN_SYSTEM.md#112-自动检查)
 - [x] **P0 · 核心回归**。Android `0.1.2` 通过断网记组、重启恢复、联网补传、重复同步去重和 P0 功能回归。[回归脚本](../mobile-rn/scripts/android-regression.ps1)
 - [x] **P1 · 可见 Android 模拟器与独立 API 验收**。七项功能已在 `0.1.3` 逐项通过。[验收记录](RN_ANDROID_EXECUTION.md#p1-验收结果)
 - [x] **设计系统基础**。tokens、主题、126 个图标、基础组件、身体图、动作缩略图、开发画廊和图标检查脚本。2026-11-17 在 Android 36 可见模拟器 `emulator-5556` 通过设计画廊 dark/light、主题切换、sheet、身体图、TabBar 和旧页面冒烟；截图和命令见 `docs/RN_UI_EXECUTION.md#8-验收结果2026-11-17`。

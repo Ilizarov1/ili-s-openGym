@@ -27,14 +27,13 @@ import {
   Text,
   TextField,
 } from '../components';
-import { ICON_NAMES } from '../icons/Icon';
-import { Icon } from '../icons/Icon';
+import { ICON_NAMES, Icon } from '../icons/Icon';
 import { ActionSheet, BodyMap, MediaThumb, MiniBodyMap } from '../patterns';
 import { useTheme, useThemeController } from '../ThemeProvider';
 import { palette, typography } from '../tokens';
 import type { AccentName, ThemeMode } from '../themes';
 
-const MODES: Array<{ value: ThemeMode; label: string }> = [
+const MODES: { value: ThemeMode; label: string }[] = [
   { value: 'dark', label: '深色' },
   { value: 'light', label: '浅色' },
 ];
@@ -99,7 +98,7 @@ function GallerySection({
 
 function TypographyRows(): React.ReactElement {
   const theme = useTheme();
-  const variants = Object.keys(typography) as Array<keyof typeof typography>;
+  const variants = Object.keys(typography) as (keyof typeof typography)[];
   return (
     <>
       {variants.map(variant => {

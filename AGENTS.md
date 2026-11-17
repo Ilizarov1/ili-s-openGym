@@ -8,7 +8,8 @@ Windows 环境统一使用 PowerShell。普通问答只读资料和源码，不�
 mobile-rn/           Expo Android 工程与训练、历史、配对界面
 mobile-rn/src/       计划、动作与历史编辑，训练数据、备份、提醒和同步
 mobile-rn/src/design/  RN 设计系统：tokens、主题、图标、基础组件、身体图和开发画廊
-mobile-rn/scripts/   Android 模拟器回归、五 Tab 冒烟、视觉截图、fixture 和设计系统检查
+mobile-rn/eslint.config.js  RN ESLint 配置和导入边界
+mobile-rn/scripts/   Android 模拟器回归、五 Tab 冒烟、视觉截图、fixture、自定义 lint 和图标检查
 frontend/src/        Web 与 Capacitor 共用的页面、状态、训练和同步逻辑
 frontend/android/    上游 Capacitor Android 工程与原生插件
 frontend/ios/        上游 iOS、Apple Watch 和小组件

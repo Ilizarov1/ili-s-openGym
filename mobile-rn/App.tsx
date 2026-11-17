@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, BackHandler, Linking, Modal, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -34,30 +34,35 @@ type Panel =
   | { kind: 'library'; replaceIndex?: number }
   | { kind: 'design' };
 
+function showOperationError(error: unknown) {
+  Alert.alert('操作失败', error instanceof Error ? error.message : '请重试。');
+}
+
 function AppScreen() {
   const gym = useGym();
+  const { change, workspace } = gym;
   const theme = useTheme();
-  const themeController = useThemeController();
+  const { setMode, setAccent } = useThemeController();
   const [tab, setTab] = useState<Tab>('home');
   const [panel, setPanel] = useState<Panel | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
   const [e2e, setE2e] = useState(false);
   const [startRequest, setStartRequest] = useState<{ routine?: string } | null>(null);
-  const connection = gym.workspace?.connection;
-  const currentDraft = gym.workspace?.data.draft;
+  const connection = workspace?.connection;
+  const currentDraft = workspace?.data.draft;
   const restAlertError = useRestNotification(
-    gym.workspace ? gym.workspace.data.restAlerts === true : undefined,
+    workspace ? workspace.data.restAlerts === true : undefined,
     currentDraft?.rest?.endsAt,
   );
 
-  const closePanel = () => {
+  const closePanel = useCallback(() => {
     if (panel?.kind === 'design') {
-      themeController.setMode('dark');
-      themeController.setAccent('green');
+      setMode('dark');
+      setAccent('green');
     }
     setPanel(null);
-  };
+  }, [panel?.kind, setMode, setAccent]);
 
   useEffect(() => {
     if (connection) setPanel(null);
@@ -95,7 +100,7 @@ function AppScreen() {
       if (currentDraft) {
         Alert.alert('训练进行中', '完成或放弃训练后再离开。', [
           { text: '继续训练', style: 'cancel' },
-          { text: '放弃训练', style: 'destructive', onPress: () => gym.change(data => ({ ...data, draft: null })) },
+          { text: '放弃训练', style: 'destructive', onPress: () => change(data => ({ ...data, draft: null })) },
         ]);
         return true;
       }
@@ -103,40 +108,37 @@ function AppScreen() {
       return false;
     });
     return () => subscription.remove();
-  }, [currentDraft, panel, tab]);
+  }, [change, closePanel, currentDraft, panel, tab]);
 
   // A deep link can open a tab/panel or ask for a workout. This must stay
   // above the workspace loading return so the hook order never changes.
   useEffect(() => {
-    if (!startRequest || !gym.workspace) return;
+    if (!startRequest || !workspace) return;
     const request = startRequest;
     setStartRequest(null);
-    if (gym.workspace.data.draft) return;
-    const { profile, queue } = gym.workspace.data;
+    if (workspace.data.draft) return;
+    const { profile, queue } = workspace.data;
     const routine = request.routine ? (profile.routines ?? []).find(item => item.id === request.routine) : undefined;
     const next = routine
       ? startWorkout(routine, profile, queue)
       : startWorkout({ id: '', name: '自由训练', ex: [] }, profile, queue);
-    gym.change(data => ({ ...data, draft: next }));
-  }, [gym.workspace, startRequest]);
+    change(data => ({ ...data, draft: next }));
+  }, [change, startRequest, workspace]);
 
-  if (!gym.workspace) {
-    return <View style={{ flex: 1, backgroundColor: theme.colors.bg, padding: 24, justifyContent: 'center' }}>
+  if (!workspace) {
+    return <View style={{ flex: 1, backgroundColor: theme.colors.bg, padding: theme.layout.loadingPadding, justifyContent: 'center' }}>
       <StatusBar style="light" />
       <Text variant="title3">openGym RN</Text>
-      <Text tone="secondary" style={{ marginTop: 8 }}>{gym.notice || '正在读取本机数据…'}</Text>
+      <Text tone="secondary" style={{ marginTop: theme.space.sm }}>{gym.notice || '正在读取本机数据…'}</Text>
     </View>;
   }
 
-  const { profile, draft, queue, workoutDeletes } = gym.workspace.data;
-  const disabled = gym.operation !== null || dataBusy;
+  const { profile, draft, queue, workoutDeletes } = workspace.data;
   const openWorkout = (next: Draft) => gym.change(data => ({ ...data, draft: next }));
 
-  const performDataAction = async (work: () => Promise<void>) => {
+  const performDataAction = (work: () => Promise<void>) => {
     setDataBusy(true);
-    try { await work(); }
-    catch (error) { Alert.alert('操作失败', error instanceof Error ? error.message : '请重试。'); }
-    finally { setDataBusy(false); }
+    Promise.resolve().then(work).catch(showOperationError).finally(() => setDataBusy(false));
   };
 
   const saveWorkout = () => {
@@ -223,15 +225,15 @@ function AppScreen() {
   };
 
   const toggleRestAlerts = () => {
-    if (gym.workspace!.data.restAlerts) {
+    if (workspace.data.restAlerts) {
       gym.change(data => ({ ...data, restAlerts: false }));
       return;
     }
-    void performDataAction(async () => {
+    performDataAction(async () => {
       if (await enableRestNotifications()) gym.change(data => ({ ...data, restAlerts: true }));
       else Alert.alert('需要通知权限', '请在 Android 设置中允许 openGym 发送通知。', [
         { text: '关闭', style: 'cancel' },
-        { text: '打开设置', onPress: () => void Linking.openSettings() },
+        { text: '打开设置', onPress: () => { Linking.openSettings().catch(showOperationError); } },
       ]);
     });
   };
@@ -296,7 +298,7 @@ function AppScreen() {
       <TabBar tabs={tabs} active={tab} onSelect={key => setTab(key as Tab)} onStart={openStart} />
     </View>}
 
-    {panel && <Modal visible onRequestClose={closePanel}>
+    {panel ? <Modal visible onRequestClose={closePanel}>
       <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
         {panel.kind === 'plan' && <PlanEditorScreen
           profile={profile}
@@ -333,21 +335,25 @@ function AppScreen() {
           pending={gym.pending}
           lastSync={gym.lastSync}
           operation={gym.operation}
-          restAlerts={gym.workspace.data.restAlerts === true}
+          restAlerts={workspace.data.restAlerts === true}
           effort={effortOf(profile)}
           onClose={closePanel}
-          onConnect={(address, code) => { void gym.connect(address, code); }}
-          onSync={() => void gym.sync()}
-          onDisconnect={() => void gym.disconnect()}
-          onExport={() => void performDataAction(() => exportBackup(gym.workspace!.data))}
-          onRestore={() => void performDataAction(async () => {
+          onConnect={(address, code) => { gym.connect(address, code).catch(showOperationError); }}
+          onSync={() => { gym.sync().catch(showOperationError); }}
+          onDisconnect={() => { gym.disconnect().catch(showOperationError); }}
+          onExport={() => performDataAction(() => exportBackup(workspace.data))}
+          onRestore={() => performDataAction(async () => {
             const backup = await pickBackup();
             if (backup) confirmRestore(backup);
           })}
-          onMergePractice={() => void performDataAction(async () => confirmRestore(snapshotOf(readLocal(null)), true))}
+          onMergePractice={() => performDataAction(async () => confirmRestore(snapshotOf(readLocal(null)), true))}
           onToggleRestAlerts={toggleRestAlerts}
           onChangeEffort={effort => gym.commit([{ kind: 'effort', effort }])}
-          onOpenAlarmSettings={() => void Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM').catch(() => Linking.openSettings())}
+          onOpenAlarmSettings={() => {
+            Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM')
+              .catch(() => Linking.openSettings())
+              .catch(showOperationError);
+          }}
           onOpenGallery={() => setPanel({ kind: 'design' })}
           notice={gym.notice}
           restAlertError={restAlertError}
@@ -362,7 +368,7 @@ function AppScreen() {
         />}
         {panel.kind === 'design' && <DesignGallery onClose={closePanel} />}
       </View>
-    </Modal>}
+    </Modal> : null}
 
     <StartSheet
       visible={startOpen}

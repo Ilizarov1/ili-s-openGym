@@ -18,6 +18,7 @@ import {
   Screen,
   SectionHeader,
   Text,
+  space,
   useTheme,
 } from '../design';
 import { workoutKey, type Profile, type Routine, type Unit, type Workout } from '../training';
@@ -48,8 +49,8 @@ const styles = StyleSheet.create({
   badges: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 12,
+    gap: space.sm,
+    marginBottom: space.md,
   },
   weekRow: {
     flexDirection: 'row',
@@ -59,7 +60,7 @@ const styles = StyleSheet.create({
   dayCell: {
     flex: 1,
     alignItems: 'center',
-    gap: 4,
+    gap: space.xs,
   },
   dayNumber: {
     alignItems: 'center',
@@ -68,18 +69,18 @@ const styles = StyleSheet.create({
   routineHead: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: space.md,
   },
   routineTitle: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: space.xxs,
   },
   startButton: {
     alignSelf: 'flex-end',
   },
   emptyHint: {
-    marginBottom: 12,
+    marginBottom: space.md,
   },
 });
 

@@ -27,18 +27,16 @@ export function useGym() {
   useEffect(() => {
     let mounted = true;
     async function initialize() {
-      try {
-        const connection = await readConnection();
-        if (mounted) show({ connection, data: readLocal(connection) });
-      } catch {
-        if (mounted) setNotice('本机数据读取失败，请关闭后重开应用。');
-      }
+      const connection = await readConnection();
+      if (mounted) show({ connection, data: readLocal(connection) });
     }
-    void initialize();
+    initialize().catch(() => {
+      if (mounted) setNotice('本机数据读取失败，请关闭后重开应用。');
+    });
     return () => { mounted = false; };
   }, [show]);
 
-  function change(update: (data: LocalState) => LocalState) {
+  const change = useCallback((update: (data: LocalState) => LocalState) => {
     const previous = current.current;
     if (!previous) return false;
     try {
@@ -50,7 +48,7 @@ export function useGym() {
       setNotice('本机保存失败，请检查可用存储空间。');
       return false;
     }
-  }
+  }, [show]);
 
   function commit(values: ProfileChange[]) {
     const changes = prepareChanges(values);
@@ -106,19 +104,23 @@ export function useGym() {
     });
   }, [run, show]);
 
+  const syncInBackground = useCallback(() => {
+    sync().catch(error => setNotice(message(error)));
+  }, [sync]);
+
   const connection = workspace?.connection;
   const pending = (workspace?.data.queue.length ?? 0) + Object.keys(workspace?.data.workoutDeletes ?? {}).length + (workspace?.data.changes?.length ?? 0);
   useEffect(() => {
     if (!connection) return;
-    void sync();
-    const subscription = AppState.addEventListener('change', state => { if (state === 'active') void sync(); });
-    const timer = setInterval(() => { if (AppState.currentState === 'active') void sync(); }, 30000);
+    syncInBackground();
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') syncInBackground(); });
+    const timer = setInterval(() => { if (AppState.currentState === 'active') syncInBackground(); }, 30000);
     return () => { subscription.remove(); clearInterval(timer); };
-  }, [connection, sync]);
+  }, [connection, syncInBackground]);
 
   useEffect(() => {
-    if (pending > 0) void sync();
-  }, [pending, sync]);
+    if (pending > 0) syncInBackground();
+  }, [pending, syncInBackground]);
 
   function connect(address: string, code: string) {
     return run('pair', async () => {

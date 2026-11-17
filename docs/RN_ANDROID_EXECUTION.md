@@ -10,7 +10,7 @@
 
 ```powershell
 npm.cmd ci
-npm.cmd run typecheck
+npm.cmd run check
 npx.cmd expo prebuild --platform android --no-install
 Set-Location android
 .\gradlew.bat :app:assembleRelease

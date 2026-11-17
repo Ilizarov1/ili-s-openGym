@@ -10,7 +10,7 @@ export type ScreenProps = {
   scroll?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
-  edges?: Array<Edge>;
+  edges?: Edge[];
   testID?: string;
 };
 

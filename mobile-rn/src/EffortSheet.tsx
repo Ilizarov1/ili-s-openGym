@@ -103,7 +103,7 @@ export function EffortSheet({
           <Chip
             key={preset.value}
             onPress={() => setText(formatEffort(preset.value))}
-            selected={valid && parsed === preset.value}
+            selected={valid ? parsed === preset.value : false}
             size="sm"
             testID={`effort-preset-${formatEffort(preset.value)}`}
           >
