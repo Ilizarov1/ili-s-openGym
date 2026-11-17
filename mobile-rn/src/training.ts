@@ -56,7 +56,19 @@ export type RoutineExercise = {
 };
 
 export type Routine = { id: string; name: string; ex?: RoutineExercise[]; excludeFromProgression?: boolean };
-export type CustomExercise = { id: string; n?: string; name?: string; bp?: string; eq?: string; note?: string };
+export type CustomExercise = {
+  id: string;
+  n?: string;
+  name?: string;
+  bp?: string;
+  eq?: string;
+  note?: string;
+  desc?: string;
+  /** A MediaRef synced from Web/capacitor (lib/media-refs.js): never the bytes themselves. */
+  media?: unknown;
+  /** One external link, opened only on a tap. */
+  url?: string;
+};
 
 export type SetDrop = { w?: number; r?: number };
 export type SetCluster = { r?: number; restSec?: number };
@@ -120,6 +132,8 @@ export type Profile = {
   routines?: Routine[];
   workouts?: Workout[];
   customEx?: CustomExercise[];
+  /** Favourite exercise ids (built-in or custom), shared with the Web client. */
+  favEx?: string[];
   week?: Record<string, string | string[]>;
   dayPlan?: Record<string, string>;
   scheduleMode?: 'week' | 'rotation';

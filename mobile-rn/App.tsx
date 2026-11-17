@@ -175,6 +175,10 @@ function AppScreen() {
     gym.commit([{ kind: 'custom', exercise, create }]);
   };
 
+  const onFavorite = (id: string, favourite: boolean) => {
+    gym.commit([{ kind: 'favorite', id, fav: favourite }]);
+  };
+
   const pickForWorkout = (target: RoutineExercise, replaceIndex?: number) => {
     if (!draft) return;
     const previous = replaceIndex == null ? undefined : draft.exercises[replaceIndex]?.target;
@@ -291,8 +295,10 @@ function AppScreen() {
         onBackfill={() => startFree(true)}
       />}
       {tab === 'library' && <ExerciseLibraryScreen
+        connection={connection ?? null}
         profile={profile}
         server={connection?.server ?? null}
+        onFavorite={onFavorite}
         onPick={startWithExercise}
         onCustom={onCustom}
       />}
@@ -305,7 +311,9 @@ function AppScreen() {
           profile={profile}
           routine={panel.routine}
           server={connection?.server ?? null}
+          connection={connection ?? null}
           onCustom={onCustom}
+          onFavorite={onFavorite}
           onClose={closePanel}
           onSave={routine => {
             const original = panel.routine;
@@ -387,9 +395,11 @@ function AppScreen() {
           busy={dataBusy}
         />}
         {panel.kind === 'library' && <ExerciseLibraryScreen
+          connection={connection ?? null}
           profile={profile}
           server={connection?.server ?? null}
           onCustom={onCustom}
+          onFavorite={onFavorite}
           onBack={closePanel}
           onPick={target => { pickForWorkout(target, panel.replaceIndex); closePanel(); }}
         />}

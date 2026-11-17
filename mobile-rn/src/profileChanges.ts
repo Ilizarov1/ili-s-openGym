@@ -9,6 +9,7 @@ export type ProfileChange =
   | { kind: 'routine'; routine: Pick<Routine, 'id'> & Partial<Routine>; create: false }
   | { kind: 'deleteRoutine'; key: string }
   | { kind: 'custom'; exercise: CustomExercise; create: boolean }
+  | { kind: 'favorite'; id: string; fav: boolean }
   | { kind: 'workout'; key: string; patch: Partial<Workout>; unit: Unit }
   | { kind: 'effort'; effort: EffortScale }
   | { kind: 'settings'; values: Partial<Profile> }
@@ -59,6 +60,15 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
       case 'custom':
         if (change.create && (state.deleted?.customEx?.[change.exercise.id] ?? 0) > 0) return state;
         return { ...state, customEx: change.create ? insert(state.customEx, change.exercise) : edit(state.customEx, change.exercise) };
+      case 'favorite': {
+        if (!change.id) return state;
+        const list = Array.isArray(state.favEx) ? state.favEx.filter(id => typeof id === 'string') : [];
+        const has = list.includes(change.id);
+        if (change.fav === has) return state;
+        // One exercise at a time, always against the latest state: a replay over
+        // another device's copy adds or removes only this id and keeps the rest.
+        return { ...state, favEx: change.fav ? [...list, change.id] : list.filter(id => id !== change.id) };
+      }
       case 'workout':
         return { ...state, workouts: state.workouts?.map(workout => {
           if (!workout || workoutKey(workout) !== change.key) return workout;

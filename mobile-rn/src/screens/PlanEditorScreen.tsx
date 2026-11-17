@@ -18,6 +18,7 @@ import {
   type SegmentedOption,
 } from '../design';
 import { ExerciseLibraryScreen } from './ExerciseLibraryScreen';
+import type { Connection } from '../server';
 import {
   DEFAULT_REST_PAUSE_SEC,
   REST_PAUSE_MAX,
@@ -127,12 +128,23 @@ export type PlanEditorScreenProps = {
   profile: Profile;
   routine?: Routine;
   server: string | null;
+  connection?: Connection | null;
   onSave: (routine: Routine) => void;
   onCustom: (exercise: CustomExercise, create: boolean) => void;
+  onFavorite: (id: string, favourite: boolean) => void;
   onClose: () => void;
 };
 
-export function PlanEditorScreen({ profile, routine, server, onSave, onCustom, onClose }: PlanEditorScreenProps) {
+export function PlanEditorScreen({
+  profile,
+  routine,
+  server,
+  connection = null,
+  onSave,
+  onCustom,
+  onFavorite,
+  onClose,
+}: PlanEditorScreenProps) {
   const theme = useTheme();
   const [name, setName] = useState(routine?.name ?? '');
   const [slots, setSlots] = useState<PlanSlot[]>(() => (routine?.ex ?? []).filter(Boolean).map(exercise => makeSlot(exercise, profile)));
@@ -176,8 +188,10 @@ export function PlanEditorScreen({ profile, routine, server, onSave, onCustom, o
   if (picking) {
     return (
       <ExerciseLibraryScreen
+        connection={connection}
         onBack={() => setPicking(false)}
         onCustom={onCustom}
+        onFavorite={onFavorite}
         onPick={(exercise: RoutineExercise) => {
           const slot = makeSlot(exercise, profile);
           setSlots(values => [...values, slot]);
