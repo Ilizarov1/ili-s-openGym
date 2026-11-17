@@ -1,6 +1,6 @@
 import { randomUUID } from 'expo-crypto';
 import { isWarmupRow, modeForSet } from '../../frontend/src/lib/workout-model';
-import { barFloor, insertWarmupRow, MAX_PLANNED_WARMUPS } from '../../frontend/src/lib/history';
+import { barFloor, effortOf as preferenceOf, insertWarmupRow, MAX_PLANNED_WARMUPS } from '../../frontend/src/lib/history';
 import { weightIncrement } from '../../frontend/src/lib/progression';
 import { ownedWeightsFor } from '../../frontend/src/lib/dumbbells';
 import { dropGrid } from '../../frontend/src/lib/plates';
@@ -9,6 +9,10 @@ import { warmupBlock, warmupSource } from '../../frontend/src/lib/warmup-ramp';
 import { catalogueCardio, catalogueHas, catalogueName } from './catalogue';
 
 export type Unit = 'kg' | 'lb';
+/** Which effort scale a profile logs sets in. `none` hides the rating entry points. */
+export type EffortScale = 'none' | 'rpe' | 'rir';
+/** The two saved scales. A set carries one of them, never both. */
+export type RatingScale = 'rpe' | 'rir';
 
 export type RoutineExercise = {
   id: string;
@@ -36,7 +40,22 @@ export type RoutineExercise = {
 export type Routine = { id: string; name: string; ex?: RoutineExercise[]; excludeFromProgression?: boolean };
 export type CustomExercise = { id: string; n?: string; name?: string; bp?: string; eq?: string; note?: string };
 
-export type LoggedSet = { w?: number; r?: number; sec?: number; min?: number; speed?: number; done?: boolean; at?: number; phase?: 'warmup' | 'work'; warmup?: boolean };
+export type LoggedSet = {
+  w?: number;
+  r?: number;
+  sec?: number;
+  min?: number;
+  speed?: number;
+  /** Subjective effort, one scale per row. rir wins when an old row carries both. */
+  rpe?: number;
+  rir?: number;
+  /** Taken to failure. Reads as RIR 0 when nothing was rated by hand. */
+  failure?: boolean;
+  done?: boolean;
+  at?: number;
+  phase?: 'warmup' | 'work';
+  warmup?: boolean;
+};
 type WorkoutEntry = {
   id: string;
   sg?: string;
@@ -66,6 +85,12 @@ export type Profile = {
   unit?: Unit;
   restSec?: number;
   volumeWarmups?: boolean;
+  /** Explicit choice; wins over the legacy `showRir` boolean, including `none`. */
+  effort?: EffortScale;
+  /** Pre-`effort` preference. Only read when `effort` says nothing. */
+  showRir?: boolean;
+  /** Feature switches from the web profile; `effort` must be on for ratings to show. */
+  modules?: Record<string, unknown>;
   routines?: Routine[];
   workouts?: Workout[];
   customEx?: CustomExercise[];
@@ -80,7 +105,16 @@ export type Profile = {
   [key: string]: unknown;
 };
 
-type DraftSet = { key?: string; weight: string; reps: string; at: number | null; warmup?: boolean };
+type DraftSet = {
+  key?: string;
+  weight: string;
+  reps: string;
+  at: number | null;
+  warmup?: boolean;
+  /** Scale and value of the saved effort. Both absent means unrated. */
+  effortScale?: RatingScale;
+  effort?: number;
+};
 type DraftExercise = { target: RoutineExercise; sets: DraftSet[] };
 
 export type Draft = {
@@ -120,6 +154,17 @@ export function exerciseName(profile: Profile, id: string) {
 
 export function unitOf(profile: Profile): Unit {
   return profile.unit === 'lb' ? 'lb' : 'kg';
+}
+
+/**
+ * Which effort scale new sets ask for. This is the upstream rule: the Effort module
+ * must be on, an explicit `effort` wins (including `none`, which has to beat the
+ * legacy `showRir` boolean), and `showRir` is only read when the profile has no
+ * explicit answer.
+ */
+export function effortOf(profile: Profile): EffortScale {
+  const scale = preferenceOf(profile);
+  return scale === 'rpe' || scale === 'rir' ? scale : 'none';
 }
 
 export function isRepExercise(item: RoutineExercise, profile: Profile) {
@@ -310,6 +355,36 @@ export function updateSet(draft: Draft, exerciseIndex: number, setIndex: number,
   };
 }
 
+/**
+ * Save or clear one set's effort on the draft. Clearing deletes both keys instead of
+ * writing null (an unrated set has no key at all), and the value never touches `at`
+ * or the rest timer: rating a set is independent of ticking it.
+ */
+export function setDraftEffort(
+  draft: Draft,
+  exerciseIndex: number,
+  setIndex: number,
+  scale: RatingScale | null,
+  value: number | null,
+): Draft {
+  return {
+    ...draft,
+    exercises: draft.exercises.map((exercise, index) => index === exerciseIndex ? {
+      ...exercise,
+      sets: exercise.sets.map((set, row) => {
+        if (row !== setIndex) return set;
+        if (scale == null || value == null) {
+          const next = { ...set };
+          delete next.effortScale;
+          delete next.effort;
+          return next;
+        }
+        return { ...set, effortScale: scale, effort: Math.round(value * 10) / 10 };
+      }),
+    } : exercise),
+  };
+}
+
 export function localDate(time: number) {
   const date = new Date(time);
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -331,7 +406,12 @@ export function finishWorkout(draft: Draft): QueuedWorkout | null {
       const amount = Number(set.reps);
       const values = target.mode === 'cardio' ? { speed: weight, min: amount }
         : target.mode === 'time' ? { w: weight, sec: amount } : { w: weight, r: amount };
-      return [{ ...values, done: true, at: set.at, ...(set.warmup ? { phase: 'warmup', warmup: true } : {}) }];
+      // One scale only. A row saved before effort existed simply has neither key.
+      // A row is the whole set, so future drop/cluster groups rate as one unit too.
+      const rating = !set.warmup && set.effortScale && set.effort != null && Number.isFinite(set.effort)
+        ? { [set.effortScale]: Math.round(Math.min(10, Math.max(0, set.effort)) * 10) / 10 }
+        : {};
+      return [{ ...values, ...rating, done: true, at: set.at, ...(set.warmup ? { phase: 'warmup', warmup: true } : {}) }];
     });
     if (done.length === 0) continue;
     const topW = Math.max(0, ...done.filter(set => !isWarmupRow(set)).map(set => set.w ?? 0)) || null;

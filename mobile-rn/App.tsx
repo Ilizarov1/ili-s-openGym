@@ -14,7 +14,7 @@ import { advanceRotation, recommendedRoutines, type ProfileChange } from './src/
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
 import {
-  addExercise, exerciseMode, finishWorkout, localDate, startWorkout, unitOf, workoutKey,
+  addExercise, effortOf, exerciseMode, finishWorkout, localDate, startWorkout, unitOf, workoutKey,
   type CustomExercise, type Draft, type Profile, type Routine, type RoutineExercise, type Unit, type Workout,
 } from './src/training';
 
@@ -334,6 +334,7 @@ function AppScreen() {
           lastSync={gym.lastSync}
           operation={gym.operation}
           restAlerts={gym.workspace.data.restAlerts === true}
+          effort={effortOf(profile)}
           onClose={closePanel}
           onConnect={(address, code) => { void gym.connect(address, code); }}
           onSync={() => void gym.sync()}
@@ -345,6 +346,7 @@ function AppScreen() {
           })}
           onMergePractice={() => void performDataAction(async () => confirmRestore(snapshotOf(readLocal(null)), true))}
           onToggleRestAlerts={toggleRestAlerts}
+          onChangeEffort={effort => gym.commit([{ kind: 'effort', effort }])}
           onOpenAlarmSettings={() => void Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM').catch(() => Linking.openSettings())}
           onOpenGallery={() => setPanel({ kind: 'design' })}
           notice={gym.notice}

@@ -137,6 +137,7 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
   const [serverAddress, setServerAddress] = useState('');
   const [restAlerts, setRestAlerts] = useState(true);
   const [weight, setWeight] = useState('82.5');
+  const [effort, setEffort] = useState('');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [lastAction, setLastAction] = useState('未选择');
 
@@ -484,7 +485,7 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
 
       <GallerySection
         title="步进器"
-        description="左减右加、中间可直接输入；输入过程保留原始字符串，只有按钮解析和格式化。"
+        description="左减右加、中间可直接输入；输入过程保留原始字符串，只有按钮解析和格式化。空评分首次点 + 从 6 开始。"
         testID="gallery-stepper"
       >
         <Card>
@@ -516,6 +517,17 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
               min={0}
               keyboardType="number-pad"
               unit="秒"
+            />
+            <Stepper
+              accessibilityLabel="评分（空）"
+              emptyValue={6}
+              value={effort}
+              onChangeText={setEffort}
+              step={0.5}
+              min={0}
+              max={10}
+              precision={1}
+              unit="RPE"
             />
           </View>
         </Card>

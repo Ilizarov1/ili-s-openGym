@@ -18,12 +18,15 @@ import {
 import { changeSuperset, exerciseUnits, nextSupersetSet, supersetRestSeconds } from '../supersets';
 import { RestTimer, resolveRestSeconds } from '../restTimer';
 import { supersetMeta } from '../../../frontend/src/lib/superset-meta';
+import { EffortSheet } from '../EffortSheet';
+import { draftEffortOf, effortPreferenceOf, formatEffort, scaleName } from '../effort';
 import {
   MAX_WORK_SETS,
   addWorkSet,
   backupExerciseIds,
   exerciseName,
   removeSet,
+  setDraftEffort,
   swapExercise,
   updateSet,
   validSet,
@@ -31,6 +34,7 @@ import {
   type Draft,
   type Profile,
   type QueuedWorkout,
+  type RatingScale,
 } from '../training';
 
 export type WorkoutScreenProps = {
@@ -46,6 +50,13 @@ export type WorkoutScreenProps = {
 
 type MenuItem = NonNullable<ComponentProps<typeof ActionSheet>['items']>[number];
 type Menu = { kind: 'workout' } | { kind: 'exercise'; index: number } | null;
+type RatingSheet = {
+  exerciseIndex: number;
+  setIndex: number;
+  scale: RatingScale;
+  value: number | null;
+  cardio: boolean;
+};
 
 const NUMBER_COLUMN = 30;
 
@@ -84,6 +95,8 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
   const list = useRef<ScrollView>(null);
   const positions = useRef(new Map<number, number>());
   const [menu, setMenu] = useState<Menu>(null);
+  const [rating, setRating] = useState<RatingSheet | null>(null);
+  const effort = effortPreferenceOf(profile);
 
   const targets = draft.exercises.map(exercise => exercise.target);
   const units = exerciseUnits(targets);
@@ -185,11 +198,16 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
           const affected = grouped ? unit : [...(groups[exerciseIndex - 1]?.unit ?? []), exerciseIndex];
           const canGroup = affected.every(index => draft.exercises[index].sets.every(set => set.at === null));
           const completed = exercise.sets.some(set => set.at !== null);
-          const mode = exercise.target.mode;
+          const mode = exercise.target.mode ?? 'reps';
           const weightLabel = mode === 'cardio' ? '速度' : '重量';
           const amountLabel = mode === 'cardio' ? '分钟' : mode === 'time' ? '秒' : '次数';
           const replacements = backupExerciseIds(exercise.target, profile);
           const actions = exerciseMenuItems(exerciseIndex);
+          // Strength work sets follow the profile scale. Cardio always asks for RPE
+          // (a run has no reps left); timed holds keep their own entry points.
+          const ratingScale: RatingScale | null = effort === 'none'
+            ? null
+            : mode === 'cardio' ? 'rpe' : mode === 'reps' ? effort : null;
 
           return (
             <View
@@ -259,6 +277,15 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                   const label = set.warmup ? `热身第 ${number} 组` : `第 ${number} 组`;
                   const controlLabel = grouped ? `${name} ${label}` : label;
                   const controlsRest = draft.rest?.exerciseIndex === exerciseIndex && draft.rest.setIndex === setIndex;
+                  // A row already rated in this draft keeps its own scale, exactly like
+                  // history: changing the setting later relabels only unrated rows.
+                  const setScale = set.effortScale ?? ratingScale;
+                  const ratingValue = setScale ? draftEffortOf(set, setScale) : null;
+                  const ratingLabel = setScale
+                    ? ratingValue == null
+                      ? `${scaleName(setScale)} 未评分`
+                      : `${scaleName(setScale)} ${formatEffort(ratingValue)}`
+                    : '';
                   const editSet = (changes: { weight?: string; reps?: string }) => {
                     const edited = updateSet(draft, exerciseIndex, setIndex, { ...changes, at: null });
                     onChange(controlsRest ? { ...edited, rest: null } : edited);
@@ -290,67 +317,99 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                   return (
                     <View
                       key={set.key ?? String(setIndex)}
-                      style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
+                      style={{ gap: theme.space.xs }}
                     >
-                      <Text
-                        numberOfLines={1}
-                        style={{ width: NUMBER_COLUMN }}
-                        tone={complete ? 'tertiary' : 'secondary'}
-                        variant="footnote"
-                      >
-                        {set.warmup ? '热身' : number}
-                      </Text>
-                      <View style={{ flex: 1 }}>
-                        <Stepper
-                          accessibilityLabel={`${controlLabel}${weightLabel}`}
-                          keyboardType="decimal-pad"
-                          min={0}
-                          onChangeText={weight => editSet({ weight })}
-                          step={mode === 'cardio' ? 0.5 : 2.5}
-                          value={set.weight}
-                        />
+                      <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
+                        <Text
+                          numberOfLines={1}
+                          style={{ width: NUMBER_COLUMN }}
+                          tone={complete ? 'tertiary' : 'secondary'}
+                          variant="footnote"
+                        >
+                          {set.warmup ? '热身' : number}
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Stepper
+                            accessibilityLabel={`${controlLabel}${weightLabel}`}
+                            keyboardType="decimal-pad"
+                            min={0}
+                            onChangeText={weight => editSet({ weight })}
+                            step={mode === 'cardio' ? 0.5 : 2.5}
+                            value={set.weight}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Stepper
+                            accessibilityLabel={`${controlLabel}${amountLabel}`}
+                            keyboardType={mode === 'cardio' ? 'decimal-pad' : 'number-pad'}
+                            min={0}
+                            onChangeText={reps => editSet({ reps })}
+                            step={mode === 'time' ? 5 : 1}
+                            value={set.reps}
+                          />
+                        </View>
+                        <PressableScale
+                          accessibilityLabel={`${controlLabel}完成`}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: complete, disabled: !available }}
+                          disabled={!available}
+                          hitSlop={theme.space.xs}
+                          onPress={toggleSet}
+                          scaleTo={theme.motion.pressScaleSmall}
+                          style={{
+                            alignItems: 'center',
+                            backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
+                            borderRadius: theme.radius.sm,
+                            height: theme.sizes.tileSm,
+                            justifyContent: 'center',
+                            width: theme.sizes.tileSm,
+                          }}
+                        >
+                          <Icon
+                            color={complete ? theme.colors.onAccent : theme.colors.label3}
+                            name="check"
+                            size={18}
+                          />
+                        </PressableScale>
+                        {complete ? <View style={{ width: theme.sizes.tileMd }} /> : (
+                          <IconButton
+                            accessibilityLabel={`删除${controlLabel}`}
+                            name="xmark"
+                            onPress={() => onChange(removeSet(draft, exerciseIndex, setIndex))}
+                            size="sm"
+                          />
+                        )}
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Stepper
-                          accessibilityLabel={`${controlLabel}${amountLabel}`}
-                          keyboardType={mode === 'cardio' ? 'decimal-pad' : 'number-pad'}
-                          min={0}
-                          onChangeText={reps => editSet({ reps })}
-                          step={mode === 'time' ? 5 : 1}
-                          value={set.reps}
-                        />
-                      </View>
-                      <PressableScale
-                        accessibilityLabel={`${controlLabel}完成`}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: complete, disabled: !available }}
-                        disabled={!available}
-                        hitSlop={theme.space.xs}
-                        onPress={toggleSet}
-                        scaleTo={theme.motion.pressScaleSmall}
-                        style={{
-                          alignItems: 'center',
-                          backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
-                          borderRadius: theme.radius.sm,
-                          height: theme.sizes.tileSm,
-                          justifyContent: 'center',
-                          width: theme.sizes.tileSm,
-                        }}
-                      >
-                        <Icon
-                          color={complete ? theme.colors.onAccent : theme.colors.label3}
-                          name="check"
-                          size={18}
-                        />
-                      </PressableScale>
-                      {complete ? <View style={{ width: theme.sizes.tileMd }} /> : (
-                        <IconButton
-                          accessibilityLabel={`删除${controlLabel}`}
-                          name="xmark"
-                          onPress={() => onChange(removeSet(draft, exerciseIndex, setIndex))}
-                          size="sm"
-                        />
-                      )}
+                      {setScale != null && !set.warmup ? (
+                        <View
+                          style={{
+                            alignItems: 'center',
+                            flexDirection: 'row',
+                            gap: theme.space.sm,
+                            paddingLeft: NUMBER_COLUMN + theme.space.xs,
+                          }}
+                        >
+                          <Button
+                            accessibilityLabel={`${controlLabel}${ratingLabel}`}
+                            icon="gauge"
+                            onPress={() => setRating({
+                              exerciseIndex,
+                              setIndex,
+                              scale: setScale,
+                              value: ratingValue,
+                              cardio: mode === 'cardio',
+                            })}
+                            size="xs"
+                            testID={`set-effort-${exerciseIndex}-${setIndex}`}
+                            variant={ratingValue == null ? 'secondary' : 'tinted'}
+                          >
+                            {ratingLabel}
+                          </Button>
+                          {ratingValue != null ? (
+                            <Text tone="secondary" variant="footnote">可修改或清除</Text>
+                          ) : null}
+                        </View>
+                      ) : null}
                     </View>
                   );
                 })}
@@ -415,6 +474,23 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
         title={menu?.kind === 'exercise' ? exerciseName(profile, draft.exercises[menu.index]?.target.id ?? '') : undefined}
         visible={menu?.kind === 'exercise'}
       />
+      {rating ? (
+        <EffortSheet
+          cardio={rating.cardio}
+          onClear={() => {
+            onChange(setDraftEffort(draft, rating.exerciseIndex, rating.setIndex, null, null));
+            setRating(null);
+          }}
+          onClose={() => setRating(null)}
+          onSave={value => {
+            onChange(setDraftEffort(draft, rating.exerciseIndex, rating.setIndex, rating.scale, value));
+            setRating(null);
+          }}
+          scale={rating.scale}
+          value={rating.value}
+          visible
+        />
+      ) : null}
     </Screen>
   );
 }

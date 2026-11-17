@@ -10,6 +10,7 @@ import { BackHandler, FlatList, StyleSheet, View } from 'react-native';
 import { sessionVolume, workoutDay } from '../../../frontend/src/lib/history';
 import { isWarmupRow } from '../../../frontend/src/lib/workout-model';
 import { supersetMeta } from '../../../frontend/src/lib/superset-meta';
+import { effortNoteOf } from '../effort';
 import {
   ActionSheet,
   Badge,
@@ -93,10 +94,14 @@ function formatVolume(value: number, unit: Unit) {
 }
 
 function describeSet(set: LoggedSet, unit: Unit) {
-  if (set.r != null) return `${set.w ?? 0} ${unit} × ${set.r}`;
-  if (set.sec != null) return `${set.sec} 秒${set.w != null ? ` · ${set.w} ${unit}` : ''}`;
-  if (set.min != null) return `${set.min} 分钟${set.speed != null ? ` · 速度 ${set.speed}` : ''}`;
-  return '已完成';
+  let text = '已完成';
+  if (set.r != null) text = `${set.w ?? 0} ${unit} × ${set.r}`;
+  else if (set.sec != null) text = `${set.sec} 秒${set.w != null ? ` · ${set.w} ${unit}` : ''}`;
+  else if (set.min != null) text = `${set.min} 分钟${set.speed != null ? ` · 速度 ${set.speed}` : ''}`;
+  // The row's own saved scale, never the profile's: switching the setting does not
+  // relabel history. A failure mark without a rating reads as a marked RIR 0.
+  const effort = effortNoteOf(set);
+  return effort ? `${text} · ${effort}` : text;
 }
 
 function setsSummary(sets: LoggedSet[], unit: Unit) {
