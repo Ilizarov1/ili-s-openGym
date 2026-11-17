@@ -63,6 +63,7 @@ $runDirectory = Join-Path $tempRoot "opengym-rn-regression-$([guid]::NewGuid().T
 New-Item -ItemType Directory -Path $runDirectory | Out-Null
 $uiFile = Join-Path $runDirectory 'ui.xml'
 $remoteDumper = "/data/local/tmp/$([IO.Path]::GetFileName($runDirectory)).dex"
+$remoteUi = "/data/local/tmp/$([IO.Path]::GetFileName($runDirectory)).xml"
 $remoteScreenshot = "/sdcard/$([IO.Path]::GetFileName($runDirectory)).png"
 $remoteBackup = "/sdcard/Download/$([IO.Path]::GetFileName($runDirectory)).json"
 $server = $null
@@ -71,10 +72,10 @@ $reverseInstalled = $false
 $passed = $false
 
 function Read-Ui {
-    $dump = Invoke-Adb shell "CLASSPATH=${remoteDumper}:/system/framework/uiautomator.jar" app_process /system/bin DumpActiveWindow $screenWidth $screenHeight
-    if (!$dump) { return $null }
-    $content = $dump -join [Environment]::NewLine
-    Set-Content -LiteralPath $uiFile -Value $content -Encoding utf8
+    Invoke-Adb shell "CLASSPATH=${remoteDumper}:/system/framework/uiautomator.jar" app_process /system/bin DumpActiveWindow $screenWidth $screenHeight $remoteUi | Out-Null
+    Invoke-Adb pull $remoteUi $uiFile | Out-Null
+    $content = Get-Content -LiteralPath $uiFile -Raw -Encoding utf8
+    if (!$content) { return $null }
     [xml]$content
 }
 
@@ -824,7 +825,7 @@ try {
         $server.WaitForExit(5000) | Out-Null
     }
     try {
-        Invoke-Adb shell rm -f $remoteDumper $remoteScreenshot $remoteBackup | Out-Null
+        Invoke-Adb shell rm -f $remoteDumper $remoteUi $remoteScreenshot $remoteBackup | Out-Null
         $cleanup = if ($passed) { $runDirectory } else { Join-Path $runDirectory 'data' }
         if (Test-Path -LiteralPath $cleanup) {
             $resolved = (Resolve-Path -LiteralPath $cleanup).Path

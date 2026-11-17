@@ -150,7 +150,7 @@ Wait-Text '动作库' 20 | Out-Null
 Open-Route 'start-sheet?e2e=1'
 Wait-Text '开始训练' 20 | Out-Null
 Screenshot 'start-sheet'
-Tap-Text '取消'
+Invoke-Adb shell input keyevent 4 | Out-Null
 Wait-Text '动作库' 20 | Out-Null
 
 Open-Route 'workout?e2e=1&routine=fixture-upper'

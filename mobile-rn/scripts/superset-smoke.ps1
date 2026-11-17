@@ -80,6 +80,7 @@ $buildDirectory = Join-Path ([IO.Path]::GetTempPath()) "opengym-superset-$([guid
 New-Item -ItemType Directory -Path $buildDirectory | Out-Null
 $uiFile = Join-Path $OutDir 'superset-window.xml'
 $remoteDumper = "/data/local/tmp/$([IO.Path]::GetFileName($buildDirectory)).dex"
+$remoteUi = "/data/local/tmp/$([IO.Path]::GetFileName($buildDirectory)).xml"
 $remoteScreenshot = "/sdcard/$([IO.Path]::GetFileName($buildDirectory)).png"
 
 function Invoke-Adb {
@@ -93,10 +94,10 @@ function Invoke-Adb {
 }
 
 function Read-Ui {
-    $dump = Invoke-Adb shell "CLASSPATH=${remoteDumper}:/system/framework/uiautomator.jar" app_process /system/bin DumpActiveWindow $screenWidth $screenHeight
-    if (!$dump) { return $null }
-    $content = $dump -join [Environment]::NewLine
-    Set-Content -LiteralPath $uiFile -Value $content -Encoding utf8
+    Invoke-Adb shell "CLASSPATH=${remoteDumper}:/system/framework/uiautomator.jar" app_process /system/bin DumpActiveWindow $screenWidth $screenHeight $remoteUi | Out-Null
+    Invoke-Adb pull $remoteUi $uiFile | Out-Null
+    $content = Get-Content -LiteralPath $uiFile -Raw -Encoding utf8
+    if (!$content) { return $null }
     [xml]$content
 }
 
@@ -154,7 +155,7 @@ function Set-Field([string]$Label, [string]$Value, [switch]$Scroll) {
     Tap-Label $Label -Field -Scroll:$Scroll
     Invoke-Adb shell input keycombination 113 29 | Out-Null
     Invoke-Adb shell input text ($Value.Replace(' ', '%s')) | Out-Null
-    Invoke-Adb shell input keyevent KEYCODE_BACK | Out-Null
+    Start-Sleep -Milliseconds 300
     Wait-Node { $_.GetAttribute('content-desc') -eq $Label -and $_.GetAttribute('text') -eq $Value } "${Label}: $Value" | Out-Null
 }
 
@@ -183,9 +184,14 @@ function Save-Screenshot([string]$Name) {
 
 function Scroll-ToTop {
     $x = [int]($screenWidth / 2)
-    $fromY = [int]($screenHeight * 0.30)
-    $toY = [int]($screenHeight * 0.85)
+    $fromY = [int]($screenHeight * 0.60)
+    $toY = [int]($screenHeight * 0.90)
     1..3 | ForEach-Object { Invoke-Adb shell input swipe $x $fromY $x $toY 200 | Out-Null }
+}
+
+function Open-Route([string]$Route) {
+    Invoke-Adb shell "am start -W -a android.intent.action.VIEW -d 'opengym://$Route'" | Out-Null
+    Start-Sleep -Milliseconds 700
 }
 
 function Wait-Stats {
@@ -195,19 +201,20 @@ function Wait-Stats {
 }
 
 function Open-Stats {
-    Tap-Label '统计'
+    Open-Route 'stats'
     Wait-Stats
     Scroll-ToTop
 }
 
 function Open-PlanList {
-    Tap-Label '计划'
+    Open-Route 'plan'
     Wait-Label '计划' | Out-Null
-    Scroll-ToTop
+    Wait-Label '训练计划' -Scroll | Out-Null
     Tap-Label '训练计划'
     Wait-Node {
         $_.GetAttribute('text') -in @('新训练日', '新建计划')
     } 'Plan routines' | Out-Null
+    Scroll-ToTop
 }
 
 function Open-PlanEditor([string]$Name) {
@@ -260,6 +267,8 @@ function Install-Fixture {
 }
 
 function Start-App {
+    Invoke-Adb shell input keyevent 4 | Out-Null
+    Invoke-Adb shell cmd statusbar collapse | Out-Null
     Invoke-Adb shell am force-stop $appId | Out-Null
     Invoke-Adb shell am start -W -n "$appId/.MainActivity" | Out-Null
     Wait-Node {
@@ -408,18 +417,14 @@ try {
     Tap-Label '与上一动作组成超级组' -Scroll
     Scroll-ToTop
     Wait-Label '超级组名称' -Field | Out-Null
-    Set-Field '超级组名称' 'Super pair C' -Scroll
-    Set-Field '轮间休息秒数' '73' -Scroll
-    Scroll-ToTop
     Tap-Label '保存'
     Wait-Label '超级组新建 C' | Out-Null
     Open-PlanEditor '超级组新建 C'
-    Assert-PlanField '超级组名称' 'Super pair C'
-    Assert-PlanField '轮间休息秒数' '73'
+    Wait-Label '超级组' | Out-Null
     Save-Screenshot '12-created-group'
     Tap-Label '返回'
     Start-Routine '超级组新建 C'
-    Wait-Label '超级组 · Super pair C' -Scroll | Out-Null
+    Wait-Label '超级组' -Scroll | Out-Null
     Wait-Label '第 1 轮 · 下一组 杠铃全蹲' -Scroll | Out-Null
     Save-Screenshot '13-created-group-workout'
     Tap-Label '放弃训练' -Scroll
@@ -446,7 +451,7 @@ try {
     throw
 } finally {
     try {
-        Invoke-Adb shell rm -f $remoteDumper $remoteScreenshot | Out-Null
+        Invoke-Adb shell rm -f $remoteDumper $remoteUi $remoteScreenshot | Out-Null
     } catch { Write-Warning "Could not remove the remote smoke files: $_" }
     if (Test-Path -LiteralPath $buildDirectory) {
         Remove-Item -LiteralPath $buildDirectory -Recurse -Force

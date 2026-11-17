@@ -82,6 +82,16 @@ const routines = [
       target('0085', 1, 10, 40, 40),
     ],
   },
+  {
+    // Exercises for the advanced-set, effort and favourite checks: one planned drop
+    // set, one planned rest-pause set and a favourite on the first movement.
+    id: 'fixture-advanced',
+    name: '高级组与评分 A',
+    ex: [
+      { ...target('0025', 3, 8, 50), intensifier: { type: 'dropset', count: 2, pct: 20 } },
+      { ...target('0047', 3, 10, 20), intensifier: { type: 'restpause', totalReps: 12, restSec: 15 } },
+    ],
+  },
 ];
 
 const makeWorkout = (id, offset, routine, entries) => ({
@@ -173,7 +183,10 @@ const week = {
 const profile = {
   unit: 'kg',
   restSec: 90,
+  restPauseSec: 15,
   volumeWarmups: true,
+  effort: 'rpe',
+  favEx: ['0025', 'custom-demo'],
   routines,
   workouts,
   week,
@@ -187,4 +200,4 @@ db.exec('CREATE TABLE IF NOT EXISTS workspace (scope TEXT PRIMARY KEY, state TEX
 db.prepare('INSERT OR REPLACE INTO workspace (scope, state) VALUES (?, ?)').run('practice', JSON.stringify(state));
 db.close();
 console.log(`fixture: ${out}`);
-console.log(`routines: ${routines.length} (3 supersets); workouts: ${workouts.length} (1 superset); today: ${dayOf(0)}`);
+console.log(`routines: ${routines.length} (3 supersets, 1 advanced); workouts: ${workouts.length} (1 superset); today: ${dayOf(0)}`);
