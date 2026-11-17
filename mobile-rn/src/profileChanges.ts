@@ -10,6 +10,7 @@ export type ProfileChange =
   | { kind: 'deleteRoutine'; key: string }
   | { kind: 'custom'; exercise: CustomExercise; create: boolean }
   | { kind: 'workout'; key: string; patch: Partial<Workout>; unit: Unit }
+  | { kind: 'settings'; values: Partial<Profile> }
   | { kind: 'week'; day: number; ids: string[]; onlyIfEmpty?: boolean }
   | { kind: 'rotation'; key: string; ids: string[]; at: number; onlyIfEmpty?: boolean };
 
@@ -65,6 +66,8 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
           const converted = entries ? inProfileUnit({ unit: change.unit, workout: { ...workout, id, entries, vol } }, unitOf(state)) : null;
           return { ...workout, ...details, id, ...(converted ? { entries: converted.entries, vol: converted.vol } : {}) };
         }) };
+      case 'settings':
+        return { ...state, ...change.values };
       case 'week': {
         if (change.onlyIfEmpty && state.week?.[String(change.day)]) return state;
         const next = editablePlan(state);

@@ -1,6 +1,17 @@
 import { randomUUID } from 'expo-crypto';
-import { isWarmupRow, modeForSet } from '../../frontend/src/lib/workout-model';
-import { barFloor, insertWarmupRow, MAX_PLANNED_WARMUPS } from '../../frontend/src/lib/history';
+import {
+  isWarmupRow,
+  modeForSet,
+  nextBurstReps,
+  nextDropWeight,
+} from '../../frontend/src/lib/workout-model';
+import {
+  applyIntensifierPlan,
+  barFloor,
+  insertWarmupRow,
+  MAX_PLANNED_WARMUPS,
+  workoutVolume,
+} from '../../frontend/src/lib/history';
 import { weightIncrement } from '../../frontend/src/lib/progression';
 import { ownedWeightsFor } from '../../frontend/src/lib/dumbbells';
 import { dropGrid } from '../../frontend/src/lib/plates';
@@ -9,6 +20,11 @@ import { warmupBlock, warmupSource } from '../../frontend/src/lib/warmup-ramp';
 import { catalogueCardio, catalogueHas, catalogueName } from './catalogue';
 
 export type Unit = 'kg' | 'lb';
+
+/** A planned advanced set shape; mirrors the upstream routine config (`cfg.intensifier`). */
+export type RoutineIntensifier =
+  | { type: 'dropset'; count: number; pct: number }
+  | { type: 'restpause'; totalReps: number; restSec: number };
 
 export type RoutineExercise = {
   id: string;
@@ -31,13 +47,24 @@ export type RoutineExercise = {
   warmup?: 'auto' | 'own' | 'none';
   warmupSets?: number;
   warmupRows?: { wb?: boolean; wp?: number; r: number }[];
+  intensifier?: RoutineIntensifier;
 };
 
 export type Routine = { id: string; name: string; ex?: RoutineExercise[]; excludeFromProgression?: boolean };
 export type CustomExercise = { id: string; n?: string; name?: string; bp?: string; eq?: string; note?: string };
 
-export type LoggedSet = { w?: number; r?: number; sec?: number; min?: number; speed?: number; done?: boolean; at?: number; phase?: 'warmup' | 'work'; warmup?: boolean };
-type WorkoutEntry = {
+export type SetDrop = { w?: number; r?: number };
+export type SetCluster = { r?: number; restSec?: number };
+
+export type LoggedSet = {
+  w?: number; r?: number; sec?: number; min?: number; speed?: number; done?: boolean; at?: number;
+  phase?: 'warmup' | 'work'; warmup?: boolean; failure?: boolean;
+  type?: 'straight' | 'dropset' | 'restpause';
+  drops?: SetDrop[];
+  clusters?: SetCluster[];
+  sides?: { L?: LoggedSet; R?: LoggedSet };
+};
+export type WorkoutEntry = {
   id: string;
   sg?: string;
   sets: LoggedSet[];
@@ -65,6 +92,7 @@ export type Workout = {
 export type Profile = {
   unit?: Unit;
   restSec?: number;
+  restPauseSec?: number;
   volumeWarmups?: boolean;
   routines?: Routine[];
   workouts?: Workout[];
@@ -80,7 +108,18 @@ export type Profile = {
   [key: string]: unknown;
 };
 
-type DraftSet = { key?: string; weight: string; reps: string; at: number | null; warmup?: boolean };
+export type DraftDrop = { key?: string; w: string; r: string };
+export type DraftCluster = { key?: string; r: string; restSec: string };
+export type DraftSet = {
+  key?: string;
+  weight: string;
+  reps: string;
+  at: number | null;
+  warmup?: boolean;
+  type?: 'dropset' | 'restpause';
+  drops?: DraftDrop[];
+  clusters?: DraftCluster[];
+};
 type DraftExercise = { target: RoutineExercise; sets: DraftSet[] };
 
 export type Draft = {
@@ -96,6 +135,49 @@ export type Draft = {
 };
 
 export type QueuedWorkout = { workout: Workout & { id: string }; unit: Unit };
+
+/** What the history editor hands back: full entries plus the snapshot they started from. */
+export type HistorySave = {
+  patch: Partial<Workout>;
+  base: WorkoutEntry[];
+  entries: WorkoutEntry[];
+};
+
+export const REST_PAUSE_MIN = 5;
+export const REST_PAUSE_MAX = 300;
+export const DEFAULT_REST_PAUSE_SEC = 15;
+
+/** Whole seconds in the upstream 5–300 range; anything unreadable falls back to the default. */
+export function clampRestPauseSec(value: unknown) {
+  const sec = Math.round(Number(value));
+  if (!Number.isFinite(sec) || sec <= 0) return DEFAULT_REST_PAUSE_SEC;
+  return Math.min(REST_PAUSE_MAX, Math.max(REST_PAUSE_MIN, sec));
+}
+
+/** The short rest a manually added segment inherits: the plan's own, else the account default. */
+export function exerciseRestPauseSec(target: RoutineExercise | undefined, profile: Profile) {
+  if (target?.intensifier?.type === 'restpause') return clampRestPauseSec(target.intensifier.restSec);
+  return clampRestPauseSec(profile.restPauseSec);
+}
+
+/** Sanitise a plan intensifier the way upstream plan-share/history.js do, with RN's 2-drop default. */
+export function sanitizeIntensifier(value: RoutineIntensifier | undefined): RoutineIntensifier | undefined {
+  if (value?.type === 'dropset') return {
+    type: 'dropset',
+    count: Math.max(1, Math.round(Number(value.count)) || 2),
+    pct: Math.min(90, Math.max(5, Math.round(Number(value.pct)) || 20)),
+  };
+  if (value?.type === 'restpause') return {
+    type: 'restpause',
+    totalReps: Math.max(1, Math.round(Number(value.totalReps)) || 12),
+    restSec: clampRestPauseSec(value.restSec),
+  };
+  return undefined;
+}
+
+function plannedIntensifier(target: RoutineExercise): RoutineIntensifier | undefined {
+  return sanitizeIntensifier(target.intensifier);
+}
 
 export function workoutKey(workout: Workout) {
   return workout.id ?? `${workout.d}|${workout.start}`;
@@ -174,6 +256,25 @@ function lastWorkingWeight(history: Workout[], target: RoutineExercise) {
   return undefined;
 }
 
+function draftSetFromRow(row: {
+  w?: number; r?: number; type?: string; drops?: SetDrop[]; clusters?: SetCluster[]; phase?: string; warmup?: boolean;
+}, index: number): DraftSet {
+  const set: DraftSet = {
+    key: String(index), weight: String(row.w ?? 0), reps: String(row.r ?? 0), at: null,
+    ...(isWarmupRow(row) ? { warmup: true } : {}),
+  };
+  if (row.type === 'dropset' && Array.isArray(row.drops) && row.drops.length) {
+    set.type = 'dropset';
+    set.drops = row.drops.map(drop => ({ key: randomUUID(), w: String(drop.w ?? 0), r: String(drop.r ?? 0) }));
+  } else if (row.type === 'restpause' && Array.isArray(row.clusters) && row.clusters.length) {
+    set.type = 'restpause';
+    set.clusters = row.clusters.map(cluster => ({
+      key: randomUUID(), r: String(cluster.r ?? 0), restSec: String(cluster.restSec ?? DEFAULT_REST_PAUSE_SEC),
+    }));
+  }
+  return set;
+}
+
 export function startWorkout(routine: Routine, profile: Profile, pending: readonly QueuedWorkout[] = []): Draft {
   const unit = unitOf(profile);
   const saved = (profile.workouts ?? []).filter(Boolean);
@@ -188,7 +289,8 @@ export function startWorkout(routine: Routine, profile: Profile, pending: readon
       const count = Math.max(1, Math.min(MAX_WORK_SETS, Math.trunc(Number(target.sets) || 3)));
       const mode = exerciseMode(target, profile);
       if (mode !== 'reps') {
-        return { target: { ...target, mode }, sets: Array.from({ length: count }, (_, index) => ({
+        const { intensifier: _intensifier, ...plain } = target;
+        return { target: { ...plain, mode }, sets: Array.from({ length: count }, (_, index) => ({
           key: String(index), weight: String(mode === 'time' ? target.weight ?? 0 : target.speed ?? 0),
           reps: String(mode === 'time' ? target.sec ?? 45 : target.min ?? 20), at: null,
         })) };
@@ -206,11 +308,16 @@ export function startWorkout(routine: Routine, profile: Profile, pending: readon
         const step = ownedWeightsFor(profile, cfg) || weightIncrement(cfg, unit);
         for (let i = 0; i < warmups; i++) rows = insertWarmupRow(rows, 'reps', cfg, step, floor) ?? rows;
       }
-      const sets = rows.map((row, index) => ({
-        key: String(index), weight: String(row.w), reps: String(row.r), at: null,
-        warmup: isWarmupRow(row),
-      }));
-      return { target, sets };
+      // The routine's intensifier shapes the final prescribed rows, warm-ups included for
+      // rest-pause (upstream builds exactly one warm-up and one work row there). RN logs a
+      // unilateral weight as one both-sides total, so the plan is applied without `side`:
+      // new records stay bilateral even when the exercise is per side.
+      const intensifier = plannedIntensifier(target);
+      if (intensifier) {
+        rows = applyIntensifierPlan(rows, { ...cfg, reps: Number(reps), side: false, intensifier }, dropGrid(profile, cfg));
+      }
+      const sets = rows.map((row, index) => draftSetFromRow(row, index));
+      return { target: intensifier ? { ...target, intensifier } : target, sets };
     });
   return { id: randomUUID(), routineId: routine.id, name: routine.name, unit, start: Date.now(), exercises, volumeWarmups: profile.volumeWarmups === true };
 }
@@ -247,9 +354,9 @@ export function swapExercise(draft: Draft, exerciseIndex: number, id: string, pr
   const backups = backupExerciseIds(entry.target, profile);
   if (!backups.includes(id)) return draft;
 
-  const { id: previousId, sets, reps, restSec, restOff, noProg, warmup, warmupRows, warmupSets } = entry.target;
+  const { id: previousId, sets, reps, restSec, restOff, noProg, warmup, warmupRows, warmupSets, intensifier } = entry.target;
   const target = {
-    id, sets, reps, restSec, restOff, noProg, warmup, warmupRows, warmupSets,
+    id, sets, reps, restSec, restOff, noProg, warmup, warmupRows, warmupSets, intensifier,
     ...supersetFields(entry.target),
     subs: [previousId, ...backups.filter(backup => backup !== id)],
   };
@@ -310,6 +417,169 @@ export function updateSet(draft: Draft, exerciseIndex: number, setIndex: number,
   };
 }
 
+function draftSetAt(draft: Draft, exerciseIndex: number, setIndex: number): DraftSet | undefined {
+  return draft.exercises[exerciseIndex]?.sets[setIndex];
+}
+
+function replaceDraftSet(draft: Draft, exerciseIndex: number, setIndex: number, replace: (set: DraftSet) => DraftSet): Draft {
+  const current = draftSetAt(draft, exerciseIndex, setIndex);
+  if (!current) return draft;
+  return updateSet(draft, exerciseIndex, setIndex, replace(current));
+}
+
+function numberIn(value: string) {
+  const parsed = Number(value.replace(',', '.'));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export function validDropSegment(drop: { w: string; r: string }) {
+  const weight = Number(drop.w.replace(',', '.'));
+  const reps = Number(drop.r);
+  return drop.w.trim() !== '' && Number.isFinite(weight) && weight >= 0 && weight <= MAX_WEIGHT &&
+    Number.isInteger(reps) && reps > 0 && reps <= 500;
+}
+
+export function validClusterSegment(cluster: { r: string; restSec: string }) {
+  const reps = Number(cluster.r);
+  const restSec = Number(cluster.restSec);
+  return Number.isInteger(reps) && reps > 0 && reps <= 500 &&
+    Number.isInteger(restSec) && restSec >= REST_PAUSE_MIN && restSec <= REST_PAUSE_MAX;
+}
+
+/** Segments a draft row could be saved with, before the main weight/reps are considered. */
+export function validSetSegments(set: DraftSet) {
+  if (set.warmup) return true;
+  if (set.type === 'dropset') return !!set.drops?.length && set.drops.every(validDropSegment);
+  if (set.type === 'restpause') {
+    return !!set.clusters?.length && set.clusters.every(validClusterSegment) &&
+      Number(set.reps) === draftClusterTotal(set);
+  }
+  return true;
+}
+
+export function draftClusterTotal(set: DraftSet) {
+  return (set.clusters ?? []).reduce((total, cluster) => total + Math.max(0, Math.trunc(numberIn(cluster.r))), 0);
+}
+
+/**
+ * Keep a rest-pause row's own `r` equal to the sum of its clusters. A typed total is absorbed by
+ * the last segment first, then earlier ones, never letting a segment drop below one rep.
+ */
+function retotalClusters(clusters: DraftCluster[], total: number): DraftCluster[] | null {
+  if (!Number.isInteger(total) || total < clusters.length) return null;
+  const next = clusters.map(cluster => ({
+    ...cluster, r: String(Math.max(1, Math.trunc(numberIn(cluster.r)))),
+  }));
+  let delta = total - next.reduce((sum, cluster) => sum + numberIn(cluster.r), 0);
+  for (let index = next.length - 1; index >= 0 && delta !== 0; index--) {
+    const current = numberIn(next[index].r);
+    const room = delta < 0 ? current - 1 : Number.POSITIVE_INFINITY;
+    const change = delta > 0 ? delta : Math.max(delta, -room);
+    if (!change) continue;
+    next[index] = { ...next[index], r: String(current + change) };
+    delta -= change;
+  }
+  return delta === 0 ? next : null;
+}
+
+/** Change a work row's own reps; for a rest-pause set the total is spread over its segments. */
+export function updateSetReps(draft: Draft, exerciseIndex: number, setIndex: number, reps: string): Draft {
+  const set = draftSetAt(draft, exerciseIndex, setIndex);
+  if (!set) return draft;
+  if (set.type !== 'restpause' || !set.clusters?.length) return updateSet(draft, exerciseIndex, setIndex, { reps });
+  const clusters = retotalClusters(set.clusters, numberIn(reps));
+  if (!clusters) return updateSet(draft, exerciseIndex, setIndex, { reps });
+  return updateSet(draft, exerciseIndex, setIndex, { reps: String(numberIn(reps)), clusters });
+}
+
+/** Add one weight drop, seeded from the last drop (or the main set) at the plan's percentage. */
+export function addDropSegment(draft: Draft, exerciseIndex: number, setIndex: number, profile: Profile): Draft {
+  const exercise = draft.exercises[exerciseIndex];
+  const set = exercise?.sets[setIndex];
+  if (!exercise || !set || set.warmup || exerciseMode(exercise.target, profile) !== 'reps' || set.type === 'restpause') return draft;
+  const drops = set.drops ?? [];
+  const base = drops.length ? numberIn(drops[drops.length - 1].w) : numberIn(set.weight);
+  const pct = exercise.target.intensifier?.type === 'dropset' ? exercise.target.intensifier.pct : 20;
+  const weight = nextDropWeight(base, pct, dropGrid({ ...profile, unit: draft.unit }, { ...exercise.target, id: exercise.target.id }));
+  const reps = Math.max(1, Math.trunc(numberIn(set.reps))) || 8;
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => ({
+    ...row,
+    type: 'dropset',
+    drops: [...drops, { key: randomUUID(), w: String(weight), r: String(reps) }],
+  }));
+}
+
+export function setDropSegment(
+  draft: Draft, exerciseIndex: number, setIndex: number, dropIndex: number,
+  changes: Partial<Pick<DraftDrop, 'w' | 'r'>>,
+): Draft {
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => ({
+    ...row,
+    drops: (row.drops ?? []).map((drop, index) => index === dropIndex ? { ...drop, ...changes } : drop),
+  }));
+}
+
+/** Remove one drop; clearing the last one turns the row back into a straight set. */
+export function removeDropSegment(draft: Draft, exerciseIndex: number, setIndex: number, dropIndex: number): Draft {
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => {
+    const drops = (row.drops ?? []).filter((_, index) => index !== dropIndex);
+    if (drops.length) return { ...row, drops };
+    const { type: _type, drops: _drops, ...plain } = row;
+    return plain;
+  });
+}
+
+/**
+ * Add a short-rest burst. A straight set becomes rest-pause with its original reps as the first
+ * segment; a rest-pause set grows one roughly-halving segment after the last one.
+ */
+export function addClusterSegment(draft: Draft, exerciseIndex: number, setIndex: number, profile: Profile): Draft {
+  const exercise = draft.exercises[exerciseIndex];
+  const set = exercise?.sets[setIndex];
+  if (!exercise || !set || set.warmup || exerciseMode(exercise.target, profile) !== 'reps' || set.type === 'dropset') return draft;
+  const restSec = String(exerciseRestPauseSec(exercise.target, profile));
+  const existing = set.clusters ?? [];
+  const base = existing.length ? numberIn(existing[existing.length - 1].r) : numberIn(set.reps);
+  if (!(base > 0)) return draft;
+  const added = Math.max(1, nextBurstReps(base));
+  const clusters = existing.length
+    ? [...existing, { key: randomUUID(), r: String(added), restSec }]
+    : [
+      { key: randomUUID(), r: String(Math.trunc(base)), restSec },
+      { key: randomUUID(), r: String(added), restSec },
+    ];
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => ({
+    ...row,
+    type: 'restpause',
+    clusters,
+    reps: String(clusters.reduce((total, cluster) => total + numberIn(cluster.r), 0)),
+  }));
+}
+
+export function setClusterSegment(
+  draft: Draft, exerciseIndex: number, setIndex: number, clusterIndex: number,
+  changes: Partial<Pick<DraftCluster, 'r' | 'restSec'>>,
+): Draft {
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => {
+    const clusters = (row.clusters ?? []).map((cluster, index) => index === clusterIndex ? { ...cluster, ...changes } : cluster);
+    return { ...row, clusters, reps: String(clusters.reduce((total, cluster) => total + Math.max(0, numberIn(cluster.r)), 0)) };
+  });
+}
+
+/** Remove one burst; when one or none is left the row reads as a plain set again. */
+export function removeClusterSegment(draft: Draft, exerciseIndex: number, setIndex: number, clusterIndex: number): Draft {
+  return replaceDraftSet(draft, exerciseIndex, setIndex, row => {
+    const removed = row.clusters?.[clusterIndex];
+    const clusters = (row.clusters ?? []).filter((_, index) => index !== clusterIndex);
+    if (clusters.length > 1) {
+      return { ...row, clusters, reps: String(clusters.reduce((total, cluster) => total + Math.max(0, numberIn(cluster.r)), 0)) };
+    }
+    const reps = clusters.length ? numberIn(clusters[0].r) : numberIn(removed?.r ?? row.reps);
+    const { type: _type, clusters: _clusters, ...plain } = row;
+    return { ...plain, reps: String(Math.max(1, Math.trunc(reps))) };
+  });
+}
+
 export function localDate(time: number) {
   const date = new Date(time);
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -322,16 +592,41 @@ export function validWorkoutDay(day: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(noon) && localDate(noon) === day && day <= localDate(Date.now());
 }
 
+function loggedSegments(set: DraftSet): Pick<LoggedSet, 'type' | 'drops' | 'clusters'> | null {
+  if (set.type === 'dropset' && set.drops?.length) return {
+    type: 'dropset',
+    drops: set.drops.map(drop => ({ w: numberIn(drop.w), r: Math.trunc(numberIn(drop.r)) })),
+  };
+  if (set.type === 'restpause' && set.clusters?.length) return {
+    type: 'restpause',
+    clusters: set.clusters.map(cluster => ({
+      r: Math.trunc(numberIn(cluster.r)),
+      restSec: Math.round(numberIn(cluster.restSec)),
+    })),
+  };
+  return null;
+}
+
+function validSegments(set: DraftSet) {
+  return validSetSegments(set);
+}
+
 export function finishWorkout(draft: Draft): QueuedWorkout | null {
   const entries: WorkoutEntry[] = [];
   for (const { target, sets } of draft.exercises) {
     const done = sets.flatMap<LoggedSet>(set => {
-      if (set.at === null || !validSet(set, target.mode)) return [];
-      const weight = Number(set.weight.replace(',', '.'));
-      const amount = Number(set.reps);
+      if (set.at === null || !validSegments(set)) return [];
+      const restPause = set.type === 'restpause' && !!set.clusters?.length;
+      const amount = restPause ? draftClusterTotal(set) : numberIn(set.reps);
+      const effective = restPause ? { ...set, reps: String(amount) } : set;
+      if (!validSet(effective, target.mode)) return [];
+      const weight = numberIn(set.weight);
       const values = target.mode === 'cardio' ? { speed: weight, min: amount }
         : target.mode === 'time' ? { w: weight, sec: amount } : { w: weight, r: amount };
-      return [{ ...values, done: true, at: set.at, ...(set.warmup ? { phase: 'warmup', warmup: true } : {}) }];
+      return [{
+        ...values, done: true, at: set.at,
+        ...(set.warmup ? { phase: 'warmup' as const, warmup: true } : loggedSegments(set) ?? {}),
+      }];
     });
     if (done.length === 0) continue;
     const topW = Math.max(0, ...done.filter(set => !isWarmupRow(set)).map(set => set.w ?? 0)) || null;
@@ -350,10 +645,9 @@ export function finishWorkout(draft: Draft): QueuedWorkout | null {
       if (set.at != null) set.at = Math.min(start + Math.max(0, set.at - draft.start), end);
     }
   }
-  const vol = entries.reduce((total, entry) => total + entry.sets.reduce((sum, set) => (
-    sum + (!draft.volumeWarmups && isWarmupRow(set) ? 0
-      : (set.w ?? 0) * (set.r ?? 0) * (entry.target?.dbLoad === 'each' ? 2 : 1))
-  ), 0), 0);
+  // Upstream semantics: drop-set drops add volume, rest-pause clusters are already inside the
+  // row's own total and never count twice. Warm-ups follow the session's stored switch.
+  const vol = workoutVolume({ entries }, { warmups: draft.volumeWarmups === true });
   return {
     unit: draft.unit,
     workout: {
@@ -368,15 +662,96 @@ export function inProfileUnit(item: QueuedWorkout, unit: Unit): Workout {
   if (item.unit === unit) return item.workout;
   const factor = unit === 'kg' ? 0.45359237 : 1 / 0.45359237;
   const convert = (value: number) => Math.round(value * factor * 100) / 100;
+  const load = (value: number | undefined) => value == null ? value : convert(value);
+
+  // Drops ride on the row and, on a unilateral record, on each side; both must follow the unit
+  // or the history would show a main set in pounds with drops still in kilograms.
+  const convertSet = (set: LoggedSet): LoggedSet => {
+    const out: LoggedSet = { ...set, w: load(set.w) };
+    if (Array.isArray(set.drops)) out.drops = set.drops.map(drop => ({ ...drop, w: load(drop.w) }));
+    if (set.sides) out.sides = {
+      ...(set.sides.L ? { L: convertSet(set.sides.L) } : {}),
+      ...(set.sides.R ? { R: convertSet(set.sides.R) } : {}),
+    };
+    return out;
+  };
+
   const workout = item.workout;
   return {
     ...workout,
     vol: workout.vol == null ? undefined : convert(workout.vol),
     entries: workout.entries.map(entry => ({
       ...entry,
-      topW: entry.topW == null ? entry.topW : convert(entry.topW),
+      topW: load(entry.topW ?? undefined) ?? null,
       target: entry.target?.weight == null ? entry.target : { ...entry.target, weight: convert(entry.target.weight) },
-      sets: entry.sets.map(set => ({ ...set, w: set.w == null ? undefined : convert(set.w) })),
+      sets: entry.sets.map(convertSet),
     })),
   };
+}
+
+function sameData(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => sameData(value, b[index]));
+  }
+  const left = a as Record<string, unknown>;
+  const right = b as Record<string, unknown>;
+  const keys = Object.keys(left).filter(key => left[key] !== undefined);
+  return keys.length === Object.keys(right).filter(key => right[key] !== undefined).length &&
+    keys.every(key => sameData(left[key], right[key]));
+}
+
+function entryIndexFor(latest: WorkoutEntry[], base: WorkoutEntry, index: number) {
+  if (latest[index]?.id === base.id) return index;
+  const matches = latest.flatMap((entry, row) => entry.id === base.id ? [row] : []);
+  return matches.length === 1 ? matches[0] : -1;
+}
+
+function setIndexFor(latest: LoggedSet[], base: LoggedSet, index: number) {
+  const direct = latest[index];
+  if (direct && (base.at == null || direct.at === base.at)) return index;
+  if (base.at == null) return -1;
+  const matches = latest.flatMap((set, row) => set.at === base.at ? [row] : []);
+  return matches.length === 1 ? matches[0] : -1;
+}
+
+function topWeightOf(sets: LoggedSet[]) {
+  return Math.max(0, ...sets.filter(set => set.done && !isWarmupRow(set)).map(set => set.w ?? 0)) || null;
+}
+
+/**
+ * Overlay only the sets the history editor actually changed onto the record as it is now. An
+ * untouched set keeps whatever another device wrote meanwhile; a target that moved or vanished
+ * cannot be resolved and returns null so the caller can ask for a fresh history load.
+ */
+export function mergeHistoryEntries(
+  latest: WorkoutEntry[],
+  base: WorkoutEntry[],
+  edited: WorkoutEntry[],
+  volumeWarmups: boolean,
+  bodyweight = 0,
+): { entries: WorkoutEntry[]; vol: number } | null {
+  if (base.length !== edited.length || base.length > latest.length) return null;
+  const entries = latest.map(entry => ({ ...entry, sets: [...entry.sets] }));
+  for (let index = 0; index < base.length; index++) {
+    const before = base[index];
+    const after = edited[index];
+    if (!before || !after || before.id !== after.id) return null;
+    if (sameData(before.sets, after.sets)) continue;
+    const target = entryIndexFor(entries, before, index);
+    if (target < 0) return null;
+    const sets = [...entries[target].sets];
+    if (before.sets.length !== after.sets.length) return null;
+    for (let row = 0; row < before.sets.length; row++) {
+      if (sameData(before.sets[row], after.sets[row])) continue;
+      const at = setIndexFor(sets, before.sets[row], row);
+      if (at < 0) return null;
+      sets[at] = after.sets[row];
+    }
+    entries[target] = { ...entries[target], sets, topW: topWeightOf(sets) };
+  }
+  const vol = workoutVolume({ entries }, { warmups: volumeWarmups, bodyweight });
+  return { entries, vol };
 }

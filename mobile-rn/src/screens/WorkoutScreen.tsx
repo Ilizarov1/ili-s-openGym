@@ -20,13 +20,25 @@ import { RestTimer, resolveRestSeconds } from '../restTimer';
 import { supersetMeta } from '../../../frontend/src/lib/superset-meta';
 import {
   MAX_WORK_SETS,
+  REST_PAUSE_MAX,
+  REST_PAUSE_MIN,
+  addClusterSegment,
+  addDropSegment,
   addWorkSet,
   backupExerciseIds,
+  draftClusterTotal,
+  exerciseMode,
   exerciseName,
+  removeClusterSegment,
+  removeDropSegment,
   removeSet,
+  setClusterSegment,
+  setDropSegment,
   swapExercise,
   updateSet,
+  updateSetReps,
   validSet,
+  validSetSegments,
   validWorkoutDay,
   type Draft,
   type Profile,
@@ -92,7 +104,10 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     return unit.map(() => ({ unit, nextSet }));
   });
   const done = draft.exercises.reduce((total, exercise) => total + exercise.sets.filter(set => set.at !== null).length, 0);
-  const canFinish = done > 0 && (draft.backfillDay == null || (draft.name.trim() !== '' && validWorkoutDay(draft.backfillDay)));
+  const allDoneValid = draft.exercises.every(exercise => exercise.sets.every(set =>
+    set.at === null || (validSet(set, exercise.target.mode) && validSetSegments(set))));
+  const canFinish = done > 0 && allDoneValid &&
+    (draft.backfillDay == null || (draft.name.trim() !== '' && validWorkoutDay(draft.backfillDay)));
 
   function groupActionLabel(index: number, grouped: boolean) {
     return grouped ? '移出超级组' : index > 0 ? '与上一动作组成超级组' : '';
@@ -185,7 +200,7 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
           const affected = grouped ? unit : [...(groups[exerciseIndex - 1]?.unit ?? []), exerciseIndex];
           const canGroup = affected.every(index => draft.exercises[index].sets.every(set => set.at === null));
           const completed = exercise.sets.some(set => set.at !== null);
-          const mode = exercise.target.mode;
+          const mode = exerciseMode(exercise.target, profile);
           const weightLabel = mode === 'cardio' ? '速度' : '重量';
           const amountLabel = mode === 'cardio' ? '分钟' : mode === 'time' ? '秒' : '次数';
           const replacements = backupExerciseIds(exercise.target, profile);
@@ -252,8 +267,10 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
 
                 {exercise.sets.map((set, setIndex) => {
                   const complete = set.at !== null;
-                  const valid = validSet(set, mode);
-                  const available = valid && (!grouped || complete ||
+                  const segments = set.type === 'dropset' ? set.drops ?? [] : set.type === 'restpause' ? set.clusters ?? [] : [];
+                  const segmentsValid = validSetSegments(set);
+                  const valid = validSet(set, mode) && segmentsValid;
+                  const available = (complete || valid) && (!grouped || complete ||
                     (nextSet?.exerciseIndex === exerciseIndex && nextSet.setIndex === setIndex));
                   const number = exercise.sets.slice(0, setIndex + 1).filter(row => !!row.warmup === !!set.warmup).length;
                   const label = set.warmup ? `热身第 ${number} 组` : `第 ${number} 组`;
@@ -261,6 +278,13 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                   const controlsRest = draft.rest?.exerciseIndex === exerciseIndex && draft.rest.setIndex === setIndex;
                   const editSet = (changes: { weight?: string; reps?: string }) => {
                     const edited = updateSet(draft, exerciseIndex, setIndex, { ...changes, at: null });
+                    onChange(controlsRest ? { ...edited, rest: null } : edited);
+                  };
+                  const editReps = (reps: string) => {
+                    const retotaled = set.type === 'restpause'
+                      ? updateSetReps(draft, exerciseIndex, setIndex, reps)
+                      : updateSet(draft, exerciseIndex, setIndex, { reps });
+                    const edited = updateSet(retotaled, exerciseIndex, setIndex, { at: null });
                     onChange(controlsRest ? { ...edited, rest: null } : edited);
                   };
                   const toggleSet = () => {
@@ -288,69 +312,196 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                   };
 
                   return (
-                    <View
-                      key={set.key ?? String(setIndex)}
-                      style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
-                    >
-                      <Text
-                        numberOfLines={1}
-                        style={{ width: NUMBER_COLUMN }}
-                        tone={complete ? 'tertiary' : 'secondary'}
-                        variant="footnote"
-                      >
-                        {set.warmup ? '热身' : number}
-                      </Text>
-                      <View style={{ flex: 1 }}>
-                        <Stepper
-                          accessibilityLabel={`${controlLabel}${weightLabel}`}
-                          keyboardType="decimal-pad"
-                          min={0}
-                          onChangeText={weight => editSet({ weight })}
-                          step={mode === 'cardio' ? 0.5 : 2.5}
-                          value={set.weight}
-                        />
+                    <View key={set.key ?? String(setIndex)} style={{ gap: theme.space.xs }}>
+                      <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
+                        <Text
+                          numberOfLines={1}
+                          style={{ width: NUMBER_COLUMN }}
+                          tone={complete ? 'tertiary' : 'secondary'}
+                          variant="footnote"
+                        >
+                          {set.warmup ? '热身' : number}
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Stepper
+                            accessibilityLabel={`${controlLabel}${weightLabel}`}
+                            keyboardType="decimal-pad"
+                            min={0}
+                            onChangeText={weight => editSet({ weight })}
+                            step={mode === 'cardio' ? 0.5 : 2.5}
+                            value={set.weight}
+                          />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Stepper
+                            accessibilityLabel={`${controlLabel}${set.type === 'restpause' ? '总次数' : amountLabel}`}
+                            keyboardType={mode === 'cardio' ? 'decimal-pad' : 'number-pad'}
+                            min={0}
+                            onChangeText={editReps}
+                            step={mode === 'time' ? 5 : 1}
+                            value={set.reps}
+                          />
+                        </View>
+                        <PressableScale
+                          accessibilityLabel={`${controlLabel}完成`}
+                          accessibilityRole="checkbox"
+                          accessibilityState={{ checked: complete, disabled: !available }}
+                          disabled={!available}
+                          hitSlop={theme.space.xs}
+                          onPress={toggleSet}
+                          scaleTo={theme.motion.pressScaleSmall}
+                          style={{
+                            alignItems: 'center',
+                            backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
+                            borderRadius: theme.radius.sm,
+                            height: theme.sizes.tileSm,
+                            justifyContent: 'center',
+                            width: theme.sizes.tileSm,
+                          }}
+                        >
+                          <Icon
+                            color={complete ? theme.colors.onAccent : theme.colors.label3}
+                            name="check"
+                            size={18}
+                          />
+                        </PressableScale>
+                        {complete ? <View style={{ width: theme.sizes.tileMd }} /> : (
+                          <IconButton
+                            accessibilityLabel={`删除${controlLabel}`}
+                            name="xmark"
+                            onPress={() => onChange(removeSet(draft, exerciseIndex, setIndex))}
+                            size="sm"
+                          />
+                        )}
                       </View>
-                      <View style={{ flex: 1 }}>
-                        <Stepper
-                          accessibilityLabel={`${controlLabel}${amountLabel}`}
-                          keyboardType={mode === 'cardio' ? 'decimal-pad' : 'number-pad'}
-                          min={0}
-                          onChangeText={reps => editSet({ reps })}
-                          step={mode === 'time' ? 5 : 1}
-                          value={set.reps}
-                        />
-                      </View>
-                      <PressableScale
-                        accessibilityLabel={`${controlLabel}完成`}
-                        accessibilityRole="checkbox"
-                        accessibilityState={{ checked: complete, disabled: !available }}
-                        disabled={!available}
-                        hitSlop={theme.space.xs}
-                        onPress={toggleSet}
-                        scaleTo={theme.motion.pressScaleSmall}
-                        style={{
-                          alignItems: 'center',
-                          backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
-                          borderRadius: theme.radius.sm,
-                          height: theme.sizes.tileSm,
-                          justifyContent: 'center',
-                          width: theme.sizes.tileSm,
-                        }}
-                      >
-                        <Icon
-                          color={complete ? theme.colors.onAccent : theme.colors.label3}
-                          name="check"
-                          size={18}
-                        />
-                      </PressableScale>
-                      {complete ? <View style={{ width: theme.sizes.tileMd }} /> : (
-                        <IconButton
-                          accessibilityLabel={`删除${controlLabel}`}
-                          name="xmark"
-                          onPress={() => onChange(removeSet(draft, exerciseIndex, setIndex))}
-                          size="sm"
-                        />
-                      )}
+
+                      {!set.warmup && mode === 'reps' ? (
+                        <>
+                          {(set.type === 'dropset' ? set.drops ?? [] : []).map((drop, dropIndex) => (
+                            <View
+                              key={drop.key ?? `d${dropIndex}`}
+                              style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
+                            >
+                              <Text
+                                numberOfLines={1}
+                                style={{ paddingLeft: theme.space.sm, width: NUMBER_COLUMN + theme.space.md }}
+                                tone="secondary"
+                                variant="caption"
+                              >
+                                递减{dropIndex + 1}
+                              </Text>
+                              <View style={{ flex: 1 }}>
+                                <Stepper
+                                  accessibilityLabel={`${controlLabel}递减${dropIndex + 1}${weightLabel}`}
+                                  keyboardType="decimal-pad"
+                                  min={0}
+                                  onChangeText={weight => onChange(setDropSegment(draft, exerciseIndex, setIndex, dropIndex, { w: weight }))}
+                                  step={2.5}
+                                  value={drop.w}
+                                />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Stepper
+                                  accessibilityLabel={`${controlLabel}递减${dropIndex + 1}次数`}
+                                  keyboardType="number-pad"
+                                  min={1}
+                                  onChangeText={reps => onChange(setDropSegment(draft, exerciseIndex, setIndex, dropIndex, { r: reps }))}
+                                  step={1}
+                                  value={drop.r}
+                                />
+                              </View>
+                              <IconButton
+                                accessibilityLabel={`删除${controlLabel}递减${dropIndex + 1}`}
+                                name="xmark"
+                                onPress={() => onChange(removeDropSegment(draft, exerciseIndex, setIndex, dropIndex))}
+                                size="sm"
+                              />
+                            </View>
+                          ))}
+
+                          {(set.type === 'restpause' ? set.clusters ?? [] : []).map((cluster, clusterIndex) => (
+                            <View
+                              key={cluster.key ?? `c${clusterIndex}`}
+                              style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
+                            >
+                              <Text
+                                numberOfLines={1}
+                                style={{ paddingLeft: theme.space.sm, width: NUMBER_COLUMN + theme.space.md }}
+                                tone="secondary"
+                                variant="caption"
+                              >
+                                分段{clusterIndex + 1}
+                              </Text>
+                              <View style={{ flex: 1 }}>
+                                <Stepper
+                                  accessibilityLabel={`${controlLabel}分段${clusterIndex + 1}次数`}
+                                  keyboardType="number-pad"
+                                  min={1}
+                                  onChangeText={reps => onChange(setClusterSegment(draft, exerciseIndex, setIndex, clusterIndex, { r: reps }))}
+                                  step={1}
+                                  value={cluster.r}
+                                />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Stepper
+                                  accessibilityLabel={`${controlLabel}分段${clusterIndex + 1}短休秒数`}
+                                  keyboardType="number-pad"
+                                  max={REST_PAUSE_MAX}
+                                  min={REST_PAUSE_MIN}
+                                  onChangeText={restSec => onChange(setClusterSegment(draft, exerciseIndex, setIndex, clusterIndex, { restSec }))}
+                                  step={5}
+                                  value={cluster.restSec}
+                                />
+                              </View>
+                              <IconButton
+                                accessibilityLabel={`删除${controlLabel}分段${clusterIndex + 1}`}
+                                name="xmark"
+                                onPress={() => onChange(removeClusterSegment(draft, exerciseIndex, setIndex, clusterIndex))}
+                                size="sm"
+                              />
+                            </View>
+                          ))}
+
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+                            {set.type !== 'restpause' ? (
+                              <Button
+                                icon="arrowDown"
+                                onPress={() => onChange(addDropSegment(draft, exerciseIndex, setIndex, profile))}
+                                size="xs"
+                                variant="ghost"
+                              >
+                                {set.type === 'dropset' ? '添加递减段' : '改为递减组'}
+                              </Button>
+                            ) : null}
+                            {set.type !== 'dropset' ? (
+                              <Button
+                                icon="bolt"
+                                onPress={() => onChange(addClusterSegment(draft, exerciseIndex, setIndex, profile))}
+                                size="xs"
+                                variant="ghost"
+                              >
+                                {set.type === 'restpause' ? '添加段' : '改为休息暂停'}
+                              </Button>
+                            ) : null}
+                          </View>
+
+                          {set.type === 'restpause' && segments.length > 0 ? (
+                            <Text tone="secondary" variant="caption">
+                              {`总 ${draftClusterTotal(set)} 次 · ${segments.length} 段 · 短休按秒计`}
+                            </Text>
+                          ) : null}
+                          {set.type === 'dropset' && segments.length > 0 ? (
+                            <Text tone="secondary" variant="caption">
+                              {`主组 ${set.reps} 次 · ${segments.length} 段递减`}
+                            </Text>
+                          ) : null}
+                          {!segmentsValid ? (
+                            <Text tone="danger" variant="caption">
+                              分段的数据无效，补全重量、次数和短休后才能完成这一组。
+                            </Text>
+                          ) : null}
+                        </>
+                      ) : null}
                     </View>
                   );
                 })}
