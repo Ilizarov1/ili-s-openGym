@@ -22,16 +22,20 @@ export function resolveRestSeconds(
  * rest, and the countdown keeps ticking against `endsAt` so backgrounding the app
  * or a restart cannot drift it.
  */
-export function RestTimer({ endsAt, onCancel }: { endsAt: number | null; onCancel: () => void }) {
+export function RestTimer({ endsAt, frozen = false, onCancel }: { endsAt: number | null; frozen?: boolean; onCancel: () => void }) {
   if (endsAt === null) return null;
-  return <RestCountdown key={endsAt} endsAt={endsAt} onCancel={onCancel} />;
+  return <RestCountdown key={endsAt} endsAt={endsAt} frozen={frozen} onCancel={onCancel} />;
 }
 
-function RestCountdown({ endsAt, onCancel }: { endsAt: number; onCancel: () => void }) {
+function RestCountdown({ endsAt, frozen, onCancel }: { endsAt: number; frozen: boolean; onCancel: () => void }) {
   const theme = useTheme();
   const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
+    if (frozen) {
+      setNow(endsAt - 90000);
+      return;
+    }
     let tick: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       clearTimeout(tick);
@@ -48,9 +52,9 @@ function RestCountdown({ endsAt, onCancel }: { endsAt: number; onCancel: () => v
       clearTimeout(tick);
       subscription.remove();
     };
-  }, [endsAt]);
+  }, [endsAt, frozen]);
 
-  const seconds = Math.ceil((endsAt - now) / 1000);
+  const seconds = frozen ? 90 : Math.ceil((endsAt - now) / 1000);
   if (seconds <= 0) return null;
 
   const time = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;

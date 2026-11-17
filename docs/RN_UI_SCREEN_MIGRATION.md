@@ -608,14 +608,16 @@ npm.cmd run design:check
 - 旧 `ui.tsx`、`PlanEditor.tsx`、`HistoryEditor.tsx`、`ExercisePicker.tsx` 已删除。
 - 计划、训练、统计、动作库、设置和编辑器的截图已保存到 `mobile-rn/dist/ui/`。
 - 新增 `five-tab-smoke.ps1`，验证五 Tab、首页、设置、计划、计划编辑、统计、动作库、筛选 Sheet 和开始 Sheet；已通过。
+- 新增 `ui-capture.ps1`、`ui-fixture.ps1` 和 `make-ui-fixture.mjs`：深链直达各页面，固定 fixture 数据，一次截图并生成 contact sheet。
+- 训练页支持 `opengym://workout?routine=<id>`，`e2e=1` 冻结用时和休息倒计时，便于 `uiautomator dump` 和截图断言。
 - `design-gallery-verify.ps1` 已更新为从首页齿轮进入设置再打开设计系统预览；已通过。
 - `npm run typecheck`、`npm run design:check` 通过。
 - 手动验证：计划训练记组、休息 dock、完成训练、统计记录、计划编辑、历史编辑、动作库选择动作、超级组组合。
-- Release APK 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1 -ResetAppData`：`mobile-rn/dist/openGym-RN-0.1.4-five-tab.apk`，versionCode 5，SHA-256 `39B1CBD924B4AE58C2A9C0E8E86BE67EDB42CF7CD366286A680DE9241C4CC319`，包含 arm64-v8a 和 x86_64，Debug 证书签名。
+- Release APK 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1 -ResetAppData` 和 `opengym://plan` 深链：`mobile-rn/dist/openGym-RN-0.1.4-five-tab.apk`，versionCode 5，SHA-256 `184A512533C8BEA028B62B0109B9CD332318D1564E973BDE54EB939B6CCBAA89`，包含 arm64-v8a 和 x86_64，Debug 证书签名。
 
 已知限制：
 
-- 训练页的 `useElapsed` 每秒更新，`uiautomator dump` 在训练进行中可能无法获得 idle；新冒烟脚本不依赖训练中的 dump，旧 `android-regression.ps1` 需要按五 Tab 标签和菜单重新适配后才能重跑。
+- 训练页普通模式的 `useElapsed` 每秒更新，`uiautomator dump` 可能无法获得 idle；视觉和控件树断言使用 `e2e=1` 深链冻结计时器。旧 `android-regression.ps1` 仍需按五 Tab 标签和菜单重新适配后才能重跑。
 - 统计页只显示已有数据；未迁移的 P2 模块不显示。
 - Design Gallery 只在 Debug 构建的“设置 → 开发”中可见；Release 包不显示该入口。
 

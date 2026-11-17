@@ -42,6 +42,8 @@ function AppScreen() {
   const [panel, setPanel] = useState<Panel | null>(null);
   const [startOpen, setStartOpen] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
+  const [e2e, setE2e] = useState(false);
+  const [startRequest, setStartRequest] = useState<{ routine?: string } | null>(null);
   const connection = gym.workspace?.connection;
   const currentDraft = gym.workspace?.data.draft;
   const restAlertError = useRestNotification(
@@ -63,6 +65,31 @@ function AppScreen() {
   }, [connection]);
 
   useEffect(() => {
+    const apply = (url: string | null) => {
+      if (!url) return;
+      const normalized = url.replace(/^opengym:\/\//i, '');
+      const [rawRoute, rawQuery = ''] = normalized.split('?');
+      const route = rawRoute.replace(/\/+$/, '').toLowerCase();
+      const params = Object.fromEntries(rawQuery.split('&').filter(Boolean).map(part => {
+        const [key, value = ''] = part.split('=');
+        return [key, decodeURIComponent(value)];
+      }));
+      if (params.e2e === '1') setE2e(true);
+      if (route === 'settings') { setPanel({ kind: 'settings' }); return; }
+      if (route === 'gallery') { setPanel({ kind: 'design' }); return; }
+      if (route === 'start-sheet') { setStartOpen(true); return; }
+      if (route === 'start' || route === 'workout') { setStartRequest({ routine: params.routine }); return; }
+      if (route === 'home' || route === 'plan' || route === 'stats' || route === 'library') {
+        setPanel(null);
+        setTab(route);
+      }
+    };
+    void Linking.getInitialURL().then(apply).catch(() => undefined);
+    const subscription = Linking.addEventListener('url', event => apply(event.url));
+    return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (panel) { closePanel(); return true; }
       if (currentDraft) {
@@ -77,6 +104,21 @@ function AppScreen() {
     });
     return () => subscription.remove();
   }, [currentDraft, panel, tab]);
+
+  // A deep link can open a tab/panel or ask for a workout. This must stay
+  // above the workspace loading return so the hook order never changes.
+  useEffect(() => {
+    if (!startRequest || !gym.workspace) return;
+    const request = startRequest;
+    setStartRequest(null);
+    if (gym.workspace.data.draft) return;
+    const { profile, queue } = gym.workspace.data;
+    const routine = request.routine ? (profile.routines ?? []).find(item => item.id === request.routine) : undefined;
+    const next = routine
+      ? startWorkout(routine, profile, queue)
+      : startWorkout({ id: '', name: '自由训练', ex: [] }, profile, queue);
+    gym.change(data => ({ ...data, draft: next }));
+  }, [gym.workspace, startRequest]);
 
   if (!gym.workspace) {
     return <View style={{ flex: 1, backgroundColor: theme.colors.bg, padding: 24, justifyContent: 'center' }}>
@@ -208,6 +250,7 @@ function AppScreen() {
       profile={profile}
       draft={draft}
       queue={queue}
+      e2e={e2e}
       onChange={openWorkout}
       onFinish={saveWorkout}
       onDiscard={() => Alert.alert('放弃这次训练？', '本次已输入的组数会清除。', [

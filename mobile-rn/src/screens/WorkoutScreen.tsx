@@ -37,6 +37,7 @@ export type WorkoutScreenProps = {
   profile: Profile;
   draft: Draft;
   queue: QueuedWorkout[];
+  e2e?: boolean;
   onChange: (draft: Draft) => boolean;
   onFinish: () => void;
   onDiscard: () => void;
@@ -57,14 +58,15 @@ function formatElapsed(millis: number) {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}` : tail;
 }
 
-function useElapsed(start: number) {
+function useElapsed(start: number, frozen: boolean) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
+    if (frozen) return;
     setNow(Date.now());
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
-  }, [start]);
-  return formatElapsed(now - start);
+  }, [start, frozen]);
+  return frozen ? '0:01' : formatElapsed(now - start);
 }
 
 /**
@@ -72,12 +74,12 @@ function useElapsed(start: number) {
  * The "用时" prefix also keeps the header clock out of the `m:ss` shape the rest
  * countdown is matched by in the Android regression.
  */
-function Elapsed({ start }: { start: number }) {
-  const elapsed = useElapsed(start);
+function Elapsed({ start, frozen }: { start: number; frozen: boolean }) {
+  const elapsed = useElapsed(start, frozen);
   return <Text tone="secondary" variant="footnote">用时 {elapsed}</Text>;
 }
 
-export function WorkoutScreen({ profile, draft, queue, onChange, onFinish, onDiscard, onPick }: WorkoutScreenProps) {
+export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, onFinish, onDiscard, onPick }: WorkoutScreenProps) {
   const theme = useTheme();
   const list = useRef<ScrollView>(null);
   const positions = useRef(new Map<number, number>());
@@ -128,7 +130,7 @@ export function WorkoutScreen({ profile, draft, queue, onChange, onFinish, onDis
           compact
           right={(
             <>
-              <Elapsed start={draft.start} />
+              <Elapsed start={draft.start} frozen={e2e} />
               <Button disabled={!canFinish} onPress={onFinish} size="sm" variant="primary">
                 完成训练
               </Button>
@@ -399,7 +401,7 @@ export function WorkoutScreen({ profile, draft, queue, onChange, onFinish, onDis
         </Button>
       </ScrollView>
 
-      <RestTimer endsAt={draft.rest?.endsAt ?? null} onCancel={() => onChange({ ...draft, rest: null })} />
+      <RestTimer endsAt={draft.rest?.endsAt ?? null} frozen={e2e} onCancel={() => onChange({ ...draft, rest: null })} />
 
       <ActionSheet
         items={[{ label: '放弃训练', icon: 'trash', tone: 'danger', onPress: onDiscard }]}
