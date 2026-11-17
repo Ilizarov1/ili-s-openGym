@@ -84,8 +84,8 @@ function Test-VisibleBounds($Node) {
         ([int]$bounds.Groups[4].Value - [int]$bounds.Groups[2].Value -ge 12)
 }
 
-function Wait-Node([scriptblock]$Match, [string]$Context, [switch]$Scroll, [switch]$System) {
-    $deadline = [DateTime]::UtcNow.AddSeconds(25)
+function Wait-Node([scriptblock]$Match, [string]$Context, [switch]$Scroll, [switch]$System, [int]$Seconds = 25) {
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
     do {
         $ui = Read-Ui
         if ($ui) {
@@ -122,6 +122,93 @@ function Get-RestSeconds {
     [int]$minutes * 60 + [int]$seconds
 }
 
+function Scroll-ToTop {
+    $x = [int]($screenWidth / 2)
+    $fromY = [int]($screenHeight * 0.30)
+    $toY = [int]($screenHeight * 0.85)
+    1..3 | ForEach-Object { Invoke-Adb shell input swipe $x $fromY $x $toY 200 | Out-Null }
+}
+
+function Wait-Stats {
+    Wait-Node {
+        $_.GetAttribute('text') -eq '训练次数' -or $_.GetAttribute('text') -eq '还没有训练记录'
+    } 'Stats screen' | Out-Null
+}
+
+function Open-Home {
+    Tap-Label '首页'
+    Wait-Label '首页' | Out-Null
+    Scroll-ToTop
+}
+
+function Open-Settings {
+    Open-Home
+    Tap-Label '设置'
+    Wait-Label '设置' | Out-Null
+}
+
+function Open-Stats {
+    Tap-Label '统计'
+    Wait-Stats
+    Scroll-ToTop
+}
+
+function Open-PlanList {
+    Tap-Label '计划'
+    Wait-Label '计划' | Out-Null
+    Scroll-ToTop
+    Tap-Label '训练计划'
+    Wait-Node {
+        $_.GetAttribute('text') -in @('新训练日', '新建计划')
+    } 'Plan routines' | Out-Null
+}
+
+function Tap-PlanAction([string]$Name, [string]$Label) {
+    Open-PlanList
+    Tap-Label "$Name 更多操作" -Scroll
+    Tap-Label $Label
+}
+
+function Start-Routine([string]$Name) {
+    Tap-PlanAction $Name '开始训练'
+    Wait-Label '完成训练' | Out-Null
+}
+
+function Open-PlanEditor([string]$Name) {
+    Tap-PlanAction $Name '编辑计划'
+    Wait-Label '编辑计划' | Out-Null
+}
+
+function Wait-Workout([string]$Name) {
+    Wait-Node {
+        $description = $_.GetAttribute('content-desc')
+        $description -like "$Name*" -and ($description -like '*展开详情*' -or $description -like '*收起详情*')
+    } "$Name workout row" -Scroll | Out-Null
+}
+
+function Tap-Workout([string]$Name) {
+    $node = Wait-Node {
+        $description = $_.GetAttribute('content-desc')
+        $description -like "$Name*" -and ($description -like '*展开详情*' -or $description -like '*收起详情*')
+    } "$Name workout row" -Scroll
+    Tap-Node $node "$Name workout row"
+}
+
+function Tap-ExerciseHistory {
+    $node = Wait-Node {
+        $_.GetAttribute('content-desc') -like '*，查看动作历史'
+    } 'Exercise history row' -Scroll
+    Tap-Node $node 'Exercise history row'
+}
+
+function Tap-Switch([string]$Label) {
+    $node = Wait-Node {
+        $_.GetAttribute('content-desc') -eq $Label -and
+            ($_.GetAttribute('checkable') -eq 'true' -or $_.GetAttribute('class') -like '*Switch*')
+    } $Label -Scroll
+    Tap-Node $node $Label
+}
+
 function Tap-Node($node, [string]$Label) {
     $bounds = [regex]::Match($node.GetAttribute('bounds'), '\[(\d+),(\d+)\]\[(\d+),(\d+)\]')
     if (!$bounds.Success) { throw "Missing screen bounds for $Label" }
@@ -152,31 +239,27 @@ function Set-Field([string]$Label, [string]$Value, [switch]$Scroll) {
     Wait-Node { $_.GetAttribute('content-desc') -eq $Label -and $_.GetAttribute('text') -eq $Value } "${Label}: $Value" | Out-Null
 }
 
-function Tap-PlanButton([string]$Name, [string]$Label) {
-    $button = Wait-Node {
-        if ($_.GetAttribute('content-desc') -ne $Label) { return $false }
-        $title = $_.SelectSingleNode('preceding-sibling::node[@class="android.widget.TextView"][2]')
-        $title -and $title.GetAttribute('text') -eq $Name
-    } "$Label ($Name)" -Scroll
-    Tap-Node $button $Label
-}
-
 function Get-ApiData {
     Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10
 }
 
 function Sync-App {
-    Tap-Label '训练'
-    Tap-Label '服务器'
-    Tap-Label '立即同步'
+    Open-Settings
+    Tap-Label '立即同步' -Scroll
     Wait-Node { $_.GetAttribute('text') -like '0 条待同步*' } 'P1 changes synced' | Out-Null
     Wait-Label '立即同步' -Enabled | Out-Null
+    Scroll-ToTop
+    Tap-Label '返回'
+    Wait-Label '首页' | Out-Null
     (Get-ApiData).state
 }
 
 function Start-App {
     Invoke-Adb shell am start -W -n "$appId/.MainActivity" | Out-Null
-    Wait-Label '训练计划' | Out-Null
+    # A saved draft opens straight into the workout, where the tab bar is not mounted.
+    Wait-Node {
+        $_.GetAttribute('text') -eq '首页' -or $_.GetAttribute('content-desc') -eq '训练菜单'
+    } 'App shell' -Seconds 75 | Out-Null
 }
 
 function Add-Reverse([int]$Port) {
@@ -205,7 +288,7 @@ try {
         if ((Invoke-Adb shell pm clear $appId) -ne 'Success') { throw "Unable to clear test app data on $Serial" }
     }
     Start-App
-    Tap-Label '开始训练'
+    Start-Routine '全身力量 A'
     Tap-Label '第 1 组重量' -Field
     Invoke-Adb shell input keyevent KEYCODE_MOVE_END KEYCODE_DEL | Out-Null
     Invoke-Adb shell input text '37.5' | Out-Null
@@ -234,16 +317,20 @@ try {
         Wait-Label '已完成 1 组' | Out-Null
     }
     Tap-Label '完成训练' -Scroll
-    Wait-Label '训练历史' | Out-Null
+    Wait-Stats
     Invoke-Adb shell am force-stop $appId | Out-Null
     Start-App
-    Tap-Label '历史'
-    Tap-Label '全身力量 A'
+    Open-Stats
+    Tap-Workout '全身力量 A'
     Wait-Label '37.5 kg × 8' | Out-Null
     if ($FeatureChecks) {
-        Tap-Label '训练'
-        Tap-Label '开始训练'
+        Open-PlanList
+        Start-Routine '全身力量 A'
         Wait-Node { $_.GetAttribute('content-desc') -eq '第 1 组重量' -and $_.GetAttribute('text') -eq '37.5' } 'Recent weight prefilled as 37.5 kg' | Out-Null
+        # The workout hides the tabs, so release the draft before pairing the account.
+        Tap-Label '放弃训练' -Scroll
+        Tap-Label '放弃'
+        Wait-Label '计划' | Out-Null
     }
 
     Write-Host 'Starting isolated openGym API and checking device pairing'
@@ -285,16 +372,16 @@ try {
     if ($pairing.code -notmatch '^[A-Z0-9]+$') { throw 'The isolated API did not return a pairing code.' }
 
     Add-Reverse $reversePort
-    Tap-Label '服务器'
+    Open-Settings
     Tap-Label '服务器地址' -Field
     Invoke-Adb shell input text $baseUrl | Out-Null
-    Tap-Label '配对码' -Field
+    Tap-Label '配对码' -Field -Scroll
     Invoke-Adb shell input text $pairing.code | Out-Null
-    Tap-Label '连接服务器'
-    Wait-Label $name | Out-Null
-    Tap-Label '训练'
+    Tap-Label '连接服务器' -Scroll
+    Wait-Node { $_.GetAttribute('text') -like "*$name*" } 'Paired account' | Out-Null
+    Open-PlanList
     Wait-Label $routineName | Out-Null
-    Tap-Label '开始训练'
+    Start-Routine $routineName
 
     Write-Host 'Checking offline completion, reconnect and duplicate prevention'
     Remove-Reverse
@@ -310,14 +397,16 @@ try {
         Wait-Label '已完成 2 组' | Out-Null
     }
     Tap-Label '完成训练' -Scroll
-    Wait-Label '训练历史' | Out-Null
+    Wait-Stats
     $offlineState = Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10
     if ($offlineState.state.workouts.Count -ne 0) { throw 'The workout reached the API while the emulator was offline.' }
-    Wait-Node { $_.GetAttribute('text') -like '*· 待同步' } 'Offline workout pending sync' | Out-Null
+    Wait-Node {
+        $_.GetAttribute('text') -eq '待同步' -or $_.GetAttribute('content-desc') -like '*待同步*'
+    } 'Offline workout pending sync' | Out-Null
 
     Add-Reverse $reversePort
-    Tap-Label '服务器'
-    Tap-Label '立即同步'
+    Open-Settings
+    Tap-Label '立即同步' -Scroll
     Wait-Node { $_.GetAttribute('text') -like '0 条待同步*' } 'Sync queue is empty' | Out-Null
     $firstSync = (Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10).state.workouts
     $savedSets = $firstSync[0].entries[0].sets
@@ -332,14 +421,16 @@ try {
     Wait-Label '立即同步' -Enabled | Out-Null
     $nextSync = (Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10).state.workouts
     if ($nextSync.Count -ne 1 -or $nextSync[0].id -ne $firstSync[0].id) { throw 'Repeated sync changed the stored workout list.' }
-    Tap-Label '历史'
-    Tap-Label $routineName
+    Scroll-ToTop
+    Tap-Label '返回'
+    Open-Stats
+    Tap-Workout $routineName
     if ($FeatureChecks) {
         Wait-Node { $_.GetAttribute('text') -like '热身 * · 25 kg × 8' } 'Warm-up and work in history' | Out-Null
 
         Write-Host 'Checking planned backup exercise and saved exercise identity'
-        Tap-Label '训练'
-        Tap-Label '开始训练'
+        Open-PlanList
+        Start-Routine $routineName
         Tap-Label '替换为 杠铃上斜卧推'
         Wait-Label '杠铃上斜卧推' | Out-Null
         Tap-Label '替换为 杠铃卧推'
@@ -352,9 +443,9 @@ try {
         Tap-Label '第 1 组完成'
         Wait-Label '已完成 1 组' | Out-Null
         Tap-Label '完成训练' -Scroll
-        Wait-Label '训练历史' | Out-Null
-        Tap-Label '服务器'
-        Tap-Label '立即同步'
+        Wait-Stats
+        Open-Settings
+        Tap-Label '立即同步' -Scroll
         Wait-Node { $_.GetAttribute('text') -like '0 条待同步*' } 'Backup workout synced' | Out-Null
         $backupState = (Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10).state
         $backupWorkout = @($backupState.workouts | Where-Object id -ne $firstSync[0].id)
@@ -369,8 +460,10 @@ try {
         if ($slot.id -ne '0025' -or $slot.subs[0] -ne '0047' -or $slot.sets -ne 2 -or $slot.reps -ne 8) {
             throw 'The planned slot and its backup should stay unchanged on the server.'
         }
-        Tap-Label '历史'
-        Tap-Label $routineName
+        Scroll-ToTop
+        Tap-Label '返回'
+        Open-Stats
+        Tap-Workout $routineName
         Wait-Label '杠铃上斜卧推' | Out-Null
     } else {
         Wait-Label '25 kg × 8' | Out-Null
@@ -378,16 +471,17 @@ try {
 
     if ($P1Checks) {
         Write-Host 'Checking exercise history, offline correction, concurrent profile changes and deletion'
-        Tap-Label '查看动作历史'
-        Wait-Label '返回训练历史' | Out-Null
-        Tap-Label '返回训练历史'
-        Tap-Label '编辑训练' -Scroll
+        Tap-ExerciseHistory
+        Wait-Label '动作历史' | Out-Null
+        Tap-Label '返回'
+        Tap-Label '训练操作' -Scroll
+        Tap-Label '编辑训练'
         Remove-Reverse
         Set-Field '训练名称' 'Corrected session'
         Set-Field '训练日期' '2024-03-11'
         Set-Field '次数' '9'
         Tap-Label '保存训练修改' -Scroll
-        Wait-Label 'Corrected session' | Out-Null
+        Wait-Workout 'Corrected session'
         $other = Get-ApiData
         $other.state.routines[0].name = 'Edited on web'
         Invoke-RestMethod "$baseUrl/api/data" -Method Put -ContentType 'application/json' -WebSession $apiSession `
@@ -399,8 +493,9 @@ try {
             $edited.routines[0].name -ne 'Edited on web') {
             throw 'Offline history correction failed to preserve the web change.'
         }
-        Tap-Label '历史'
-        Tap-Label 'Corrected session'
+        Open-Stats
+        Tap-Workout 'Corrected session'
+        Tap-Label '训练操作' -Scroll
         Tap-Label '删除训练'
         Tap-Label '删除'
         $afterDelete = Sync-App
@@ -410,28 +505,33 @@ try {
         Write-Output 'PASS P1: exercise history and offline history correction/deletion.'
 
         Write-Host 'Checking custom exercise, catalogue search and plan scheduling'
-        Tap-Label '训练'
-        Tap-Label '新建计划'
+        Open-PlanList
+        Tap-Label '新训练日'
         Set-Field '计划名称' 'Mixed training'
         Tap-Label '添加计划动作'
-        Tap-Label '新建自定义动作'
-        Set-Field '自定义动作名称' 'Sample hold'
-        Tap-Label '保存自定义动作'
-        Tap-Label '编辑自定义动作'
-        Set-Field '自定义动作名称' 'QA Hold'
-        Tap-Label '保存自定义动作'
-        Tap-Label 'QA Hold'
+        Tap-Label '创建自定义动作'
+        Set-Field '动作名称' 'Sample hold'
+        Tap-Label '保存'
+        Tap-Label '编辑 Sample hold' -Scroll
+        Set-Field '动作名称' 'QA Hold'
+        Tap-Label '保存'
+        Tap-Label '选择 QA Hold'
         Tap-Label '计时'
         Set-Field '组数' '1'
         Set-Field '秒' '32'
         Set-Field '重量' '12.5'
         Tap-Label '添加计划动作' -Scroll
         Set-Field '搜索动作' 'treadmill'
-        Tap-Label '跑步机跑步'
+        Tap-Label '选择 跑步机跑步'
+        # Both cards stay expanded after adding an exercise; collapse the timed one so "组数"
+        # targets the cardio slot instead of the first visible field.
+        Scroll-ToTop
+        Tap-Label '收起QA Hold' -Scroll
         Set-Field '组数' '1' -Scroll
         Set-Field '分钟' '7.5' -Scroll
         Set-Field '速度' '9.2' -Scroll
-        Tap-Label '保存计划' -Scroll
+        Scroll-ToTop
+        Tap-Label '保存'
         $program = Sync-App
         $mixed = $program.routines | Where-Object name -eq 'Mixed training'
         if ($mixed.ex.Count -ne 2 -or $program.customEx[0].n -ne 'QA Hold' -or $mixed.ex[0].id -ne $program.customEx[0].id -or
@@ -439,17 +539,21 @@ try {
             $mixed.ex[1].min -ne 7.5 -or $mixed.ex[1].speed -ne 9.2) {
             throw 'The plan or custom exercise did not round-trip to the API.'
         }
-        Tap-Label '训练'
+        Open-PlanList
         Tap-Label '训练排程'
         Tap-Label 'Mixed training'
-        Tap-Label '保存当天排程'
-        Wait-Label '开始今日训练 · Mixed training' | Out-Null
+        Tap-Label '保存当天排程' -Scroll
+        Wait-Label 'Mixed training' | Out-Null
+        Open-Home
+        Wait-Label '今日训练' -Scroll | Out-Null
+        Wait-Label 'Mixed training' -Scroll | Out-Null
+        Open-PlanList
         Tap-Label '训练排程'
         Tap-Label '轮换'
         Tap-Label 'Mixed training'
         Tap-Label 'Edited on web'
-        Tap-Label '保存轮换'
-        Wait-Label '开始今日训练 · Mixed training' | Out-Null
+        Tap-Label '保存轮换' -Scroll
+        Wait-Label 'Mixed training' | Out-Null
         $schedule = Sync-App
         $weekday = $schedule.week.PSObject.Properties | Where-Object { $_.Value -contains $mixed.id }
         if ($schedule.scheduleMode -ne 'rotation' -or $schedule.rotation.sequence[0] -ne $mixed.id -or
@@ -458,14 +562,15 @@ try {
         }
 
         Write-Host 'Checking cardio and timed training history with the isolated API'
-        Tap-Label '训练'
-        Tap-Label '开始今日训练 · Mixed training'
+        Open-PlanList
+        Start-Routine 'Mixed training'
         Tap-Label '第 1 组完成'
         Wait-Label '已完成 1 组' | Out-Null
         $cardioSet = Wait-Node { $_.GetAttribute('content-desc') -eq '第 1 组完成' -and $_.GetAttribute('checked') -eq 'false' } 'Incomplete cardio set' -Scroll
         Tap-Node $cardioSet 'Incomplete cardio set'
         Tap-Label '完成训练' -Scroll
-        Tap-Label 'Mixed training'
+        Wait-Stats
+        Tap-Workout 'Mixed training'
         Wait-Label '32 秒 · 12.5 kg' | Out-Null
         Wait-Label '7.5 分钟 · 速度 9.2' -Scroll | Out-Null
         $mixedLog = (Sync-App).workouts | Where-Object name -eq 'Mixed training'
@@ -473,42 +578,50 @@ try {
             $mixedLog.entries[1].sets[0].min -ne 7.5 -or $mixedLog.entries[1].sets[0].speed -ne 9.2) {
             throw 'Timed/cardio sets were not persisted as recorded.'
         }
-        Tap-Label '训练'
-        Wait-Label '开始今日训练 · Edited on web' | Out-Null
+        Open-Home
+        Wait-Label '今日训练' -Scroll | Out-Null
+        Wait-Label 'Edited on web' -Scroll | Out-Null
+        Open-PlanList
         Write-Output 'PASS P1: custom exercise versions, catalogue search, weekday/rotation and recommendation, timed/cardio history and sync.'
 
         Write-Host 'Checking plan edits, deletion, freestyle, arbitrary substitution and backfill'
-        Tap-PlanButton 'Mixed training' '编辑计划'
+        Open-PlanEditor 'Mixed training'
         Set-Field '计划名称' 'Revised plan'
-        Tap-Label '保存计划' -Scroll
+        Scroll-ToTop
+        Tap-Label '保存'
         $revised = (Sync-App).routines | Where-Object id -eq $mixed.id
         if ($revised.name -ne 'Revised plan' -or $revised.ex.Count -ne 2) { throw 'Plan edits did not sync.' }
-        Tap-Label '训练'
-        Tap-PlanButton 'Revised plan' '删除计划'
+        Tap-PlanAction 'Revised plan' '删除计划'
         Tap-Label '删除'
         $withoutPlan = Sync-App
         if ($withoutPlan.routines.id -contains $mixed.id -or $withoutPlan.rotation.sequence -contains $mixed.id) {
             throw 'Deleted plan or its rotation reference remains.'
         }
-        Tap-Label '训练'
-        Tap-Label '自由训练'
-        Tap-Label 'QA Hold'
+        # Start from the library so a single recommended rotation day cannot bypass the start
+        # sheet and auto-start a planned workout instead.
+        Tap-Label '动作库'
+        Wait-Label '动作库' | Out-Null
+        Tap-Label '选择 QA Hold' -Scroll
+        Wait-Label '完成训练' | Out-Null
         Tap-Label '搜索替换动作' -Scroll
         Set-Field '搜索动作' 'barbell bench press'
-        Tap-Label '杠铃卧推'
+        Tap-Label '选择 杠铃卧推'
         Wait-Label '杠铃卧推' | Out-Null
         Tap-Label '第 1 组完成'
         Tap-Label '完成训练' -Scroll
+        Wait-Stats
         $free = (Sync-App).workouts | Where-Object name -eq '自由训练'
         if ($free.routineId -or $free.entries[0].id -ne '0025') { throw 'Freestyle replacement was not saved.' }
-        Tap-Label '历史'
+        Open-Stats
         Tap-Label '补录训练'
-        Tap-Label 'QA Hold'
+        Tap-Label '添加动作' -Scroll
+        Tap-Label '选择 QA Hold'
+        Wait-Label '完成训练' | Out-Null
         Set-Field '补录名称' 'Backfilled session'
         Set-Field '补录日期' '2024-03-12'
         Tap-Label '第 1 组完成' -Scroll
         Tap-Label '完成训练' -Scroll
-        Wait-Label '训练历史' | Out-Null
+        Wait-Stats
         $backfill = (Sync-App).workouts | Where-Object name -eq 'Backfilled session'
         if ($backfill.d -ne '2024-03-12' -or !$backfill.start -or $backfill.entries[0].sets[0].at -gt $backfill.end) {
             throw 'Backfilled workout did not retain the past date and set timestamp.'
@@ -522,22 +635,26 @@ try {
         Invoke-RestMethod "$baseUrl/api/data" -Method Put -ContentType 'application/json' -WebSession $apiSession `
             -Body (@{ state = $shortRest.state; baseRev = $shortRest.rev; baseWid = $shortRest.state._wid } | ConvertTo-Json -Depth 30 -Compress) -TimeoutSec 10 | Out-Null
         Sync-App | Out-Null
-        Tap-Label '开启休息通知' -Scroll
+        Open-Settings
+        Tap-Switch '组间休息通知'
         $notificationPermission = {
             $_.GetAttribute('resource-id') -like '*:id/permission_allow_button' -or
-                $_.GetAttribute('content-desc') -eq '关闭休息通知'
+                ($_.GetAttribute('content-desc') -eq '组间休息通知' -and $_.GetAttribute('checked') -eq 'true')
         }
         Wait-Node $notificationPermission 'Android notification permission' -System | Out-Null
         foreach ($attempt in 1..3) {
             Start-Sleep -Milliseconds 500
             $choice = Wait-Node $notificationPermission 'Android notification permission' -System
-            if ($choice.GetAttribute('content-desc') -eq '关闭休息通知') { break }
+            if ($choice.GetAttribute('content-desc') -eq '组间休息通知') { break }
             Tap-Node $choice 'Allow notifications'
         }
-        Wait-Label '关闭休息通知' | Out-Null
+        Wait-Label '闹钟与提醒设置' -Scroll | Out-Null
         Invoke-Adb shell appops set $appId SCHEDULE_EXACT_ALARM allow | Out-Null
-        Tap-Label '训练'
-        Tap-Label '开始训练' -Scroll
+        Scroll-ToTop
+        Tap-Label '返回'
+        Wait-Label '首页' | Out-Null
+        Open-PlanList
+        Start-Routine 'Regression routine'
         Tap-Label '第 1 组完成'
         Invoke-Adb shell input keyevent KEYCODE_SLEEP | Out-Null
         $deadline = [DateTime]::UtcNow.AddSeconds(25)
@@ -555,10 +672,14 @@ try {
         Write-Output 'PASS P1: local rest notification posted while the emulator was locked.'
 
         Write-Host 'Checking local practice merge, backup file import and export share sheet'
-        Tap-Label '服务器'
+        Open-Settings
         Tap-Label '合并本机练习' -Scroll
         Tap-Label '合并'
         Confirm-MergeResult
+        Wait-Label '设置' | Out-Null
+        Scroll-ToTop
+        Tap-Label '返回'
+        Wait-Label '首页' | Out-Null
         $merged = Sync-App
         if (($merged.workouts | Where-Object name -eq '全身力量 A').entries[0].sets[0].w -ne 37.5) {
             throw 'Practice workout was not merged into the paired account.'
@@ -570,20 +691,30 @@ try {
         Invoke-Adb push $backup $remoteBackup | Out-Null
         Invoke-Adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d "file://$remoteBackup" | Out-Null
         foreach ($attempt in 1..2) {
+            Open-Settings
             Tap-Label '恢复备份' -Scroll
             $fileName = [IO.Path]::GetFileName($remoteBackup)
             Tap-SystemLabel $fileName
             Tap-Label '合并'
             Confirm-MergeResult
+            Wait-Label '设置' | Out-Null
+            Scroll-ToTop
+            Tap-Label '返回'
+            Wait-Label '首页' | Out-Null
             $restored = @( (Sync-App).workouts | Where-Object id -eq 'rn-backup-fixture' )
             if ($restored.Count -ne 1 -or $restored[0].entries[0].sets[0].w -ne 45.36) {
                 throw 'Backup import did not convert pounds or avoid duplicate records.'
             }
         }
+        Open-Settings
         Tap-Label '导出备份' -Scroll
         Wait-Node { $_.GetAttribute('package') -match '(intentresolver|systemui)' -and
             $_.GetAttribute('text') -match 'openGym-.*\.json|Bluetooth|Quick Share' } 'Android JSON sharing' -System | Out-Null
         Invoke-Adb shell input keyevent KEYCODE_BACK | Out-Null
+        Wait-Label '设置' | Out-Null
+        Scroll-ToTop
+        Tap-Label '返回'
+        Wait-Label '首页' | Out-Null
         Write-Output 'PASS P1: practice merge, Android file restore with unit conversion/deduplication, and backup sharing.'
     }
     if ($SupersetChecks) {
@@ -592,64 +723,83 @@ try {
         $fixture = Get-ApiData
         $fixture.state.routines = @($fixture.state.routines) + @(@{ id = 'rn-superset'; name = $supersetPlan; ex = @(
             @{ id = '0025'; sets = 2; reps = 8; weight = 25; restSec = 25 }
-            @{ id = '0047'; sets = 1; reps = 8; weight = 20; restSec = 40 }
+            @{ id = '0047'; sets = 1; reps = 8; weight = 20; restSec = 40; subs = @('1323') }
         ) })
         Invoke-RestMethod "$baseUrl/api/data" -Method Put -ContentType 'application/json' -WebSession $apiSession `
             -Body (@{ state = $fixture.state; baseRev = $fixture.rev; baseWid = $fixture.state._wid } | ConvertTo-Json -Depth 30 -Compress) -TimeoutSec 10 | Out-Null
         Sync-App | Out-Null
-        Tap-Label '训练'
-        Tap-PlanButton $supersetPlan '编辑计划'
+        Open-PlanEditor $supersetPlan
+        Tap-Label '展开杠铃上斜卧推' -Scroll
         Tap-Label '与上一动作组成超级组' -Scroll
         Tap-Label '移出超级组' -Scroll
         Tap-Label '与上一动作组成超级组' -Scroll
-        $center = [int]($screenWidth / 2)
-        Invoke-Adb shell input swipe $center ([int]([int]$screenHeight * 0.24)) $center ([int]([int]$screenHeight * 0.87)) 600 | Out-Null
-        Start-Sleep -Milliseconds 550
-        Set-Field '超级组名称' 'Push pair'
-        Set-Field '轮间休息秒数' '73'
-        Tap-Label '保存计划' -Scroll
+        Scroll-ToTop
+        Set-Field '超级组名称' 'Push pair' -Scroll
+        Set-Field '轮间休息秒数' '73' -Scroll
+        Scroll-ToTop
+        Tap-Label '保存'
         $paired = (Sync-App).routines | Where-Object id -eq 'rn-superset'
         $group = $paired.ex[0].sg
-        if (!$group -or $paired.ex[1].sg -ne $group -or $paired.ex[1].sgName -ne 'Push pair' -or $paired.ex[1].sgRest -ne 73) {
+        if (!$group -or $paired.ex[1].sg -ne $group -or $paired.ex[0].sgName -ne 'Push pair' -or
+            $paired.ex[1].sgName -ne 'Push pair' -or $paired.ex[1].sgRest -ne 73) {
             throw 'The server did not retain all superset plan fields.'
         }
-        Tap-Label '训练'
-        Tap-PlanButton $supersetPlan '开始训练'
-        Tap-Label '移出超级组' -Scroll
-        Tap-Label '与上一动作组成超级组' -Scroll
+        Open-PlanList
+        Start-Routine $supersetPlan
+        # Use the workout exercise ActionSheet, not only the card buttons.
+        Tap-Label '杠铃卧推菜单' -Scroll
+        Tap-Label '移出超级组'
+        Tap-Label '杠铃上斜卧推菜单' -Scroll
+        Tap-Label '与上一动作组成超级组'
         Tap-Label '放弃训练' -Scroll
         Tap-Label '放弃'
-        Tap-PlanButton $supersetPlan '开始训练'
-        Wait-Label '超级组 · Push pair' | Out-Null
-        Wait-Label '第 1 轮 · 下一组 杠铃卧推' | Out-Null
+        Wait-Label '计划' | Out-Null
+        Start-Routine $supersetPlan
+        Wait-Label '超级组 · Push pair' -Scroll | Out-Null
+        Wait-Label '第 1 轮 · 下一组 杠铃卧推' -Scroll | Out-Null
         if ((Wait-Label '杠铃卧推 第 2 组完成').GetAttribute('enabled') -ne 'false') {
             throw 'A future round could be completed before its turn.'
         }
+        # Replace the second member before logging it; the group and its rest must survive.
+        Tap-Label '替换为 绳索绳把坐姿划船' -Scroll
+        Wait-Label '绳索绳把坐姿划船' | Out-Null
+        Scroll-ToTop
+        Wait-Label '超级组 · Push pair' -Scroll | Out-Null
         Tap-Label '杠铃卧推 第 1 组完成'
-        Wait-Label '第 1 轮 · 下一组 杠铃上斜卧推' | Out-Null
+        Wait-Label '第 1 轮 · 下一组 绳索绳把坐姿划船' -Scroll | Out-Null
         if ((Read-Ui).SelectSingleNode("//node[@text='组间休息']")) { throw 'An intra-round switch started a rest.' }
         Invoke-Adb shell am force-stop $appId | Out-Null
-        Invoke-Adb shell am start -W -n "$appId/.MainActivity" | Out-Null
-        Wait-Label '第 1 轮 · 下一组 杠铃上斜卧推' -Scroll | Out-Null
-        Tap-Label '杠铃上斜卧推 第 1 组完成'
-        Wait-Label '第 2 轮 · 下一组 杠铃卧推' | Out-Null
+        Start-App
+        Wait-Label '第 1 轮 · 下一组 绳索绳把坐姿划船' -Scroll | Out-Null
+        Tap-Label '绳索绳把坐姿划船 第 1 组完成'
+        Wait-Label '第 2 轮 · 下一组 杠铃卧推' -Scroll | Out-Null
         $rest = Get-RestSeconds
-        if ($rest -le 40 -or $rest -gt 73) { throw 'Round rest ignored the 73-second group override.' }
+        if ($rest -lt 69 -or $rest -gt 73) { throw 'Round rest ignored the 73-second group override.' }
+        Start-Sleep -Seconds 3
+        $remaining = Get-RestSeconds
+        $drop = $rest - $remaining
+        if ($drop -lt 2 -or $drop -gt 5) { throw 'The 73-second round rest did not count down in real time.' }
+        Write-Output "VERIFIED: group round rest read ${rest}s and dropped ${drop}s in three seconds."
         Tap-Label '取消休息'
         Tap-Label '杠铃卧推 第 2 组完成'
+        Wait-Node { $_.GetAttribute('content-desc') -eq '杠铃卧推 第 2 组完成' -and $_.GetAttribute('checked') -eq 'true' } 'Last superset set completed' | Out-Null
         if ((Read-Ui).SelectSingleNode("//node[@text='组间休息']")) { throw 'The last set of the workout started a rest.' }
         Tap-Label '完成训练' -Scroll
-        Wait-Label '训练历史' | Out-Null
-        Tap-Label $supersetPlan
+        Wait-Stats
+        Tap-Workout $supersetPlan
         Wait-Label '超级组 · Push pair' | Out-Null
         $savedSuperset = (Sync-App).workouts | Where-Object name -eq $supersetPlan
-        if ($savedSuperset.entries.Count -ne 2 -or $savedSuperset.entries[0].id -ne '0025' -or $savedSuperset.entries[1].id -ne '0047' -or
+        if ($savedSuperset.entries.Count -ne 2 -or $savedSuperset.entries[0].id -ne '0025' -or $savedSuperset.entries[1].id -ne '1323' -or
             $savedSuperset.entries[0].sets.Count -ne 2 -or $savedSuperset.entries[1].sets.Count -ne 1 -or
             $savedSuperset.entries[0].sg -ne $group -or $savedSuperset.entries[1].sg -ne $group -or
-            $savedSuperset.entries[1].target.sgName -ne 'Push pair') {
-            throw 'Superset history omitted the member order, group metadata or set counts.'
+            $savedSuperset.entries[1].target.sgName -ne 'Push pair' -or $savedSuperset.entries[1].target.sgRest -ne 73 -or
+            $savedSuperset.entries[1].target.subs[0] -ne '0047') {
+            throw 'Superset history omitted the replacement identity, member order, group metadata or set counts.'
         }
-        Write-Output 'PASS P2: grouping and unlinking in plan and workout, unequal rounds, restart, group rest and stored superset history.'
+        if ($paired.ex[1].id -ne '0047' -or $paired.ex[1].subs[0] -ne '1323') {
+            throw 'The planned superset slot changed when its workout member was replaced.'
+        }
+        Write-Output 'PASS P2: grouping and unlinking in plan and workout, unequal rounds, restart, group rest, member replacement identity and stored superset history.'
     }
     $passed = $true
     Write-Output 'PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.'

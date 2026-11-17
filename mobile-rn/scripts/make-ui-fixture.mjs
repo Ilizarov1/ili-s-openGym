@@ -16,7 +16,15 @@ const atOf = (offset, hour) => {
   return date.getTime();
 };
 
-const target = (id, sets, reps, weight) => ({ id, mode: 'reps', sets, reps, weight, restSec: 90 });
+const target = (id, sets, reps, weight, restSec = 90) => ({ id, mode: 'reps', sets, reps, weight, restSec });
+// A superset member: `sg` groups adjacent exercises, `sgName`/`sgRest` carry the one group name and
+// round rest the app reads back from every member (frontend/src/lib/superset-meta.js).
+const member = (id, sets, reps, weight, restSec, sg, sgName, sgRest) => ({
+  ...target(id, sets, reps, weight, restSec),
+  ...(sg ? { sg } : {}),
+  ...(sgName ? { sgName } : {}),
+  ...(sgRest ? { sgRest } : {}),
+});
 const work = (weight, reps, at) => ({ w: weight, r: reps, done: true, at });
 
 const routines = [
@@ -44,6 +52,34 @@ const routines = [
     ex: [
       target('0047', 4, 8, 55),
       target('1323', 3, 10, 25),
+    ],
+  },
+  {
+    // Uneven rounds: the 2-set bench opens round 1, the 1-set incline closes it, then bench round 2.
+    // The 73-second group rest overrides the members' 25/40-second own rest.
+    id: 'fixture-superset',
+    name: '超级组推胸 A',
+    ex: [
+      member('0025', 2, 8, 40, 25, 'sg-fixture-push', 'Push pair', 73),
+      member('0047', 1, 10, 20, 40, 'sg-fixture-push', 'Push pair', 73),
+    ],
+  },
+  {
+    // No sgRest: the round rest must be the longest member rest, 40, not 25.
+    id: 'fixture-superset-rest',
+    name: '超级组长休息 B',
+    ex: [
+      member('0043', 2, 8, 80, 25, 'sg-fixture-longest'),
+      member('0085', 1, 10, 40, 40, 'sg-fixture-longest'),
+    ],
+  },
+  {
+    // Ungrouped on purpose, so the smoke test can create the group through the plan editor.
+    id: 'fixture-superset-new',
+    name: '超级组新建 C',
+    ex: [
+      target('0043', 2, 8, 80, 25),
+      target('0085', 1, 10, 40, 40),
     ],
   },
 ];
@@ -106,6 +142,27 @@ const workouts = [
   ]),
 ];
 
+// A saved superset gives the Stats screen a group to render before the smoke test records its own.
+const supersetRoutine = routines[3];
+const supersetLog = makeWorkout('fixture-superset-log', 2, supersetRoutine, [
+  {
+    id: '0025',
+    sg: 'sg-fixture-push',
+    target: supersetRoutine.ex[0],
+    topW: 40,
+    sets: [work(40, 8, atOf(2, 9) + 120000), work(40, 8, atOf(2, 9) + 240000)],
+  },
+  {
+    id: '0047',
+    sg: 'sg-fixture-push',
+    target: supersetRoutine.ex[1],
+    topW: 20,
+    sets: [work(20, 10, atOf(2, 9) + 600000)],
+  },
+]);
+supersetLog.name = '超级组历史样本';
+workouts.push(supersetLog);
+
 const today = new Date().getDay();
 const week = {
   [String(today)]: 'fixture-upper',
@@ -130,4 +187,4 @@ db.exec('CREATE TABLE IF NOT EXISTS workspace (scope TEXT PRIMARY KEY, state TEX
 db.prepare('INSERT OR REPLACE INTO workspace (scope, state) VALUES (?, ?)').run('practice', JSON.stringify(state));
 db.close();
 console.log(`fixture: ${out}`);
-console.log(`routines: ${routines.length}; workouts: ${workouts.length}; today: ${dayOf(0)}`);
+console.log(`routines: ${routines.length} (3 supersets); workouts: ${workouts.length} (1 superset); today: ${dayOf(0)}`);
