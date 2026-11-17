@@ -19,11 +19,13 @@ import {
   Screen,
   SectionHeader,
   Segmented,
+  Stepper,
   SwitchRow,
   Text,
   TextField,
   useTheme,
 } from '../design';
+import { REST_PAUSE_MAX, REST_PAUSE_MIN } from '../training';
 import type { Connection } from '../server';
 import type { EffortScale } from '../training';
 
@@ -36,6 +38,7 @@ export type SettingsScreenProps = {
   operation: SettingsOperation;
   restAlerts: boolean;
   effort: EffortScale;
+  restPauseSec: number;
   onClose: () => void;
   onConnect: (address: string, code: string) => void;
   onSync: () => void;
@@ -45,6 +48,7 @@ export type SettingsScreenProps = {
   onMergePractice: () => void;
   onToggleRestAlerts: () => void;
   onChangeEffort: (effort: EffortScale) => void;
+  onChangeRestPauseSec: (value: number) => void;
   onOpenAlarmSettings: () => void;
   onOpenGallery: () => void;
   /** 来自 `useGym` 的错误提示，例如同步失败。 */
@@ -82,6 +86,7 @@ export function SettingsScreen({
   operation,
   restAlerts,
   effort,
+  restPauseSec,
   onClose,
   onConnect,
   onSync,
@@ -91,6 +96,7 @@ export function SettingsScreen({
   onMergePractice,
   onToggleRestAlerts,
   onChangeEffort,
+  onChangeRestPauseSec,
   onOpenAlarmSettings,
   onOpenGallery,
   notice,
@@ -101,6 +107,7 @@ export function SettingsScreen({
   const [address, setAddress] = useState(connection?.server ?? '');
   const [code, setCode] = useState('');
   const [reconnecting, setReconnecting] = useState(false);
+  const [restPauseText, setRestPauseText] = useState(String(restPauseSec));
 
   // 配对成功后收起表单，并换上服务器地址；断开时保留地址方便重新连接。
   useEffect(() => {
@@ -109,6 +116,10 @@ export function SettingsScreen({
     setCode('');
     setReconnecting(false);
   }, [connection]);
+
+  useEffect(() => {
+    setRestPauseText(String(restPauseSec));
+  }, [restPauseSec]);
 
   const working = busy || operation !== null;
   const pairing = connection == null || reconnecting;
@@ -292,6 +303,30 @@ export function SettingsScreen({
             />
           </>
         ) : null}
+      </Card>
+
+      <SectionHeader style={{ marginTop: theme.space.sm }} title="休息暂停" />
+      <Card>
+        <Text variant="headline">休息暂停默认短休</Text>
+        <Text tone="secondary" variant="footnote">
+          手动给正式组添加短休分段时使用，计划里单独设置的短休优先。
+        </Text>
+        <Stepper
+          accessibilityLabel="休息暂停默认短休"
+          keyboardType="number-pad"
+          max={REST_PAUSE_MAX}
+          min={REST_PAUSE_MIN}
+          onChangeText={text => {
+            setRestPauseText(text);
+            if (!/^\d+$/.test(text)) return;
+            const value = Number(text);
+            if (Number.isInteger(value) && value >= REST_PAUSE_MIN && value <= REST_PAUSE_MAX) onChangeRestPauseSec(value);
+          }}
+          step={5}
+          unit="秒"
+          value={restPauseText}
+        />
+        <Text tone="secondary" variant="caption">{`${REST_PAUSE_MIN}–${REST_PAUSE_MAX} 秒`}</Text>
       </Card>
 
       <SectionHeader style={{ marginTop: theme.space.sm }} title="通知" />

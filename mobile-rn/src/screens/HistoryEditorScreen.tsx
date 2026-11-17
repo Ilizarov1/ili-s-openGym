@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { View } from 'react-native';
-import { workoutVolume } from '../../../frontend/src/lib/history';
-import { isWarmupRow } from '../../../frontend/src/lib/workout-model';
-import { Button, Card, Header, Screen, Text, TextField, useTheme } from '../design';
+import { randomUUID } from 'expo-crypto';
+import { isWarmupRow, nextBurstReps, nextDropWeight } from '../../../frontend/src/lib/workout-model';
+import { dropGrid } from '../../../frontend/src/lib/plates';
+import { Button, Card, Header, IconButton, Screen, Text, TextField, useTheme } from '../design';
 import { EffortSheet } from '../EffortSheet';
 import {
   convertedEffortOf,
@@ -16,34 +17,21 @@ import {
 } from '../effort';
 import {
   exerciseName,
+  exerciseRestPauseSec,
+  validClusterSegment,
+  validDropSegment,
   validWorkoutDay,
+  type HistorySave,
   type LoggedSet,
   type Profile,
   type RatingScale,
   type Unit,
   type Workout,
+  type WorkoutEntry,
 } from '../training';
 
 type Rating = { scale: RatingScale; value: number };
 type RatingSheet = { key: string; scale: RatingScale; value: number | null; cardio: boolean };
-
-/** Ratings shown on open: profile scale when known, else the row's own saved scale. */
-function initialRatings(workout: Workout, profile: Profile): Record<string, Rating | null> {
-  const preference = effortPreferenceOf(profile);
-  const ratings: Record<string, Rating | null> = {};
-  (workout.entries ?? []).filter(Boolean).forEach((entry, ei) => {
-    (entry.sets ?? []).forEach((set, si) => {
-      if (!set?.done || 'sides' in set) return;
-      if (!savedEffortOf(set)) return;
-      const cardio = isCardioEntry(entry, set);
-      const scale = editorScaleFor(preference, cardio, set);
-      if (!scale) return;
-      const value = convertedEffortOf(set, scale);
-      if (value != null) ratings[`${ei}-${si}`] = { scale, value };
-    });
-  });
-  return ratings;
-}
 
 function moveTime(time: number, day: string) {
   const date = new Date(time);
@@ -52,11 +40,59 @@ function moveTime(time: number, day: string) {
   return date.getTime();
 }
 
+type EditDrop = { key: string; w: string; r: string };
+type EditCluster = { key: string; r: string; restSec: string };
+type EditSet = {
+  key: string;
+  original: LoggedSet;
+  dirty: boolean;
+  drops: EditDrop[];
+  clusters: EditCluster[];
+};
+type EditEntry = { key: string; entry: WorkoutEntry; sets: EditSet[] };
+
+function localEntries(workout: Workout): EditEntry[] {
+  return (workout.entries ?? []).filter(Boolean).map(entry => ({
+    key: randomUUID(),
+    entry,
+    sets: (entry.sets ?? []).map(set => ({
+      key: randomUUID(),
+      original: { ...set },
+      dirty: false,
+      drops: !isWarmupRow(set) && set.type === 'dropset' && Array.isArray(set.drops)
+        ? set.drops.map(drop => ({ key: randomUUID(), w: String(drop.w ?? 0), r: String(drop.r ?? 0) }))
+        : [],
+      clusters: !isWarmupRow(set) && set.type === 'restpause' && Array.isArray(set.clusters)
+        ? set.clusters.map(cluster => ({
+          key: randomUUID(), r: String(cluster.r ?? 0), restSec: String(cluster.restSec ?? 15),
+        }))
+        : [],
+    })),
+  }));
+}
+
+function numberIn(text: string) {
+  const value = Number(text.replace(',', '.'));
+  return Number.isFinite(value) ? value : Number.NaN;
+}
+
+/** Read-only per-side line for records written by the Web client, kept as they are. */
+function sideLine(set: LoggedSet, unit: Unit) {
+  const describe = (side: LoggedSet | undefined, label: string) => {
+    if (!side) return '';
+    let text = `${label}${side.w ?? 0} ${unit} × ${side.r ?? 0}`;
+    if (side.drops?.length) text += side.drops.map(drop => ` ↘ ${drop.w ?? 0} ${unit} × ${drop.r ?? 0}`).join('');
+    if (side.clusters?.length) text += `（${side.clusters.map(cluster => cluster.r ?? 0).join(' + ')}）`;
+    return text;
+  };
+  return [describe(set.sides?.L, 'L '), describe(set.sides?.R, 'R ')].filter(Boolean).join(' · ');
+}
+
 export type HistoryEditorScreenProps = {
   workout: Workout;
   profile: Profile;
   unit: Unit;
-  onSave: (patch: Partial<Workout>) => void;
+  onSave: (change: HistorySave) => void;
   onClose: () => void;
 };
 
@@ -66,126 +102,274 @@ export function HistoryEditorScreen({ workout, profile, unit, onSave, onClose }:
   const [day, setDay] = useState(workout.d);
   const [error, setError] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
-  const [ratings, setRatings] = useState<Record<string, Rating | null>>(() => initialRatings(workout, profile));
+  const [local, setLocal] = useState<EditEntry[]>(() => localEntries(workout));
+  const [ratings, setRatings] = useState<Record<string, Rating | null>>({});
   const [sheet, setSheet] = useState<RatingSheet | null>(null);
   const preference = effortPreferenceOf(profile);
+
+  function markDirty(setKey: string) {
+    setLocal(entries => entries.map(entry => ({
+      ...entry,
+      sets: entry.sets.map(set => set.key === setKey ? { ...set, dirty: true } : set),
+    })));
+  }
+
+  function changeField(setKey: string, key: keyof LoggedSet, value: string) {
+    setFields(previous => ({ ...previous, [`${setKey}-${key}`]: value }));
+    markDirty(setKey);
+  }
+
+  function originalValue(set: EditSet, key: keyof LoggedSet) {
+    const field = fields[`${set.key}-${key}`];
+    if (field !== undefined) return field;
+    const value = set.original[key];
+    return value == null ? '' : String(value);
+  }
+
+  function currentReps(set: EditSet) {
+    return Math.max(0, Math.trunc(numberIn(originalValue(set, 'r'))));
+  }
+
+  function addDrop(entry: EditEntry, set: EditSet) {
+    const base = set.drops.length ? numberIn(set.drops[set.drops.length - 1].w) : numberIn(originalValue(set, 'w'));
+    const pct = entry.entry.target?.intensifier?.type === 'dropset' ? entry.entry.target.intensifier.pct : 20;
+    const weight = nextDropWeight(Number.isFinite(base) ? base : 0, pct,
+      dropGrid({ ...profile, unit }, { ...(entry.entry.target ?? {}), id: entry.entry.id }));
+    const reps = Math.max(1, currentReps(set)) || 8;
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? {
+        ...item,
+        dirty: true,
+        drops: [...item.drops, { key: randomUUID(), w: String(weight), r: String(reps) }],
+      } : item),
+    } : row));
+  }
+
+  function addCluster(entry: EditEntry, set: EditSet) {
+    const restSec = String(exerciseRestPauseSec(entry.entry.target, profile));
+    const base = set.clusters.length ? numberIn(set.clusters[set.clusters.length - 1].r) : currentReps(set);
+    if (!(base > 0)) return;
+    const added = Math.max(1, nextBurstReps(base));
+    const clusters = set.clusters.length
+      ? [...set.clusters, { key: randomUUID(), r: String(added), restSec }]
+      : [
+        { key: randomUUID(), r: String(Math.trunc(base)), restSec },
+        { key: randomUUID(), r: String(added), restSec },
+      ];
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? { ...item, dirty: true, clusters } : item),
+    } : row));
+  }
+
+  function removeDrop(entry: EditEntry, set: EditSet, index: number) {
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? {
+        ...item, dirty: true, drops: item.drops.filter((_, drop) => drop !== index),
+      } : item),
+    } : row));
+  }
+
+  function removeCluster(entry: EditEntry, set: EditSet, index: number) {
+    const remaining = set.clusters.filter((_, cluster) => cluster !== index);
+    if (remaining.length > 1) {
+      setLocal(entries => entries.map(row => row.key === entry.key ? {
+        ...row,
+        sets: row.sets.map(item => item.key === set.key ? { ...item, dirty: true, clusters: remaining } : item),
+      } : row));
+      return;
+    }
+    // One or none left: the row reads as an ordinary set again, keeping the last segment's reps.
+    const reps = remaining.length
+      ? numberIn(remaining[0].r)
+      : numberIn(set.clusters[index]?.r ?? originalValue(set, 'r'));
+    setFields(previous => ({ ...previous, [`${set.key}-r`]: String(Math.max(1, Math.trunc(reps) || 1)) }));
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? { ...item, dirty: true, clusters: [] } : item),
+    } : row));
+  }
+
+  function changeDrop(entry: EditEntry, set: EditSet, index: number, key: 'w' | 'r', value: string) {
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? {
+        ...item,
+        dirty: true,
+        drops: item.drops.map((drop, dropIndex) => dropIndex === index ? { ...drop, [key]: value } : drop),
+      } : item),
+    } : row));
+  }
+
+  function changeCluster(entry: EditEntry, set: EditSet, index: number, key: 'r' | 'restSec', value: string) {
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? {
+        ...item,
+        dirty: true,
+        clusters: item.clusters.map((cluster, clusterIndex) => clusterIndex === index ? { ...cluster, [key]: value } : cluster),
+      } : item),
+    } : row));
+  }
+
+  function clearSegments(entry: EditEntry, set: EditSet) {
+    if (set.clusters.length) {
+      const reps = set.clusters.reduce((total, cluster) => {
+        const value = numberIn(cluster.r);
+        return total + (Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0);
+      }, 0);
+      setFields(previous => ({ ...previous, [`${set.key}-r`]: String(Math.max(1, reps)) }));
+    }
+    setLocal(entries => entries.map(row => row.key === entry.key ? {
+      ...row,
+      sets: row.sets.map(item => item.key === set.key ? { ...item, dirty: true, drops: [], clusters: [] } : item),
+    } : row));
+  }
+
+  function serializeSet(set: EditSet, dayChanged: boolean, start: number, end: number): LoggedSet {
+    if (!set.dirty) {
+      const out = { ...set.original };
+      if (dayChanged && out.at != null && Number.isFinite(workout.start)) {
+        out.at = Math.min(end, start + Math.max(0, out.at - workout.start));
+      }
+      return out;
+    }
+    const out: LoggedSet = { ...set.original };
+    for (const key of ['w', 'r', 'sec', 'min', 'speed'] as const) {
+      const id = `${set.key}-${key}`;
+      if (fields[id] === undefined) continue;
+      const text = fields[id];
+      const value = Number(text.replace(',', '.'));
+      const count = key === 'r' || key === 'sec';
+      if (!text.trim() || !Number.isFinite(value) || value < 0 || (count && (!Number.isInteger(value) || value < 1)) ||
+          (key === 'min' && value <= 0) || (key === 'w' && value > 5000)) {
+        throw new Error('请检查各组的重量、次数或时长。');
+      }
+      (out as Record<string, number>)[key] = value;
+    }
+    if (set.drops.length) {
+      if (!set.drops.every(validDropSegment)) throw new Error('请检查递减段的重量和次数。');
+      out.type = 'dropset';
+      out.drops = set.drops.map(drop => ({ w: numberIn(drop.w), r: Math.trunc(numberIn(drop.r)) }));
+      delete out.clusters;
+    } else if (set.clusters.length) {
+      if (!set.clusters.every(validClusterSegment)) throw new Error('请检查休息暂停各分段的次数和短休。');
+      out.type = 'restpause';
+      out.clusters = set.clusters.map(cluster => ({
+        r: Math.trunc(numberIn(cluster.r)),
+        restSec: Math.round(numberIn(cluster.restSec)),
+      }));
+      out.r = out.clusters.reduce((total, cluster) => total + (cluster.r ?? 0), 0);
+      delete out.drops;
+    } else {
+      delete out.type;
+      delete out.drops;
+      delete out.clusters;
+    }
+    if (dayChanged && out.at != null && Number.isFinite(workout.start)) {
+      out.at = Math.min(end, start + Math.max(0, out.at - workout.start));
+    }
+    const rating = ratings[set.key];
+    if (rating !== undefined) {
+      delete out.rpe;
+      delete out.rir;
+      if (rating) out[rating.scale] = Math.round(rating.value * 10) / 10;
+    }
+    return out;
+  }
 
   function save() {
     if (!name.trim() || !validWorkoutDay(day)) {
       setError('请填写训练名称和有效日期。');
       return;
     }
-    const originalEntries = (workout.entries ?? []).filter(Boolean);
-    const ratingsDirty = Object.entries(ratings).some(([key, rating]) => {
-      const [ei, si] = key.split('-').map(Number);
-      const saved = savedEffortOf(originalEntries[ei]?.sets?.[si]);
-      if (rating == null) return saved != null;
-      return !saved || saved.scale !== rating.scale || saved.value !== rating.value;
-    });
-    const entries = originalEntries.map((entry, ei) => {
-      const sets = entry.sets.map((set, si) => {
-        const next = { ...set };
-        for (const key of ['w', 'r', 'sec', 'min', 'speed'] as const) {
-          const field = fields[`${ei}-${si}-${key}`];
-          if (field === undefined) continue;
-          const value = Number(field.replace(',', '.'));
-          const count = key === 'r' || key === 'sec';
-          if (!field.trim() || !Number.isFinite(value) || value < 0 || (count && (!Number.isInteger(value) || value < 1)) ||
-              (key === 'min' && value <= 0)) throw new Error('请检查各组的重量、次数或时长。');
-          next[key] = value;
-        }
-        // Ratings are rewritten only in the editor and only when the user saves.
-        // Clearing removes both keys, and saving one scale removes the other, so a
-        // row never carries RPE and RIR at the same time.
-        const rating = ratings[`${ei}-${si}`];
-        if (rating !== undefined) {
-          delete next.rpe;
-          delete next.rir;
-          if (rating) next[rating.scale] = Math.round(rating.value * 10) / 10;
-        }
-        return next;
-      });
-      const topW = Math.max(0, ...sets.filter(set => set.done && set.phase !== 'warmup' && !set.warmup).map(set => set.w ?? 0));
-      return { ...entry, sets, topW: topW || null };
-    });
+    const dayChanged = day !== workout.d;
+    const start = dayChanged
+      ? Math.min(Number.isFinite(workout.start) ? moveTime(workout.start, day) : new Date(`${day}T12:00:00`).getTime(), Date.now())
+      : workout.start;
+    const duration = Number.isFinite(workout.end - workout.start) ? Math.max(0, workout.end - workout.start) : 0;
+    const end = dayChanged ? Math.min(start + duration, Date.now()) : workout.end;
+    const base = (workout.entries ?? []).filter(Boolean);
+    const entries = local.map(item => ({
+      ...item.entry,
+      sets: item.sets.map(set => serializeSet(set, dayChanged, start, end)),
+    }));
     const patch: Partial<Workout> = { _ts: Math.max(Date.now(), (workout._ts ?? 0) + 1) };
     if (name.trim() !== workout.name) patch.name = name.trim();
-    if (day !== workout.d) {
+    if (dayChanged) {
       patch.d = day;
-      const datedStart = Number.isFinite(workout.start) ? moveTime(workout.start, day) : new Date(`${day}T12:00:00`).getTime();
-      const duration = Number.isFinite(workout.end - workout.start) ? Math.max(0, workout.end - workout.start) : 0;
-      patch.start = Math.min(datedStart, Date.now());
-      patch.end = Math.min(patch.start + duration, Date.now());
-      entries.forEach((entry, ei) => entry.sets.forEach((set, si) => {
-        const at = originalEntries[ei].sets[si].at;
-        if (at != null && Number.isFinite(workout.start)) {
-          set.at = Math.min(patch.end!, patch.start! + Math.max(0, at - workout.start));
-        }
-      }));
+      patch.start = start;
+      patch.end = end;
     }
-    if (day !== workout.d || Object.keys(fields).length || ratingsDirty) {
-      patch.entries = entries;
-      patch.vol = workoutVolume({ ...workout, entries }, { warmups: profile.volumeWarmups === true,
-        bodyweight: profile.volumeBodyweight === true ? workout.bw ?? 0 : 0 });
-    }
-    onSave(patch);
+    onSave({ patch, base, entries });
   }
 
-  function numberField(ei: number, si: number, key: keyof LoggedSet, value: number | undefined, label: string) {
-    if (value == null) return null;
-    const id = `${ei}-${si}-${key}`;
+  const fieldsFor = (set: EditSet, key: keyof LoggedSet, label: string) => {
+    const id = `${set.key}-${key}`;
+    const value = fields[id] ?? originalValue(set, key);
+    if (fields[id] === undefined && value === '') return null;
     return (
       <TextField
         containerStyle={{ flex: 1 }}
         keyboardType="decimal-pad"
         key={id}
         label={label}
-        onChangeText={text => setFields(previous => ({ ...previous, [id]: text }))}
-        value={fields[id] ?? String(value)}
+        onChangeText={text => changeField(set.key, key, text)}
+        value={value}
       />
     );
-  }
+  };
 
-  function effortRow(entry: (typeof workout.entries)[number], set: LoggedSet, ei: number, si: number) {
+  const segmentTotal = (set: EditSet) => set.clusters.reduce((total, cluster) => {
+    const value = numberIn(cluster.r);
+    return total + (Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0);
+  }, 0);
+
+  function effortRow(entry: EditEntry, set: EditSet, number: number) {
+    const logged = set.original;
     // Per-side rows keep their own values and unknown fields: writing one aggregate
     // rating here would copy a single score onto both sides.
-    if (!set.done || 'sides' in set) return null;
-    const key = `${ei}-${si}`;
-    const saved = savedEffortOf(set);
+    if (!logged.done || 'sides' in logged) return null;
+    const key = set.key;
+    const saved = savedEffortOf(logged);
     const keyed = Object.prototype.hasOwnProperty.call(ratings, key);
-    const local = keyed ? ratings[key] : undefined;
-    const cardio = isCardioEntry(entry, set);
-    const scale = local?.scale ?? editorScaleFor(preference, cardio, set);
-    const derived = local == null && !saved && derivedEffortOf(set) != null;
+    const edited = keyed ? ratings[key] : undefined;
+    const cardio = isCardioEntry(entry.entry, logged);
+    const scale = edited?.scale ?? editorScaleFor(preference, cardio, logged);
+    const converted = !keyed && saved && scale ? convertedEffortOf(logged, scale) : null;
+    const shown = keyed ? edited : converted == null || !scale ? null : { scale, value: converted };
+    const derived = !keyed && !saved && derivedEffortOf(logged) != null;
     // New ratings only make sense on strength working reps or cardio. A row that
     // already carries a rating (even an old warm-up) stays editable so it can be
     // corrected or cleared; a warm-up never gets a fresh entry point.
     const canRate = scale != null && (
-      saved != null || local != null || (!isWarmupRow(set) && (set.r != null || cardio))
+      saved != null || shown != null || (!isWarmupRow(logged) && (logged.r != null || cardio))
     );
-    const conversion = local && saved && local.scale !== saved.scale
-      ? `原 ${scaleName(saved.scale)} ${formatEffort(saved.value)}，保存后按 ${scaleName(local.scale)} ${formatEffort(local.value)} 写入。`
+    const conversion = keyed && shown && saved && shown.scale !== saved.scale
+      ? `原 ${scaleName(saved.scale)} ${formatEffort(saved.value)}，保存后按 ${scaleName(shown.scale)} ${formatEffort(shown.value)} 写入。`
       : '';
-    const removed = keyed && local === null && saved != null;
+    const removed = keyed && edited === null && saved != null;
     if (!canRate && !derived && !conversion && !removed) return null;
-    const label = local ? `${scaleName(local.scale)} ${formatEffort(local.value)}` : '未评分';
+    const label = shown ? `${scaleName(shown.scale)} ${formatEffort(shown.value)}` : '未评分';
     return (
       <View style={{ alignItems: 'center', flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
         {canRate && scale ? (
           <Button
-            accessibilityLabel={`第 ${si + 1} 组评分 ${label}`}
+            accessibilityLabel={`第 ${number} 组评分 ${label}`}
             icon="gauge"
             onPress={() => setSheet({
               key,
-              scale: local?.scale ?? scale,
-              value: local?.value ?? null,
+              scale: shown?.scale ?? scale,
+              value: shown?.value ?? null,
               cardio,
             })}
             size="xs"
-            testID={`history-effort-${ei}-${si}`}
-            variant={local ? 'tinted' : 'secondary'}
+            testID={`history-effort-${key}`}
+            variant={shown ? 'tinted' : 'secondary'}
           >
-            {local ? label : `${scaleName(scale)} ${label}`}
+            {shown ? label : `${scaleName(scale)} ${label}`}
           </Button>
         ) : null}
         {derived ? (
@@ -215,24 +399,126 @@ export function HistoryEditorScreen({ workout, profile, unit, onSave, onClose }:
         value={day}
       />
 
-      {(workout.entries ?? []).filter(Boolean).map((entry, ei) => (
-        <Card key={ei} style={{ marginTop: theme.space.md }}>
-          <Text variant="headline">{exerciseName(profile, entry.id)}</Text>
-          {entry.sets.map((set, si) => set.done && !('sides' in set) ? (
-            <View key={si} style={{ gap: theme.space.xs }}>
-              <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: theme.space.sm }}>
+      {local.map(item => (
+        <Card key={item.key} style={{ marginTop: theme.space.md }}>
+          <Text variant="headline">{exerciseName(profile, item.entry.id)}</Text>
+          {item.sets.map((set, index) => {
+            if (!set.original.done) return null;
+            if ('sides' in set.original) return (
+              <Text key={set.key} style={{ marginTop: theme.space.sm }} tone="secondary" variant="footnote">
+                {`${index + 1} · ${sideLine(set.original, unit)}`}
+              </Text>
+            );
+            return (
+              <View key={set.key} style={{ gap: theme.space.sm, marginTop: theme.space.sm }}>
+                <View style={{ alignItems: 'flex-end', flexDirection: 'row', gap: theme.space.sm }}>
                 <Text style={{ marginBottom: theme.space.sm }} tone="secondary" variant="subhead">
-                  {si + 1}
+                  {index + 1}
                 </Text>
-                {numberField(ei, si, 'w', set.w, unit)}
-                {numberField(ei, si, 'r', set.r, '次数')}
-                {numberField(ei, si, 'sec', set.sec, '秒')}
-                {numberField(ei, si, 'min', set.min, '分钟')}
-                {numberField(ei, si, 'speed', set.speed, '速度')}
+                {fieldsFor(set, 'w', unit)}
+                {set.clusters.length ? (
+                  <View style={{ flex: 1, marginBottom: theme.space.sm }}>
+                    <Text tone="secondary" variant="footnote">{`总 ${segmentTotal(set)} 次`}</Text>
+                  </View>
+                ) : fieldsFor(set, 'r', '次数')}
+                {fieldsFor(set, 'sec', '秒')}
+                {fieldsFor(set, 'min', '分钟')}
+                {fieldsFor(set, 'speed', '速度')}
               </View>
-              {effortRow(entry, set, ei, si)}
+
+              {set.drops.map((drop, dropIndex) => (
+                <View key={drop.key} style={{ alignItems: 'flex-end', flexDirection: 'row', gap: theme.space.sm }}>
+                  <Text style={{ marginBottom: theme.space.sm }} tone="secondary" variant="caption">
+                    {`递减${dropIndex + 1}`}
+                  </Text>
+                  <TextField
+                    containerStyle={{ flex: 1 }}
+                    keyboardType="decimal-pad"
+                    label={unit}
+                    onChangeText={value => changeDrop(item, set, dropIndex, 'w', value)}
+                    value={drop.w}
+                  />
+                  <TextField
+                    containerStyle={{ flex: 1 }}
+                    keyboardType="number-pad"
+                    label="次数"
+                    onChangeText={value => changeDrop(item, set, dropIndex, 'r', value)}
+                    value={drop.r}
+                  />
+                  <IconButton
+                    accessibilityLabel={`删除递减${dropIndex + 1}`}
+                    name="xmark"
+                    onPress={() => removeDrop(item, set, dropIndex)}
+                    size="sm"
+                  />
+                </View>
+              ))}
+
+              {set.clusters.map((cluster, clusterIndex) => (
+                <View key={cluster.key} style={{ alignItems: 'flex-end', flexDirection: 'row', gap: theme.space.sm }}>
+                  <Text style={{ marginBottom: theme.space.sm }} tone="secondary" variant="caption">
+                    {`分段${clusterIndex + 1}`}
+                  </Text>
+                  <TextField
+                    containerStyle={{ flex: 1 }}
+                    keyboardType="number-pad"
+                    label="次数"
+                    onChangeText={value => changeCluster(item, set, clusterIndex, 'r', value)}
+                    value={cluster.r}
+                  />
+                  <TextField
+                    containerStyle={{ flex: 1 }}
+                    keyboardType="number-pad"
+                    label="短休秒"
+                    onChangeText={value => changeCluster(item, set, clusterIndex, 'restSec', value)}
+                    value={cluster.restSec}
+                  />
+                  <IconButton
+                    accessibilityLabel={`删除分段${clusterIndex + 1}`}
+                    name="xmark"
+                    onPress={() => removeCluster(item, set, clusterIndex)}
+                    size="sm"
+                  />
+                </View>
+              ))}
+
+              {set.original.r != null && !isWarmupRow(set.original) ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+                  {!set.clusters.length ? (
+                    <Button
+                      icon="arrowDown"
+                      onPress={() => addDrop(item, set)}
+                      size="xs"
+                      variant="ghost"
+                    >
+                      {set.drops.length ? '添加递减段' : '改为递减组'}
+                    </Button>
+                  ) : null}
+                  {!set.drops.length ? (
+                    <Button
+                      icon="bolt"
+                      onPress={() => addCluster(item, set)}
+                      size="xs"
+                      variant="ghost"
+                    >
+                      {set.clusters.length ? '添加分段' : '改为休息暂停'}
+                    </Button>
+                  ) : null}
+                  {set.drops.length || set.clusters.length ? (
+                    <Button
+                      onPress={() => clearSegments(item, set)}
+                      size="xs"
+                      variant="danger"
+                    >
+                      恢复普通组
+                    </Button>
+                  ) : null}
+                </View>
+              ) : null}
+              {effortRow(item, set, index + 1)}
             </View>
-          ) : null)}
+            );
+          })}
         </Card>
       ))}
 
@@ -265,11 +551,13 @@ export function HistoryEditorScreen({ workout, profile, unit, onSave, onClose }:
           cardio={sheet.cardio}
           onClear={() => {
             setRatings(previous => ({ ...previous, [sheet.key]: null }));
+            markDirty(sheet.key);
             setSheet(null);
           }}
           onClose={() => setSheet(null)}
           onSave={value => {
             setRatings(previous => ({ ...previous, [sheet.key]: { scale: sheet.scale, value } }));
+            markDirty(sheet.key);
             setSheet(null);
           }}
           scale={sheet.scale}
@@ -280,3 +568,5 @@ export function HistoryEditorScreen({ workout, profile, unit, onSave, onClose }:
     </Screen>
   );
 }
+
+export default HistoryEditorScreen;

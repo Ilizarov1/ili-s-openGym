@@ -14,7 +14,8 @@ import { advanceRotation, recommendedRoutines, type ProfileChange } from './src/
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
 import {
-  addExercise, effortOf, exerciseMode, finishWorkout, localDate, startWorkout, unitOf, workoutKey,
+  DEFAULT_REST_PAUSE_SEC,
+  addExercise, effortOf, exerciseMode, finishWorkout, localDate, mergeHistoryEntries, startWorkout, unitOf, workoutKey,
   type CustomExercise, type Draft, type Profile, type Routine, type RoutineExercise, type Unit, type Workout,
 } from './src/training';
 
@@ -180,7 +181,7 @@ function AppScreen() {
     const sameMode = previous && exerciseMode(previous, profile) === exerciseMode(target, profile);
     const next = sameMode ? {
       ...target, sets: previous.sets, reps: previous.reps, sec: previous.sec, min: previous.min,
-      restSec: previous.restSec, restOff: previous.restOff,
+      restSec: previous.restSec, restOff: previous.restOff, intensifier: previous.intensifier,
     } : target;
     openWorkout(addExercise(draft, next, profile, queue, replaceIndex));
   };
@@ -328,7 +329,31 @@ function AppScreen() {
           workout={panel.workout}
           unit={panel.unit}
           onClose={closePanel}
-          onSave={patch => { if (gym.commit([{ kind: 'workout', key: workoutKey(panel.workout), unit: panel.unit, patch }])) closePanel(); }}
+          onSave={change => {
+            const key = workoutKey(panel.workout);
+            const remote = (profile.workouts ?? []).find(workout => workout && workoutKey(workout) === key);
+            const queued = queue.find(item => item.workout.id === key)?.workout;
+            const latest = remote ?? queued;
+            if (!latest) {
+              Alert.alert('无法保存修改', '这次训练已在其他设备删除，请重新打开历史记录。');
+              return;
+            }
+            const merged = mergeHistoryEntries(
+              (latest.entries ?? []).filter(Boolean),
+              change.base,
+              change.entries,
+              profile.volumeWarmups === true,
+              profile.volumeBodyweight === true ? latest.bw ?? 0 : 0,
+            );
+            if (!merged) {
+              Alert.alert('无法保存修改', '这次训练已在其他设备更改，请重新打开历史记录后再修改。');
+              return;
+            }
+            if (gym.commit([{
+              kind: 'workout', key, unit: panel.unit,
+              patch: { ...change.patch, entries: merged.entries, vol: merged.vol },
+            }])) closePanel();
+          }}
         />}
         {panel.kind === 'settings' && <SettingsScreen
           connection={connection ?? null}
@@ -337,6 +362,7 @@ function AppScreen() {
           operation={gym.operation}
           restAlerts={workspace.data.restAlerts === true}
           effort={effortOf(profile)}
+          restPauseSec={profile.restPauseSec ?? DEFAULT_REST_PAUSE_SEC}
           onClose={closePanel}
           onConnect={(address, code) => { gym.connect(address, code).catch(showOperationError); }}
           onSync={() => { gym.sync().catch(showOperationError); }}
@@ -349,6 +375,7 @@ function AppScreen() {
           onMergePractice={() => performDataAction(async () => confirmRestore(snapshotOf(readLocal(null)), true))}
           onToggleRestAlerts={toggleRestAlerts}
           onChangeEffort={effort => gym.commit([{ kind: 'effort', effort }])}
+          onChangeRestPauseSec={restPauseSec => gym.commit([{ kind: 'settings', values: { restPauseSec } }])}
           onOpenAlarmSettings={() => {
             Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM')
               .catch(() => Linking.openSettings())

@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BackHandler, FlatList, StyleSheet, View } from 'react-native';
 import { sessionVolume, workoutDay } from '../../../frontend/src/lib/history';
-import { isWarmupRow } from '../../../frontend/src/lib/workout-model';
+import { clustersOf, dropsOf, isWarmupRow } from '../../../frontend/src/lib/workout-model';
 import { supersetMeta } from '../../../frontend/src/lib/superset-meta';
 import { effortNoteOf } from '../effort';
 import {
@@ -95,10 +95,21 @@ function formatVolume(value: number, unit: Unit) {
 }
 
 function describeSet(set: LoggedSet, unit: Unit) {
-  let text = '已完成';
+  const clusters = clustersOf(set);
+  const drops = dropsOf(set);
+  let text: string;
   if (set.r != null) text = `${set.w ?? 0} ${unit} × ${set.r}`;
   else if (set.sec != null) text = `${set.sec} 秒${set.w != null ? ` · ${set.w} ${unit}` : ''}`;
   else if (set.min != null) text = `${set.min} 分钟${set.speed != null ? ` · 速度 ${set.speed}` : ''}`;
+  else text = '已完成';
+  if (clusters.length) {
+    const sum = clusters.reduce((total: number, cluster: { r?: number }) => total + (Number(cluster.r) || 0), 0);
+    const reps = Number(set.r) || 0;
+    if (sum === reps) text += `（${clusters.map((cluster: { r?: number }) => cluster.r ?? 0).join(' + ')}）`;
+    else if (sum < reps) text += `（${reps - sum} + ${clusters.map((cluster: { r?: number }) => cluster.r ?? 0).join(' + ')}）`;
+  } else if (drops.length) {
+    text += drops.map((drop: { w?: number; r?: number }) => ` ↘ ${drop.w ?? 0} ${unit} × ${drop.r ?? 0}`).join('');
+  }
   // The row's own saved scale, never the profile's: switching the setting does not
   // relabel history. A failure mark without a rating reads as a marked RIR 0.
   const effort = effortNoteOf(set);

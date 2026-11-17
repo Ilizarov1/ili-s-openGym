@@ -11,6 +11,7 @@ export type ProfileChange =
   | { kind: 'custom'; exercise: CustomExercise; create: boolean }
   | { kind: 'workout'; key: string; patch: Partial<Workout>; unit: Unit }
   | { kind: 'effort'; effort: EffortScale }
+  | { kind: 'settings'; values: Partial<Profile> }
   | { kind: 'week'; day: number; ids: string[]; onlyIfEmpty?: boolean }
   | { kind: 'rotation'; key: string; ids: string[]; at: number; onlyIfEmpty?: boolean };
 
@@ -80,6 +81,8 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
         }
         return next;
       }
+      case 'settings':
+        return { ...state, ...change.values };
       case 'week': {
         if (change.onlyIfEmpty && state.week?.[String(change.day)]) return state;
         const next = editablePlan(state);
