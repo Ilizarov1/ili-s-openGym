@@ -208,6 +208,7 @@ export type Profile = {
     routines?: Record<string, number>;
     customEx?: Record<string, number>;
     measurements?: Record<string, number>;
+    bodyweight?: Record<string, number>;
     dayPhotos?: Record<string, number>;
   };
   resetAt?: number;

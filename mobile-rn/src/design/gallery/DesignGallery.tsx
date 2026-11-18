@@ -28,7 +28,7 @@ import {
   TextField,
 } from '../components';
 import { ICON_NAMES, Icon } from '../icons/Icon';
-import { ActionSheet, BodyMap, ExerciseMedia, MediaThumb, MiniBodyMap } from '../patterns';
+import { ActionSheet, BarChart, BodyMap, ExerciseMedia, LineChart, MediaThumb, MiniBodyMap } from '../patterns';
 import { useTheme, useThemeController } from '../ThemeProvider';
 import { palette, typography } from '../tokens';
 import type { AccentName, ThemeMode } from '../themes';
@@ -69,6 +69,21 @@ const SAMPLE_ROUTINES = [
 ];
 
 const SAMPLE_EXERCISES = ['杠铃卧推', '杠铃深蹲', '硬拉', '引体向上', '杠铃划船', '侧平举'];
+
+const SAMPLE_CHART_POINTS = [
+  { x: 1, y: 100, label: '1/03' },
+  { x: 2, y: 104, label: '1/10' },
+  { x: 3, y: 102, label: '1/17' },
+  { x: 4, y: 110, label: '1/24' },
+  { x: 5, y: 114, label: '1/31' },
+];
+
+const SAMPLE_BAR_DATA = [
+  { label: '1/03', value: 4200 },
+  { label: '1/10', value: 0 },
+  { label: '1/17', value: 5100 },
+  { label: '1/24', value: 3800 },
+];
 
 // The gallery is not paired with a server, so media thumbnails show their placeholder.
 const EXAMPLE_SERVER: string | null = null;
@@ -676,6 +691,43 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
               空计划不渲染肌群图。
             </Text>
           </View>
+        </Card>
+      </GallerySection>
+
+      <GallerySection
+        title="图表"
+        description="统计与 1RM 曲线共用；颜色取自主题，空数据和单点都保留可见状态。"
+        testID="gallery-charts"
+      >
+        <Card>
+          <LineChart
+            accessibilityLabel="示例 1RM 曲线，共 5 个训练点"
+            points={SAMPLE_CHART_POINTS}
+            testID="gallery-line-chart"
+            unit="kg"
+          />
+          <Text style={{ marginTop: theme.space.sm }} tone="secondary" variant="caption">
+            曲线只绘制数据点；空周由柱状图补零。
+          </Text>
+          <BarChart
+            accessibilityLabel="示例每周训练量，共 4 周"
+            data={SAMPLE_BAR_DATA}
+            testID="gallery-bar-chart"
+            unit="kg"
+          />
+        </Card>
+        <Card>
+          <LineChart
+            accessibilityLabel="空图表示例"
+            emptyLabel="暂无可估算组"
+            points={[]}
+            unit="kg"
+          />
+          <LineChart
+            accessibilityLabel="单点图表示例，100 kg"
+            points={[{ x: 1, y: 100, label: '1/03' }]}
+            unit="kg"
+          />
         </Card>
       </GallerySection>
 

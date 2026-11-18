@@ -5,14 +5,22 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TabBar, Text, ThemeProvider, useTheme, useThemeController, type TabItem } from './src/design';
 import { DesignGallery } from './src/design/gallery/DesignGallery';
 import {
-  ExerciseLibraryScreen, HistoryEditorScreen, HomeScreen, PlanEditorScreen, PlanScreen,
+  BodyDataScreen, ExerciseLibraryScreen, HistoryEditorScreen, HistoryImportScreen, HomeScreen,
+  PlanEditorScreen, PlanScreen, PlanShareScreen, ProgressScreen, QrPairScreen, ReminderSettingsScreen,
   ScheduleEditorScreen, SettingsScreen, StartSheet, StatsScreen, WorkoutScreen,
 } from './src/screens';
 import { useGym } from './src/useGym';
 import { readLocal } from './src/storage';
-import { advanceRotation, recommendedRoutines, type ProfileChange } from './src/profileChanges';
+import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines, type ProfileChange } from './src/profileChanges';
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
+import {
+  historyImportChanges, historyImportQueue, historyImportRecheck, type HistoryImportResult,
+} from './src/sharing/historyImport';
+import {
+  normalizeReminderTime, openExactAlarmSettings, syncTrainingReminders,
+  useTrainingReminderNavigation, useTrainingReminderSync,
+} from './src/reminders';
 import {
   DEFAULT_REST_PAUSE_SEC,
   addExercise, effortOf, exerciseMode, finishWorkout, localDate, mergeHistoryEntries, startWorkout, unitOf, workoutKey,
@@ -33,6 +41,12 @@ type Panel =
   | { kind: 'history'; workout: Workout; unit: Unit }
   | { kind: 'settings' }
   | { kind: 'library'; replaceIndex?: number }
+  | { kind: 'body' }
+  | { kind: 'progress' }
+  | { kind: 'historyImport' }
+  | { kind: 'qrPair' }
+  | { kind: 'planShare'; mode?: 'export' | 'import' }
+  | { kind: 'reminder' }
   | { kind: 'design' };
 
 function showOperationError(error: unknown) {
@@ -56,6 +70,25 @@ function AppScreen() {
     workspace ? workspace.data.restAlerts === true : undefined,
     currentDraft?.rest?.endsAt,
   );
+
+  // Training reminders are device-local, so they are resolved before the workspace
+  // loading return: hook order must not change while the database opens.
+  const reminderProfile = workspace?.data.profile;
+  const reminderPreference = workspace?.data.reminder;
+  const reminderEnabled = reminderPreference?.on === true;
+  const reminderTime = normalizeReminderTime(reminderPreference?.time);
+  const reminderWorkspace = connection ? `${connection.server}|${connection.user.id}` : 'practice';
+  const reminderCompletedDays = workspace?.data.queue.flatMap(item => item.workout.d ? [item.workout.d] : []) ?? [];
+  const reminderSync = useTrainingReminderSync(reminderProfile, {
+    enabled: reminderEnabled,
+    time: reminderTime,
+    workspace: reminderWorkspace,
+    completedDays: reminderCompletedDays,
+  });
+  useTrainingReminderNavigation(() => {
+    setPanel(null);
+    setTab('plan');
+  });
 
   const closePanel = useCallback(() => {
     if (panel?.kind === 'design') {
@@ -83,6 +116,12 @@ function AppScreen() {
       if (params.e2e === '1') setE2e(true);
       if (route === 'settings') { setPanel({ kind: 'settings' }); return; }
       if (route === 'gallery') { setPanel({ kind: 'design' }); return; }
+      if (route === 'progress') { setPanel({ kind: 'progress' }); return; }
+      if (route === 'body') { setPanel({ kind: 'body' }); return; }
+      if (route === 'reminder') { setPanel({ kind: 'reminder' }); return; }
+      if (route === 'history-import') { setPanel({ kind: 'historyImport' }); return; }
+      if (route === 'plan-share') { setPanel({ kind: 'planShare', mode: params.mode === 'import' ? 'import' : 'export' }); return; }
+      if (route === 'pair') { setPanel({ kind: 'qrPair' }); return; }
       if (route === 'start-sheet') { setStartOpen(true); return; }
       if (route === 'start' || route === 'workout') { setStartRequest({ routine: params.routine }); return; }
       if (route === 'home' || route === 'plan' || route === 'stats' || route === 'library') {
@@ -140,6 +179,60 @@ function AppScreen() {
   const performDataAction = (work: () => Promise<void>) => {
     setDataBusy(true);
     Promise.resolve().then(work).catch(showOperationError).finally(() => setDataBusy(false));
+  };
+
+  const changeReminder = (patch: { on?: boolean; time?: string }) =>
+    gym.change(data => ({ ...data, reminder: { ...data.reminder, ...patch } }));
+
+  const toggleReminder = (on: boolean) => {
+    if (!changeReminder({ on })) return;
+    syncTrainingReminders(profile, {
+      enabled: on,
+      time: reminderTime,
+      interactive: on,
+      workspace: reminderWorkspace,
+      completedDays: reminderCompletedDays,
+    }).catch(showOperationError);
+  };
+
+  const applyHistoryImport = (result: HistoryImportResult) => {
+    const existing = history.map(item => item.workout);
+    const recheck = historyImportRecheck(result, existing);
+    if (recheck.workouts.length === 0) {
+      closePanel();
+      Alert.alert('没有可导入的训练', '文件里的训练日期都已有记录，本次没有新增。');
+      return;
+    }
+    if (!connection) {
+      gym.change(data => {
+        const known = new Set((data.profile.customEx ?? []).map(item => item?.id));
+        return {
+          ...data,
+          profile: {
+            ...data.profile,
+            customEx: [...(data.profile.customEx ?? []), ...recheck.newExercises.filter(item => !known.has(item.id))],
+            workouts: [...(data.profile.workouts ?? []), ...recheck.workouts],
+          },
+        };
+      });
+    } else {
+      const changes = prepareChanges(historyImportChanges(result, recheck.workouts));
+      const queued = historyImportQueue(result, Date.now(), existing);
+      gym.change(data => ({
+        ...data,
+        profile: applyChanges(data.profile, changes),
+        changes: [...(data.changes ?? []), ...changes],
+        queue: [
+          ...data.queue,
+          ...queued.filter(item => !data.queue.some(queuedItem => queuedItem.workout.id === item.workout.id)),
+        ],
+      }));
+    }
+    closePanel();
+    Alert.alert(
+      '已导入',
+      `新增 ${recheck.workouts.length} 场训练${recheck.skipped ? `，跳过 ${recheck.skipped} 场` : ''}。`,
+    );
   };
 
   const saveWorkout = () => {
@@ -286,6 +379,8 @@ function AppScreen() {
         onDelete={removeRoutine}
         onStart={startRoutine}
         onSchedule={() => setPanel({ kind: 'schedule' })}
+        onShare={() => setPanel({ kind: 'planShare', mode: 'export' })}
+        onImport={() => setPanel({ kind: 'planShare', mode: 'import' })}
       />}
       {tab === 'stats' && <StatsScreen
         profile={profile}
@@ -293,6 +388,8 @@ function AppScreen() {
         onEdit={(workout, unit) => setPanel({ kind: 'history', workout, unit })}
         onDelete={deleteWorkout}
         onBackfill={() => startFree(true)}
+        onOpenBody={() => setPanel({ kind: 'body' })}
+        onOpenProgress={() => setPanel({ kind: 'progress' })}
       />}
       {tab === 'library' && <ExerciseLibraryScreen
         connection={connection ?? null}
@@ -390,6 +487,11 @@ function AppScreen() {
               .catch(showOperationError);
           }}
           onOpenGallery={() => setPanel({ kind: 'design' })}
+          reminderOn={reminderEnabled}
+          reminderTime={reminderTime}
+          onOpenReminders={() => setPanel({ kind: 'reminder' })}
+          onOpenHistoryImport={() => setPanel({ kind: 'historyImport' })}
+          onScanPairingQr={() => setPanel({ kind: 'qrPair' })}
           notice={gym.notice}
           restAlertError={restAlertError}
           busy={dataBusy}
@@ -404,6 +506,53 @@ function AppScreen() {
           onPick={target => { pickForWorkout(target, panel.replaceIndex); closePanel(); }}
         />}
         {panel.kind === 'design' && <DesignGallery onClose={closePanel} />}
+        {panel.kind === 'body' && <BodyDataScreen
+          connection={connection ?? null}
+          history={history}
+          onClose={closePanel}
+          onCommit={changes => { gym.commit(changes); }}
+          onChangeLocal={gym.change}
+          photoUploads={workspace.data.photoUploads ?? []}
+          profile={profile}
+        />}
+        {panel.kind === 'progress' && <ProgressScreen
+          history={history}
+          onClose={closePanel}
+          onOpenWorkout={(workout, unit) => setPanel({ kind: 'history', workout, unit })}
+          profile={profile}
+        />}
+        {panel.kind === 'historyImport' && <HistoryImportScreen
+          connection={connection ?? null}
+          onClose={closePanel}
+          onImport={applyHistoryImport}
+          profile={snapshotOf(workspace.data)}
+        />}
+        {panel.kind === 'qrPair' && <QrPairScreen
+          busy={gym.operation === 'pair'}
+          error={gym.notice}
+          onClose={closePanel}
+          onConfirm={(address, code) => { gym.connect(address, code).catch(showOperationError); }}
+        />}
+        {panel.kind === 'planShare' && <PlanShareScreen
+          initialMode={panel.mode}
+          onChange={changes => { if (gym.commit(changes)) closePanel(); }}
+          onClose={closePanel}
+          profile={profile}
+        />}
+        {panel.kind === 'reminder' && <ReminderSettingsScreen
+          busy={reminderSync.syncing}
+          enabled={reminderEnabled}
+          error={reminderSync.result?.error}
+          exactAlarm={reminderSync.result?.exactAlarm ?? 'unknown'}
+          next={reminderSync.next}
+          onChangeTime={time => { changeReminder({ time }); }}
+          onClose={closePanel}
+          onOpenAlarmSettings={() => { openExactAlarmSettings().catch(showOperationError); }}
+          onRequestPermission={() => { reminderSync.refresh(true).catch(showOperationError); }}
+          onToggle={toggleReminder}
+          permission={reminderSync.result?.permission ?? 'undetermined'}
+          time={reminderTime}
+        />}
       </View>
     </Modal> : null}
 

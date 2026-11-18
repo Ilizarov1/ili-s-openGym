@@ -51,6 +51,11 @@ export type SettingsScreenProps = {
   onChangeRestPauseSec: (value: number) => void;
   onOpenAlarmSettings: () => void;
   onOpenGallery: () => void;
+  reminderOn: boolean;
+  reminderTime: string;
+  onOpenReminders: () => void;
+  onOpenHistoryImport: () => void;
+  onScanPairingQr: () => void;
   /** 来自 `useGym` 的错误提示，例如同步失败。 */
   notice?: string;
   /** 休息通知权限或调度错误。 */
@@ -99,6 +104,11 @@ export function SettingsScreen({
   onChangeRestPauseSec,
   onOpenAlarmSettings,
   onOpenGallery,
+  reminderOn,
+  reminderTime,
+  onOpenReminders,
+  onOpenHistoryImport,
+  onScanPairingQr,
   notice,
   restAlertError,
   busy = false,
@@ -195,6 +205,15 @@ export function SettingsScreen({
           <ListRow
             chevron
             disabled={working}
+            leading={<IconTile name="camera" size="sm" tone="neutral" />}
+            onPress={onScanPairingQr}
+            subtitle="用相机读取网页端的移动端配对二维码"
+            title="扫描配对二维码"
+          />
+          <Divider inset={dividerInset} />
+          <ListRow
+            chevron
+            disabled={working}
             leading={<IconTile name="signOut" size="sm" tone="neutral" />}
             onPress={onDisconnect}
             subtitle="本机保留这个账号的数据"
@@ -209,6 +228,9 @@ export function SettingsScreen({
           <Text tone="secondary" variant="subhead">
             在已登录的网页端打开账号设置，生成移动端配对码。
           </Text>
+          <Button disabled={working} icon="qr" onPress={onScanPairingQr} variant="secondary">
+            扫描配对二维码
+          </Button>
           <TextField
             autoCapitalize="none"
             autoCorrect={false}
@@ -290,6 +312,15 @@ export function SettingsScreen({
           subtitle="从备份文件合并训练和计划"
           title="恢复备份"
         />
+        <Divider inset={dividerInset} />
+        <ListRow
+          chevron
+          disabled={working}
+          leading={<IconTile name="history" size="sm" tone="neutral" />}
+          onPress={onOpenHistoryImport}
+          subtitle="从 FitNotes、Strong、Hevy 等 CSV/JSON 导入"
+          title="导入训练历史"
+        />
         {connection ? (
           <>
             <Divider inset={dividerInset} />
@@ -331,6 +362,15 @@ export function SettingsScreen({
 
       <SectionHeader style={{ marginTop: theme.space.sm }} title="通知" />
       <Card padded={false}>
+        <ListRow
+          chevron
+          disabled={working}
+          leading={<IconTile name="bell" size="sm" tone="soft" />}
+          onPress={onOpenReminders}
+          subtitle={reminderOn ? `${reminderTime} · 已开启` : '按计划在训练日提醒'}
+          title="训练提醒"
+        />
+        <Divider inset={theme.layout.listRowPaddingX} />
         <SwitchRow
           disabled={working}
           onValueChange={() => onToggleRestAlerts()}

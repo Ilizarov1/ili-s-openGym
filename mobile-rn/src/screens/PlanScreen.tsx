@@ -34,6 +34,8 @@ export type PlanScreenProps = {
   onDelete: (routine: Routine) => void;
   onStart: (routine: Routine) => void;
   onSchedule: () => void;
+  onShare: () => void;
+  onImport: () => void;
 };
 
 type PlanView = 'schedule' | 'routines';
@@ -74,6 +76,8 @@ export function PlanScreen({
   onDelete,
   onStart,
   onSchedule,
+  onShare,
+  onImport,
 }: PlanScreenProps) {
   const theme = useTheme();
   const [view, setView] = useState<PlanView>('schedule');
@@ -97,7 +101,13 @@ export function PlanScreen({
   return (
     <Screen testID="plan-screen">
       <Header
-        right={connection ? undefined : <Badge tone="neutral">本机练习</Badge>}
+        right={
+          <View style={styles.trailing}>
+            {connection ? null : <Badge tone="neutral">本机练习</Badge>}
+            <IconButton accessibilityLabel="导入计划" name="download" onPress={onImport} size="sm" />
+            <IconButton accessibilityLabel="分享计划" name="share" onPress={onShare} size="sm" />
+          </View>
+        }
         subtitle="你的每周安排"
         title="计划"
       />

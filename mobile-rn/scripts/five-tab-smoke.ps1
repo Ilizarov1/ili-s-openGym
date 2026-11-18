@@ -32,15 +32,35 @@ function Tap-Bounds {
   $m = [regex]::Match($Bounds, '\[(\d+),(\d+)\]\[(\d+),(\d+)\]')
   if (-not $m.Success) { throw "invalid bounds: $Bounds" }
   $x = [int]((([int]$m.Groups[1].Value) + ([int]$m.Groups[3].Value)) / 2)
-  $y = [int]((([int]$m.Groups[2].Value) + ([int]$m.Groups[4].Value)) / 2)
+  # Tap above the vertical centre: a bottom tab's box reaches into the gesture strip,
+  # where the system can swallow the touch even though the app owns the upper part.
+  $y = [int]([int]$m.Groups[2].Value + (([int]$m.Groups[4].Value) - ([int]$m.Groups[2].Value)) * 0.38)
   Invoke-Adb shell input tap $x $y
+  Start-Sleep -Milliseconds 350
 }
 
 function Tap-Text {
   param([string]$Text)
   $node = Find-Node (Read-Ui) $Text
   if (-not $node) { throw "text not found: $Text" }
-  Tap-Bounds $node.bounds
+  # Prefer the pressable ancestor: the text baseline of a bottom tab sits inside the
+  # gesture navigation strip, while the tab's own box is comfortably above it.
+  $target = $node
+  while ($target -and $target.Name -eq 'node' -and $target.clickable -ne 'true') {
+    $target = $target.ParentNode
+  }
+  if (-not $target -or $target.Name -ne 'node') { $target = $node }
+  Tap-Bounds $target.bounds
+}
+
+# The first tap after closing a full-screen Modal can be consumed by the transition.
+# Repeating the tap is harmless on a tab (it stays selected) and makes the shell test
+# deterministic on a cold launch.
+function Tap-Tab {
+  param([string]$Text)
+  Tap-Text $Text
+  Start-Sleep -Milliseconds 500
+  Tap-Text $Text
 }
 
 function Wait-Text {
@@ -95,9 +115,10 @@ Ensure-Text '配对码' | Out-Null
 Screenshot 'five-tab-settings'
 Invoke-Adb shell input keyevent 4 | Out-Null
 Wait-Text '首页' 15 | Out-Null
+Start-Sleep -Seconds 1
 
-Tap-Text '计划'
-Wait-Text '计划' 15 | Out-Null
+Tap-Tab '计划'
+Wait-Text '训练计划' 15 | Out-Null
 Tap-Text '训练计划'
 Wait-Text '新训练日' 15 | Out-Null
 Ensure-Text '全身力量 A' | Out-Null
@@ -106,26 +127,27 @@ Tap-Text '全身力量 A'
 Wait-Text '编辑计划' 15 | Out-Null
 Screenshot 'five-tab-plan-editor'
 Invoke-Adb shell input keyevent 4 | Out-Null
-Wait-Text '计划' 15 | Out-Null
+Wait-Text '训练计划' 15 | Out-Null
+Start-Sleep -Seconds 1
 
-Tap-Text '统计'
-Wait-Text '统计' 15 | Out-Null
+Tap-Tab '统计'
+Wait-Text '训练记录与进步' 15 | Out-Null
 Screenshot 'five-tab-stats'
 
-Tap-Text '动作库'
-Wait-Text '动作库' 15 | Out-Null
+Tap-Tab '动作库'
+Wait-Text '5632 个动画动作 + 0 个自建' 15 | Out-Null
 Ensure-Text '5632 个动画动作 + 0 个自建' | Out-Null
 Screenshot 'five-tab-library'
 Tap-Text '筛选'
 Wait-Text '筛选' 15 | Out-Null
 Screenshot 'five-tab-library-filter'
 Tap-Text '完成'
-Wait-Text '动作库' 15 | Out-Null
+Wait-Text '5632 个动画动作 + 0 个自建' 15 | Out-Null
 
 Tap-Text '开始'
 Wait-Text '开始训练' 15 | Out-Null
 Screenshot 'five-tab-start-sheet'
 Tap-Text '取消'
-Wait-Text '动作库' 15 | Out-Null
+Wait-Text '5632 个动画动作 + 0 个自建' 15 | Out-Null
 
 Write-Output 'PASS: five-tab shell, home, plan, stats, library, filter and start sheet verified'

@@ -11,6 +11,7 @@ import { dateLocale } from '../lib/i18n-core.js'
 import { api, webauthnOK, createPasskey } from '../lib/api.js'
 import { copyText } from '../lib/clipboard.js'
 import { deviceLinkUrl, deviceLabel } from '../lib/device-link.js'
+import { appBase } from '../lib/app-base.js'
 import { askAddDeviceData } from '../sheets.jsx'
 import { passwordError, notReached, useAgainOnceReached, ProveOwner } from './PasswordAuth.jsx'
 import QrCanvas from './QrCanvas.jsx'
@@ -257,6 +258,12 @@ export function DeviceLinkSheet({ close }) {
    cookie someone walked off with. Then the code, and when its five minutes are up, a new one on a
    tap. A paired phone can pair another only with the password, as with a device link. */
 const PAIR_MINUTES = 5
+// The address the phone should open: this browser's origin plus the reverse-proxy
+// subpath it is served under (#238), or the paired server on the phone itself.
+function pairServerBase() {
+  if (MOBILE) return useStore.getState().sync?.server || ''
+  try { return location.origin && location.origin !== 'null' ? location.origin + appBase().replace(/\/$/, '') : '' } catch { return '' }
+}
 export function PairSheet({ close }) {
   const { st } = usePasskeys(true)
   const [pair, setPair] = useState(null)   // { code, expires }
@@ -272,6 +279,10 @@ export function PairSheet({ close }) {
     const r = await post('/api/pair/create', proof)
     setPair({ code: r.code, expires: Date.now() + PAIR_MINUTES * 60000 })
   }
+  const server = pair ? pairServerBase() : ''
+  const qr = pair && server
+    ? `opengym://pair?server=${encodeURIComponent(server)}&code=${encodeURIComponent(pair.code)}`
+    : ''
   return <>
     <h3>{t('Pair the mobile app')}</h3>
     {!st ? <div className="muted small">…</div> : !pair ? <>
@@ -286,8 +297,12 @@ export function PairSheet({ close }) {
       <div className="muted small" style={{ marginBottom: 14 }}>
         {t('On the openGym app, choose “Connect to my server”, then enter this address and the code below. It expires in 5 minutes.')}
       </div>
+      {qr && <div className="ci-qr-plate" style={{ width: 'fit-content', margin: '0 auto 12px' }}><QrCanvas value={qr} size={200} /></div>}
       {/* Read out or typed character by character: left to right in every language. */}
       <div className="card" dir="ltr" style={{ textAlign: 'center', fontSize: 30, fontWeight: 700, letterSpacing: '.16em', padding: '18px 0' }}>{pair.code}</div>
+      <div className="dim small" style={{ marginTop: 8, textAlign: 'center' }}>
+        {t('Or scan the QR code in the openGym app under Settings → Scan pairing QR code.')}
+      </div>
     </>}
     <div style={{ height: 12 }} />
     <Button onClick={close}>{t('Done')}</Button>

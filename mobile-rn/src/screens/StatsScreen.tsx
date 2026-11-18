@@ -11,6 +11,7 @@ import { sessionVolume, workoutDay } from '../../../frontend/src/lib/history';
 import { clustersOf, dropsOf, isWarmupRow } from '../../../frontend/src/lib/workout-model';
 import { supersetMeta } from '../../../frontend/src/lib/superset-meta';
 import { effortNoteOf } from '../effort';
+import { ExerciseRecordSection } from '../progress';
 import {
   ActionSheet,
   Badge,
@@ -51,6 +52,8 @@ export type StatsScreenProps = {
   onEdit: (workout: Workout, unit: Unit) => void;
   onDelete: (workout: Workout) => void;
   onBackfill: () => void;
+  onOpenBody: () => void;
+  onOpenProgress: () => void;
 };
 
 const styles = StyleSheet.create({
@@ -163,7 +166,7 @@ function EntryRows({ workout, profile, unit, onExercise }: {
   );
 }
 
-export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill }: StatsScreenProps) {
+export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill, onOpenBody, onOpenProgress }: StatsScreenProps) {
   const theme = useTheme();
   const [expanded, setExpanded] = useState<string | null>(null);
   const [action, setAction] = useState<{ workout: Workout; unit: Unit } | null>(null);
@@ -211,6 +214,12 @@ export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill }: 
     return (
       <Screen testID="stats-exercise-history">
         <Header compact onBack={() => setExerciseId(null)} subtitle="动作历史" title={name} />
+        <ExerciseRecordSection
+          exerciseId={exerciseId}
+          history={history}
+          onOpenWorkout={(workout, itemUnit) => onEdit(workout, itemUnit)}
+          profile={profile}
+        />
         {exerciseRecords.length === 0 ? (
           <EmptyState
             icon="history"
@@ -287,6 +296,24 @@ export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill }: 
           />
         </>
       ) : null}
+      <SectionHeader style={{ marginTop: theme.space.md }} title="进度与身体" />
+      <Card padded={false}>
+        <ListRow
+          chevron
+          leading={<IconTile name="chartLine" size="sm" tone="accent" />}
+          onPress={onOpenProgress}
+          subtitle="训练趋势、个人纪录与肌群覆盖"
+          title="训练进度"
+        />
+        <Divider inset={theme.layout.listRowPaddingX + theme.sizes.tileSm + theme.space.md} />
+        <ListRow
+          chevron
+          leading={<IconTile name="scale" size="sm" tone="soft" />}
+          onPress={onOpenBody}
+          subtitle="体重、围度与进度照片"
+          title="身体数据"
+        />
+      </Card>
     </>
   );
 

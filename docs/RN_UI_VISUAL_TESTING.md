@@ -104,6 +104,13 @@ opengym://plan
 opengym://stats
 opengym://library
 opengym://settings
+opengym://progress
+opengym://body
+opengym://reminder
+opengym://history-import
+opengym://plan-share
+opengym://plan-share?mode=import
+opengym://pair
 opengym://start-sheet
 opengym://workout?routine=fixture-upper
 opengym://gallery
@@ -114,6 +121,8 @@ opengym://gallery
 ```powershell
 adb shell "am start -W -a android.intent.action.VIEW -d 'opengym://workout?e2e=1&routine=fixture-upper'"
 ```
+
+`ui-fixture.ps1` 现在还会写入体重、围度、一个较早的 100 kg 卧推样本和本机提醒偏好，便于截图 `progress`、`body`、`reminder` 页面。照片选择器需要模拟器相册里有一张测试图；手动检查时可先 `adb push` 一张 PNG 到 `/sdcard/Pictures/`。
 
 URL 必须整条加单引号，否则 `adb shell` 会把 `&routine` 截断。深链启动训练要求本地工作区已加载且当前没有草稿。
 

@@ -54,23 +54,23 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 
 #### 进度与身体数据
 
-- [ ] **个人纪录（PR）**。查看动作的个人纪录与来源。[验收目标](rn-p2/progress/01_PERSONAL_RECORDS.md#验收目标)
-- [ ] **估算 1RM**。沿用上游估算方法显示变化。[验收目标](rn-p2/progress/02_ESTIMATED_1RM.md#验收目标)
-- [ ] **训练趋势**。查看频率、训练量与动作表现随时间的变化。[验收目标](rn-p2/progress/03_WORKOUT_TRENDS.md#验收目标)
-- [ ] **肌群图**。查看训练覆盖的肌群及分布。[验收目标](rn-p2/progress/04_MUSCLE_MAP.md#验收目标)
-- [ ] **体重**。记录和查看体重趋势。[验收目标](rn-p2/progress/05_BODYWEIGHT.md#验收目标)
-- [ ] **围度**。记录和查看身体围度。[验收目标](rn-p2/progress/06_MEASUREMENTS.md#验收目标)
-- [ ] **进度照片**。添加、浏览和管理进度照片。[验收目标](rn-p2/progress/07_PROGRESS_PHOTOS.md#验收目标)
+- [ ] **个人纪录（PR）**。已实现：动作历史显示 PR 卡、来源训练和分模式指标。2026-11-18 `emulator-5556` 已用 100 kg×6 fixture 验证最佳纪录、来源和 1RM 卡；待辅助/计时/有氧及同步后重算复验。 [验收目标](rn-p2/progress/01_PERSONAL_RECORDS.md#验收目标)
+- [ ] **估算 1RM**。已实现：Epley/weighted 等公式、最佳卡和趋势曲线。2026-11-18 `emulator-5556` 已验证 100 kg×6 → 120 kg、来源和相邻日期标签；待 weighted/旧 `rpe`/Web 对照和同步后重算。 [验收目标](rn-p2/progress/02_ESTIMATED_1RM.md#验收目标)
+- [ ] **训练趋势**。已实现：30/90/365/全部范围、周桶、训练量和动作表现点。2026-11-18 `emulator-5556` 已验证范围切换、空周补零、动作表现和来源入口；待同日多场边界与 API 回读。 [验收目标](rn-p2/progress/03_WORKOUT_TRENDS.md#验收目标)
+- [ ] **肌群图**。已实现：按完成正式组映射前后身体图、图例和有效组明细。2026-11-18 `emulator-5556` 已验证胸部/背部/腿部覆盖、本周范围和有效组列表；待快照回退、空范围及深浅主题截图。 [验收目标](rn-p2/progress/04_MUSCLE_MAP.md#验收目标)
+- [ ] **体重**。已实现：同日多读数、日值/周趋势和离线变更重放。2026-11-18 `emulator-5556` 已验证新增 79.8 kg、周均重算、列表和表单校验；待 lb 换算、Web 并发与删除最后一笔。 [验收目标](rn-p2/progress/05_BODYWEIGHT.md#验收目标)
+- [ ] **围度**。已实现：按日合并、内置部位、cm/in 转换和单部位曲线。2026-11-18 `emulator-5556` 已验证两日历史、腰围曲线和部位切换；待 Web `other` 字段、字段级清除和整日删除。 [验收目标](rn-p2/progress/06_MEASUREMENTS.md#验收目标)
+- [ ] **进度照片**。已实现：系统选图、方向/大小/SHA-256 校验、私有目录、日期确认、训练媒体/日照片归档、全屏查看和待上传队列。2026-11-18 `emulator-5556` 已验证选图、保存到最新训练、缩略图和全屏查看；待配对上传、删除、能力不足和账号隔离。 [验收目标](rn-p2/progress/07_PROGRESS_PHOTOS.md#验收目标)
 
 #### 导入、分享与连接
 
-- [ ] **第三方历史导入**。选择上游支持的来源并核对导入结果。[验收目标](rn-p2/import-sharing-connection/01_HISTORY_IMPORT.md#验收目标)
-- [ ] **计划分享**。导出和接收 openGym 计划文件。[验收目标](rn-p2/import-sharing-connection/02_PLAN_SHARING.md#验收目标)
-- [ ] **二维码配对**。用相机读取移动端配对二维码并确认连接账号。[验收目标](rn-p2/import-sharing-connection/03_QR_PAIRING.md#验收目标)
+- [ ] **第三方历史导入**。已实现：文件选择、20 MB 上限、预览、按日去重、单位换算、动作匹配/创建和离线提交。2026-11-18 `emulator-5556` 已验证设置入口和预览页；待逐来源 fixture、实际导入和 409 重判。 [验收目标](rn-p2/import-sharing-connection/01_HISTORY_IMPORT.md#验收目标)
+- [ ] **计划分享**。已实现：计划 JSON 导出/系统分享、导入预览、单位换算、新 ID 与可选周排程。2026-11-18 `emulator-5556` 已验证选择 7 套计划并导出 `opengym-plan-*.json` 到系统分享面板；待 Web 双向导入和排程替换。 [验收目标](rn-p2/import-sharing-connection/02_PLAN_SHARING.md#验收目标)
+- [ ] **二维码配对**。已实现：网页配对面板生成 `opengym://pair` 二维码，RN 相机扫码、严格解析和确认后兑换。2026-11-18 `emulator-5556` 已验证设置入口、相机权限和取景页；待真机扫码、确认前不兑换及过期/取消。 [验收目标](rn-p2/import-sharing-connection/03_QR_PAIRING.md#验收目标)
 
 #### 平台集成
 
-- [ ] **训练提醒**。根据计划安排 Android 本地训练通知。[验收目标](rn-p2/platform/01_TRAINING_REMINDERS.md#验收目标)
+- [ ] **训练提醒**。已实现：60 天本地排程、完成日/休息日跳过、独立通知频道和点按回计划。2026-11-18 `emulator-5556` 已验证权限状态、08:00 时刻、排程预览和 3 条 `RTC_WAKEUP` 调度；待真机锁屏到达、通知点按和关闭/切账号撤销。 [验收目标](rn-p2/platform/01_TRAINING_REMINDERS.md#验收目标)
 
 ## 工程验收
 
@@ -82,6 +82,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [x] **RN 视觉测试流程**。`opengym://` 深链、`e2e=1` 冻结计时器、Debug fixture 和 `ui-capture.ps1` contact sheet 已落地；流程和设计系统硬性约束见 [RN_UI_VISUAL_TESTING.md](RN_UI_VISUAL_TESTING.md)。
 - [x] **Android 回归脚本五入口适配**。`android-regression.ps1` 已使用新版导航和菜单；`superset-smoke.ps1` 已在 `emulator-5556` 通过计划编辑、73 秒轮间休息、A1→B1→A2、草稿恢复、25/40→40 秒和新建组。最新合并版完整 P0/P1 联跑仍待记录。[脚本说明](../mobile-rn/scripts/README.md)
 - [x] **P2 高级训练与动作库（实现）**。设计系统、数据模型、训练/历史/设置/动作库接线完成；`npm.cmd run check`、`five-tab-smoke.ps1 -ResetAppData`、`ui-capture.ps1 -Fixture` 通过。RPE 8、递减段和 40 秒超级组休息已在模拟器验证；Release `openGym-RN-0.1.4-five-tab.apk`（约 245 MB，SHA-256 `BF32CAD6C0834679B7F9EDC9CFBF810D81599D0FD05BBD4C533FC8E00E0FB96D`）通过五 Tab 冒烟、动作详情本地静图/动画和中文介绍检查。API 同步、自定义媒体和真机解码列为待验收项。
-- [ ] **Android 真机验收**。ADB 当前只识别专用模拟器。真机可用 `0.1.3` 验证实际训练、重启同步、锁屏通知显示及震动。
+- [ ] **P2 进度、身体数据、导入分享与提醒（实现）**。2026-11-18 已完成统计/进度、体重/围度/照片、历史导入、计划分享、二维码配对和训练提醒的页面与数据逻辑；`npm.cmd run check` 通过。`emulator-5556` 已验证进度页 PR 100 kg×6、1RM 120 kg、周趋势、肌群图；体重新增 79.8 kg；围度历史与曲线；选图保存到训练媒体并全屏查看；设置入口、计划导出分享面板、相机权限和提醒排程预览。Release `openGym-RN-0.1.5-five-tab.apk`（约 258 MB，SHA-256 `3E62E167917920E9893DA7A6AB92C27C99B827EA970F5803E8DF87570F38FFA1`）通过五 Tab 冒烟、进度/身体/提醒/导入/计划分享/扫码深链和计划导出检查。独立 API 同步、QR 实际兑换、导入文件、提醒锁屏到达和真机媒体解码仍待复验。
+- [ ] **Android 真机验收**。ADB 当前只识别专用模拟器。真机可用 `0.1.5` 验证实际训练、重启同步、锁屏通知显示及震动、相机扫码和媒体解码。
 
 每完成一项就更新对应条目，附上验证结果或记录链接。只完成一部分时，写明已经实现的能力和剩余工作。代码已实现、验收仍待完成的条目标记为「已实现，待验证」。

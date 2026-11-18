@@ -87,3 +87,13 @@ Android 36 可见模拟器使用 `0.1.3` 联跑 `-FeatureChecks -P1Checks`，P0 
 - **超级组**。在可见 Android 36 模拟器验证计划编辑、训练中拆分重组、`A1 → B1 → A2`、轮内无休息、`73` 秒轮末休息和结束时停表。重开后从 B1 继续，历史和独立 API 确认保留组名、动作顺序和组数。定向检查还覆盖热身顺序、默认取最长休息、替换动作保留组关系。
 - **回归**。Android `0.1.4` 使用 `-FeatureChecks -P1Checks -SupersetChecks` 联跑，P0、P1 和超级组均通过。
 - **安装包**。`mobile-rn/dist/openGym-RN-0.1.4.apk` 通过类型检查、Release 构建、签名和内置 JS 校验。SHA-256 为 `804CDDEA85A0E9FEF83850CDC3C2837A482BC2A0AB78FC3EE09F213CC55AD681`。
+
+### 0.1.5 验收结果（P2 进度、身体数据、导入分享与提醒）
+
+- **静态检查**：`cd mobile-rn && npm.cmd run check` 通过 ESLint、规则回归、TypeScript 和设计图标检查。
+- **五 Tab 冒烟**：`five-tab-smoke.ps1 -Serial emulator-5556` 在 Debug 和 Release `0.1.5` 均通过；脚本的底部 Tab 点击改为优先点击可交互父节点并重复一次，避免关闭全屏 Modal 后的首次点击被吞。
+- **进度**：`emulator-5556` 用 fixture 验证 PR 最佳纪录 `100 kg × 6`、来源训练、Epley 1RM `120 kg`、周趋势（含空周补零和 5,140/7,660 kg 训练量）以及肌群前后视图和有效组明细。
+- **身体数据**：验证体重新增 `79.8 kg` 后日值/周均重算；围度两日历史、腰围曲线和部位切换；照片从系统选择器选图、重编码、保存到当天最新训练的 `media`、缩略图和全屏查看。
+- **导入分享与提醒**：验证设置页入口、计划导出到系统分享面板（`opengym-plan-2026-11-18-*.json`）、相机权限与取景页、提醒的权限/时刻/预览和 3 条 `RTC_WAKEUP` 调度；Release 包同时验证了进度、身体、提醒、历史导入、计划分享和扫码深链。
+- **待复验**：独立 API 同步和 `409`、二维码实际兑换、真实导入文件、提醒锁屏到达与点击、真机相机/媒体解码。
+- **安装包**：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，包含 arm64-v8a 和 x86_64，约 258 MB，Debug 证书签名；SHA-256 为 `3E62E167917920E9893DA7A6AB92C27C99B827EA970F5803E8DF87570F38FFA1`。

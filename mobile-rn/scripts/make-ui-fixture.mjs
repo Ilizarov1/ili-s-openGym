@@ -173,6 +173,75 @@ const supersetLog = makeWorkout('fixture-superset-log', 2, supersetRoutine, [
 supersetLog.name = '超级组历史样本';
 workouts.push(supersetLog);
 
+// A heavier older bench session gives the PR and 1RM cards two dated points.
+const prLog = makeWorkout('fixture-pr', 10, upper, [
+  {
+    id: '0025',
+    target: upper.ex[0],
+    topW: 100,
+    sets: [
+      work(90, 6, atOf(10, 9) + 120000),
+      work(100, 5, atOf(10, 9) + 240000),
+      work(100, 6, atOf(10, 9) + 360000),
+    ],
+  },
+]);
+prLog.name = '胸部力量样本';
+workouts.push(prLog);
+
+const bodyweight = [
+  {
+    d: dayOf(6),
+    w: 80.6,
+    t: atOf(6, 20),
+    ins: [
+      { id: 'fixture-w1', at: '08:00', w: 80.2, t: atOf(6, 8) },
+      { id: 'fixture-w2', at: '20:00', w: 81.0, t: atOf(6, 20) },
+    ],
+  },
+  {
+    d: dayOf(4),
+    w: 80.4,
+    t: atOf(4, 8),
+    ins: [{ id: 'fixture-w3', at: '08:00', w: 80.4, t: atOf(4, 8) }],
+  },
+  {
+    d: dayOf(2),
+    w: 80.0,
+    t: atOf(2, 8),
+    ins: [{ id: 'fixture-w4', at: '08:00', w: 80.0, t: atOf(2, 8) }],
+  },
+];
+
+const measurements = [
+  {
+    d: dayOf(6),
+    t: atOf(6, 8),
+    chest: 100,
+    waist: 82,
+    hips: 96,
+    upperArmLeft: 36,
+    upperArmRight: 36.5,
+    thighLeft: 60,
+    thighRight: 60.5,
+    bodyFat: 18,
+    other: [],
+  },
+  {
+    d: dayOf(2),
+    t: atOf(2, 8),
+    chest: 99.5,
+    waist: 82.5,
+    hips: 96,
+    upperArmLeft: 35.5,
+    upperArmRight: 36,
+    thighLeft: 59.5,
+    thighRight: 60,
+    bodyFat: 18.5,
+    other: [],
+  },
+];
+
 const today = new Date().getDay();
 const week = {
   [String(today)]: 'fixture-upper',
@@ -186,15 +255,19 @@ const profile = {
   restPauseSec: 15,
   volumeWarmups: true,
   effort: 'rpe',
+  oneRmFormula: 'epley',
+  bwDaily: 'avg',
   favEx: ['0025', 'custom-demo'],
   routines,
   workouts,
+  bodyweight,
+  measurements,
   week,
   scheduleMode: 'week',
   customEx: [{ id: 'custom-demo', n: '自定义划船', bp: 'back', eq: 'cable' }],
 };
 
-const state = { profile, draft: null, queue: [], restAlerts: false };
+const state = { profile, draft: null, queue: [], restAlerts: false, reminder: { on: false, time: '08:00' } };
 const db = new DatabaseSync(out);
 db.exec('CREATE TABLE IF NOT EXISTS workspace (scope TEXT PRIMARY KEY, state TEXT NOT NULL)');
 db.prepare('INSERT OR REPLACE INTO workspace (scope, state) VALUES (?, ?)').run('practice', JSON.stringify(state));

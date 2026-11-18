@@ -7,6 +7,11 @@ Windows 环境统一使用 PowerShell。普通问答只读资料和源码，不�
 ```text
 mobile-rn/           Expo Android 工程与训练、历史、配对界面
 mobile-rn/src/       计划、动作与历史编辑，训练数据、备份、提醒和同步
+mobile-rn/src/progress/  PR、1RM、训练趋势和肌群图投影
+mobile-rn/src/body/      体重、围度和进度照片
+mobile-rn/src/sharing/   第三方历史导入、计划分享和上游模块兼容层
+mobile-rn/src/pairing/   配对二维码解析
+mobile-rn/src/reminders/ 训练提醒排程、通知和导航
 mobile-rn/src/design/  RN 设计系统：tokens、主题、图标、基础组件、身体图和开发画廊
 mobile-rn/eslint.config.js  RN ESLint 配置和导入边界
 mobile-rn/scripts/   Android 模拟器回归、五 Tab 冒烟、视觉截图、fixture、目录媒体生成、自定义 lint 和图标检查

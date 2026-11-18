@@ -8,3 +8,5 @@ export { ExerciseMedia } from './ExerciseMedia';
 export type { ExerciseMediaKind, ExerciseMediaProps } from './ExerciseMedia';
 export { ActionSheet } from './ActionSheet';
 export type { ActionItem, ActionSheetProps } from './ActionSheet';
+export { BarChart, LineChart } from './Chart';
+export type { BarChartProps, ChartBar, ChartPoint, LineChartProps } from './Chart';

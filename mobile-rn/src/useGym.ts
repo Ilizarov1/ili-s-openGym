@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { normalizeServer, pair, synchronize, type Connection } from './server';
 import { readConnection, readLocal, saveConnection, saveLocal, type LocalState } from './storage';
 import { applyChanges, prepareChanges, type ProfileChange } from './profileChanges';
+import { pendingPhotoCount, uploadPendingPhotos } from './body';
 
 type Workspace = { connection: Connection | null; data: LocalState };
 type Operation = 'pair' | 'sync' | 'disconnect';
@@ -83,13 +84,23 @@ export function useGym() {
     if (!before?.connection) return;
     const { connection } = before;
     await run('sync', async () => {
-      const { profile, acknowledged } = await synchronize(connection, before.data.queue, before.data.workoutDeletes, before.data.changes);
+      // Photo bytes have to reach the instance before the state that references them.
+      // The queue is retried on every sync; references are never added here twice.
+      const photoResult = await uploadPendingPhotos(connection, current.current?.data ?? before.data);
+      if (photoResult.uploaded || photoResult.failed) {
+        const latest = current.current ?? before;
+        const uploadedData: LocalState = { ...latest.data, photoUploads: photoResult.uploads };
+        saveLocal(connection, uploadedData);
+        show({ connection, data: uploadedData });
+      }
+      const base = current.current ?? before;
+      const { profile, acknowledged } = await synchronize(connection, base.data.queue, base.data.workoutDeletes, base.data.changes);
       const latest = current.current!;
       const done = new Set(acknowledged);
-      const sentChanges = new Set(before.data.changes?.map(item => item.id));
+      const sentChanges = new Set(base.data.changes?.map(item => item.id));
       const changes = latest.data.changes?.filter(item => !sentChanges.has(item.id));
       const workoutDeletes = Object.fromEntries(Object.entries(latest.data.workoutDeletes ?? {}).filter(
-        ([key, at]) => at !== before.data.workoutDeletes?.[key],
+        ([key, at]) => at !== base.data.workoutDeletes?.[key],
       ));
       const data: LocalState = {
         ...latest.data,
@@ -109,7 +120,7 @@ export function useGym() {
   }, [sync]);
 
   const connection = workspace?.connection;
-  const pending = (workspace?.data.queue.length ?? 0) + Object.keys(workspace?.data.workoutDeletes ?? {}).length + (workspace?.data.changes?.length ?? 0);
+  const pending = (workspace?.data.queue.length ?? 0) + Object.keys(workspace?.data.workoutDeletes ?? {}).length + (workspace?.data.changes?.length ?? 0) + (workspace ? pendingPhotoCount(workspace.data) : 0);
   useEffect(() => {
     if (!connection) return;
     syncInBackground();

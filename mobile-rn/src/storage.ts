@@ -2,7 +2,22 @@ import * as SecureStore from 'expo-secure-store';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { Connection } from './server';
 import type { PendingChange } from './profileChanges';
-import { practiceProfile, type Draft, type Profile, type QueuedWorkout } from './training';
+import { practiceProfile, type Draft, type MediaRefLike, type Profile, type QueuedWorkout } from './training';
+
+/** A progress photo whose bytes still have to reach the paired instance. */
+export type PhotoUpload = {
+  hash: string;
+  ref: MediaRefLike;
+  /** The local day the photo was filed under; kept so a retry can describe it. */
+  d: string;
+  /** The verified file in the app's private photo folder. */
+  fileUri: string;
+  createdAt: number;
+  /** Set once `PUT /api/media/{hash}` has been acknowledged. */
+  uploadedAt?: number;
+  /** The last upload failure, shown as the retry reason. */
+  error?: string;
+};
 
 export type LocalState = {
   profile: Profile;
@@ -13,6 +28,8 @@ export type LocalState = {
   restAlerts?: boolean;
   /** Per-device workout reminder preference; never synced. */
   reminder?: { on?: boolean; time?: string };
+  /** Progress photos waiting for their bytes to be uploaded; local to this workspace. */
+  photoUploads?: PhotoUpload[];
 };
 
 const connectionKey = 'openGymConnection';
