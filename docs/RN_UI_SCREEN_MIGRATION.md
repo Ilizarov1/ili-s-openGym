@@ -613,7 +613,7 @@ npm.cmd run design:check
 - `design-gallery-verify.ps1` 已更新为从首页齿轮进入设置再打开设计系统预览；已通过。
 - `npm run typecheck`、`npm run design:check` 通过。
 - 手动验证：计划训练记组、休息 dock、完成训练、统计记录、计划编辑、历史编辑、动作库选择动作、超级组组合。
-- Release APK 0.1.6 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1`：`mobile-rn/dist/openGym-RN-0.1.6-five-tab.apk`，versionCode 7，SHA-256 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`，包含 arm64-v8a 和 x86_64，Debug 证书签名，约 258 MB。本版在 0.1.5 的进度、身体数据、历史导入、计划分享、二维码配对和训练提醒基础上，补全全部 5,632 个动作的 30,709 条中文步骤；原有 1,324 组翻译保持不变。
+- Release APK 0.1.6 已构建并在 `emulator-5564` 上通过 `five-tab-smoke.ps1`：`mobile-rn/dist/openGym-RN-0.1.6-five-tab.apk`，versionCode 7，SHA-256 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`，包含 arm64-v8a 和 x86_64，Debug 证书签名，约 258 MB。本版在 0.1.5 的进度、身体数据、历史导入、计划分享、二维码配对和训练提醒基础上，补全全部 5,632 个动作的 30,709 条中文步骤；原有 1,324 组翻译保持不变。动作库 `0001` 详情已确认中文步骤显示。
 
 已知限制：
 

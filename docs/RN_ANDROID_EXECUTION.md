@@ -104,5 +104,6 @@ Android 36 可见模拟器使用 `0.1.3` 联跑 `-FeatureChecks -P1Checks`，P0 
 - **生成**：`mobile-rn/src/catalogueContent.generated.json` 中 `instructionsSource: "zh"` 从 1,324 增加到 5,632，`en` 为 0。
 - **工具**：`scripts/translate-zh-instructions.mjs` 支持按英文句子去重、缓存、批量重试、断点续跑和 `--assemble-only`；`.tmp/` 缓存已清理并加入 `.gitignore`。
 - **检查**：`npm.cmd run check` 通过，仅有 3 个既有 array-index-key warning。
+- **运行验证**：0.1.6 Release 在 `emulator-5564` 通过 `five-tab-smoke.ps1`；动作库搜索 `3/4 sit-up` 后打开 `0001` 详情，确认显示 5 条中文步骤（首条为“平躺，膝盖弯曲，双脚平放在地上。”）。
 - **安装包**：`mobile-rn/dist/openGym-RN-0.1.6-five-tab.apk`，versionCode 7，约 258 MB，Debug 证书签名；SHA-256 为 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`。
 - **质量说明**：以机器翻译为主，抽查 11 个身体部位、55 个动作并统一高频术语；少数句子仍保留直译风格，但没有英文占位、步骤缺失或数字丢失。
