@@ -73,6 +73,59 @@ export type CustomExercise = {
 export type SetDrop = { w?: number; r?: number };
 export type SetCluster = { r?: number; restSec?: number };
 
+/** A private media reference shared with Web; the bytes are never in synced state. */
+export type MediaRefLike = {
+  hash: string;
+  kind?: string;
+  mime?: string;
+  size?: number;
+  w?: number;
+  h?: number;
+  dur?: number;
+  [key: string]: unknown;
+};
+
+/** One weigh-in inside a day. Older profiles only carry the day-level `w`. */
+export type WeighInReading = {
+  id: string;
+  /** Local time of day, `HH:MM`. */
+  at?: string | null;
+  /** The weight in the profile's unit. */
+  w: number;
+  t?: number;
+  src?: string;
+  sid?: string;
+};
+
+/** `Profile.bodyweight[]`; `ins`/`gone` are the multi-reading extension from Web. */
+export type WeighInDay = {
+  d: string;
+  w?: number;
+  t?: number;
+  src?: string;
+  ins?: WeighInReading[];
+  gone?: Record<string, number>;
+};
+
+export type MeasurementOther = { id: string; name?: string; value?: number | null; unit?: string };
+
+/** Canonical lengths are cm; display conversion belongs to the screen. */
+export type MeasurementEntry = {
+  d: string;
+  t?: number;
+  other?: MeasurementOther[];
+  [key: string]: unknown;
+};
+
+export type DayPhotoEntry = {
+  d?: string;
+  m?: MediaRefLike;
+  /** Later versions win; a tombstone only carries the stamp. */
+  _ts?: number;
+};
+
+export type ReminderPreference = { on?: boolean; time?: string; nudge?: boolean };
+
 export type LoggedSet = {
   w?: number;
   r?: number;
@@ -114,6 +167,7 @@ export type Workout = {
   bw?: number | null;
   prs?: string[];
   vol?: number;
+  media?: MediaRefLike[];
   _ts?: number;
   excludeFromProgression?: boolean;
 };
@@ -134,12 +188,28 @@ export type Profile = {
   customEx?: CustomExercise[];
   /** Favourite exercise ids (built-in or custom), shared with the Web client. */
   favEx?: string[];
+  /** Estimate used by the 1RM card; unknown values fall back to Epley in Web and RN. */
+  oneRmFormula?: string;
+  /** Which reading of a day becomes its daily value. */
+  bwDaily?: 'first' | 'avg' | 'last';
+  bodyweight?: WeighInDay[];
+  measurements?: MeasurementEntry[];
+  customMeasurements?: { id: string; name: string; enabled?: boolean; unit?: string }[];
+  measurementEnabled?: string[];
+  dayPhotos?: Record<string, DayPhotoEntry>;
+  reminder?: ReminderPreference;
   week?: Record<string, string | string[]>;
   dayPlan?: Record<string, string>;
   scheduleMode?: 'week' | 'rotation';
   rotation?: { id: string; sequence: string[]; label: string; at?: number } | null;
   queue?: { ids: string[]; since: number; startsOn: string; label?: string; rotationId?: string } | null;
-  deleted?: { workouts?: Record<string, number>; routines?: Record<string, number>; customEx?: Record<string, number> };
+  deleted?: {
+    workouts?: Record<string, number>;
+    routines?: Record<string, number>;
+    customEx?: Record<string, number>;
+    measurements?: Record<string, number>;
+    dayPhotos?: Record<string, number>;
+  };
   resetAt?: number;
   _wid?: string;
   [key: string]: unknown;

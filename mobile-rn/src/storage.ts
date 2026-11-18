@@ -4,7 +4,16 @@ import type { Connection } from './server';
 import type { PendingChange } from './profileChanges';
 import { practiceProfile, type Draft, type Profile, type QueuedWorkout } from './training';
 
-export type LocalState = { profile: Profile; draft: Draft | null; queue: QueuedWorkout[]; workoutDeletes?: Record<string, number>; changes?: PendingChange[]; restAlerts?: boolean };
+export type LocalState = {
+  profile: Profile;
+  draft: Draft | null;
+  queue: QueuedWorkout[];
+  workoutDeletes?: Record<string, number>;
+  changes?: PendingChange[];
+  restAlerts?: boolean;
+  /** Per-device workout reminder preference; never synced. */
+  reminder?: { on?: boolean; time?: string };
+};
 
 const connectionKey = 'openGymConnection';
 let db: SQLiteDatabase | undefined;
