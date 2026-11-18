@@ -52,3 +52,6 @@ frontend/pdf-samples/
 # Cloudflare fallback build (cloudflare/build.sh)
 /dist/
 .wrangler/
+
+# Local scratch space (translation cache, one-off scripts)
+.tmp/
