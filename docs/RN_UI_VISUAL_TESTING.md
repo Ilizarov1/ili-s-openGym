@@ -54,12 +54,13 @@ npx.cmd expo start
 脚本会：
 
 - 生成三套计划、三条历史和一个自定义动作，并写入 Debug 应用数据库。
-- 通过深链依次打开首页、设置、计划、计划编辑、统计、动作库、筛选、开始 Sheet、训练、休息 dock。
+- 通过深链依次打开首页、设置、计划、计划编辑、统计、动作库、筛选、开始 Sheet、进度、身体数据、训练提醒、训练、休息 dock。
 - 使用 `adb exec-out screencap` 直接保存截图。
-- 生成 3 张 contact sheet：
+- 生成 4 张 contact sheet：
   - `mobile-rn/dist/ui/contact-sheet-1.png`
   - `mobile-rn/dist/ui/contact-sheet-2.png`
   - `mobile-rn/dist/ui/contact-sheet-3.png`
+  - `mobile-rn/dist/ui/contact-sheet-4.png`（进度、身体数据、训练提醒）
 
 平时只看 contact sheet；只有发现异常时才打开对应的单张图。
 

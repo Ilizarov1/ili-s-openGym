@@ -96,4 +96,4 @@ Android 36 可见模拟器使用 `0.1.3` 联跑 `-FeatureChecks -P1Checks`，P0 
 - **身体数据**：验证体重新增 `79.8 kg` 后日值/周均重算；围度两日历史、腰围曲线和部位切换；照片从系统选择器选图、重编码、保存到当天最新训练的 `media`、缩略图和全屏查看。
 - **导入分享与提醒**：验证设置页入口、计划导出到系统分享面板（`opengym-plan-2026-11-18-*.json`）、相机权限与取景页、提醒的权限/时刻/预览和 3 条 `RTC_WAKEUP` 调度；Release 包同时验证了进度、身体、提醒、历史导入、计划分享和扫码深链。
 - **待复验**：独立 API 同步和 `409`、二维码实际兑换、真实导入文件、提醒锁屏到达与点击、真机相机/媒体解码。
-- **安装包**：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，包含 arm64-v8a 和 x86_64，约 258 MB，Debug 证书签名；SHA-256 为 `3E62E167917920E9893DA7A6AB92C27C99B827EA970F5803E8DF87570F38FFA1`。
+- **安装包**：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，包含 arm64-v8a 和 x86_64，约 258 MB，Debug 证书签名；SHA-256 为 `57137505F40A8925F421AD0BB6A6FE54CCFC3645CFEEEA15D8504D3FC50A8252`。

@@ -89,7 +89,12 @@ export function useGym() {
       const photoResult = await uploadPendingPhotos(connection, current.current?.data ?? before.data);
       if (photoResult.uploaded || photoResult.failed) {
         const latest = current.current ?? before;
-        const uploadedData: LocalState = { ...latest.data, photoUploads: photoResult.uploads };
+        const uploadedData: LocalState = {
+          ...latest.data,
+          // A confirmed upload never needs retrying: keep only the bytes that still
+          // have to reach this instance, so the queue cannot grow for the app's life.
+          photoUploads: photoResult.uploads.filter(item => !item.uploadedAt),
+        };
         saveLocal(connection, uploadedData);
         show({ connection, data: uploadedData });
       }

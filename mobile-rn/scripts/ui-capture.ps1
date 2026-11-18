@@ -153,6 +153,18 @@ Screenshot 'start-sheet'
 Invoke-Adb shell input keyevent 4 | Out-Null
 Wait-Text '动作库' 20 | Out-Null
 
+Open-Route 'progress?e2e=1'
+Wait-Text '进度' 20 | Out-Null
+Screenshot 'progress'
+
+Open-Route 'body?e2e=1'
+Wait-Text '身体数据' 20 | Out-Null
+Screenshot 'body'
+
+Open-Route 'reminder?e2e=1'
+Wait-Text '训练提醒' 20 | Out-Null
+Screenshot 'reminder'
+
 Open-Route 'workout?e2e=1&routine=fixture-upper'
 Wait-Text '完成训练' 30 | Out-Null
 Screenshot 'workout'
@@ -164,6 +176,7 @@ if (-not $NoContactSheet) {
   New-ContactSheet @('home', 'settings', 'plan', 'plan-routines') 'contact-sheet-1.png'
   New-ContactSheet @('stats', 'library', 'library-filter', 'start-sheet') 'contact-sheet-2.png'
   New-ContactSheet @('plan-editor', 'workout', 'rest') 'contact-sheet-3.png'
+  New-ContactSheet @('progress', 'body', 'reminder') 'contact-sheet-4.png'
 }
 
 Write-Output 'PASS: UI capture, deep links, frozen workout timer and contact sheets verified'
