@@ -3,12 +3,12 @@
     "name": "openGym RN",
     "slug": "opengym-rn",
     "scheme": "opengym",
-    "version": "0.1.5",
+    "version": "0.1.6",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "android": {
       "package": "dev.opengym.rn",
-      "versionCode": 6,
+      "versionCode": 7,
       "allowBackup": false,
       "permissions": [
         "android.permission.SCHEDULE_EXACT_ALARM"

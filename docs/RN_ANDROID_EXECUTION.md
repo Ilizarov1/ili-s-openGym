@@ -97,3 +97,12 @@ Android 36 可见模拟器使用 `0.1.3` 联跑 `-FeatureChecks -P1Checks`，P0 
 - **导入分享与提醒**：验证设置页入口、计划导出到系统分享面板（`opengym-plan-2026-11-18-*.json`）、相机权限与取景页、提醒的权限/时刻/预览和 3 条 `RTC_WAKEUP` 调度；Release 包同时验证了进度、身体、提醒、历史导入、计划分享和扫码深链。
 - **待复验**：独立 API 同步和 `409`、二维码实际兑换、真实导入文件、提醒锁屏到达与点击、真机相机/媒体解码。
 - **安装包**：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，包含 arm64-v8a 和 x86_64，约 258 MB，Debug 证书签名；SHA-256 为 `57137505F40A8925F421AD0BB6A6FE54CCFC3645CFEEEA15D8504D3FC50A8252`。
+### 0.1.6 验收结果（中文步骤补全）
+
+- **范围**：为缺失中文步骤的 4,308 个动作补全 22,999 条步骤；去重后实际翻译 16,093 条唯一英文句子。原有 1,324 组翻译逐字未改。
+- **校验**：5,632 个有英文步骤的动作全部有中文 `instructions`，共 30,709 条；步骤数与英文源全部一致，0 个空步骤、0 个纯英文步骤、0 个数字丢失。
+- **生成**：`mobile-rn/src/catalogueContent.generated.json` 中 `instructionsSource: "zh"` 从 1,324 增加到 5,632，`en` 为 0。
+- **工具**：`scripts/translate-zh-instructions.mjs` 支持按英文句子去重、缓存、批量重试、断点续跑和 `--assemble-only`；`.tmp/` 缓存已清理并加入 `.gitignore`。
+- **检查**：`npm.cmd run check` 通过，仅有 3 个既有 array-index-key warning。
+- **安装包**：`mobile-rn/dist/openGym-RN-0.1.6-five-tab.apk`，versionCode 7，约 258 MB，Debug 证书签名；SHA-256 为 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`。
+- **质量说明**：以机器翻译为主，抽查 11 个身体部位、55 个动作并统一高频术语；少数句子仍保留直译风格，但没有英文占位、步骤缺失或数字丢失。

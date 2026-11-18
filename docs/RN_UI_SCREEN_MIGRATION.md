@@ -613,7 +613,7 @@ npm.cmd run design:check
 - `design-gallery-verify.ps1` 已更新为从首页齿轮进入设置再打开设计系统预览；已通过。
 - `npm run typecheck`、`npm run design:check` 通过。
 - 手动验证：计划训练记组、休息 dock、完成训练、统计记录、计划编辑、历史编辑、动作库选择动作、超级组组合。
-- Release APK 0.1.5 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1` 和 P2 深链：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，SHA-256 `57137505F40A8925F421AD0BB6A6FE54CCFC3645CFEEEA15D8504D3FC50A8252`，包含 arm64-v8a 和 x86_64，Debug 证书签名。本版新增进度（PR、1RM、趋势、肌群）、身体数据（体重、围度、照片）、历史导入、计划分享、二维码配对和训练提醒；`expo-camera`、`expo-image-picker`、`expo-image-manipulator` 已接入原生构建，Release APK 约 258 MB。0.1.5 已实测统计 PR/1RM、体重写入、围度曲线、照片选图/保存/全屏、计划导出分享面板、相机权限、提醒排程预览和五 Tab 冒烟。
+- Release APK 0.1.6 已构建并在 `emulator-5556` 上通过 `five-tab-smoke.ps1`：`mobile-rn/dist/openGym-RN-0.1.6-five-tab.apk`，versionCode 7，SHA-256 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`，包含 arm64-v8a 和 x86_64，Debug 证书签名，约 258 MB。本版在 0.1.5 的进度、身体数据、历史导入、计划分享、二维码配对和训练提醒基础上，补全全部 5,632 个动作的 30,709 条中文步骤；原有 1,324 组翻译保持不变。
 
 已知限制：
 

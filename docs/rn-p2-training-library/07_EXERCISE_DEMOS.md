@@ -26,7 +26,7 @@
 
 - **静图**：`src/catalogueMedia.generated.ts` 为 5,632 个动作生成静态 `require('../../catalogue/media/still/...')`，由 Metro 打进 bundle。
 - **动画**：MP4 不经过 Metro。`npm run catalogue:stage` 把它们复制到 `android/app/src/main/assets/exercise-media/clip/`，运行时用 `asset:///exercise-media/clip/<file>.mp4` 播放。这样避免 Metro 一次打开上万文件触发 Windows `EMFILE`。
-- **介绍**：`src/catalogueContent.generated.json` 由 `catalogue/exercises/*.json` 和 `catalogue/i18n/zh.json` 生成，包含中文名、中文简介（按目标/协同肌群生成）、中文步骤（有翻译时）和英文步骤回退。
+- **介绍**：`src/catalogueContent.generated.json` 由 `catalogue/exercises/*.json` 和 `catalogue/i18n/zh.json` 生成，包含中文名、中文简介（按目标/协同肌群生成）和 30,709 条中文步骤；全部 5,632 个有英文步骤的动作均已翻译。
 - **详情页**：内置动作优先显示本地媒体和介绍；本地缺失时才回退服务器，再回退占位。自定义动作仍走服务器上传的 `media`。
 
 构建顺序：
