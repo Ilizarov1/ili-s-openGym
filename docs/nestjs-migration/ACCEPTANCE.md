@@ -1,10 +1,10 @@
 # NestJS 迁移验收记录
 
 - 记录时间：2026-11-19
-- 代码版本：基于 `94777b4ada915c622baf5813af673646c123ebb9` 的迁移工作区，含本次评审修订。
-- 本机环境：Windows，Node v24.18.0，npm 11.16.0。专项另使用 Node v22.23.4。
+- 代码版本：阶段 0–3 基线 `94777b4ada915c622baf5813af673646c123ebb9`；阶段 4 候选见 §6。
+- 本机环境：Windows 11 + WSL 2 Ubuntu，Node v24.18.0，npm 11.16.0。
 - 测试数据：独立临时数据目录和合成账号。
-- 结论：本机已验证停机和双入口对照。阶段 3 仍需 Linux 双入口及信号验收。阶段 4 的镜像、默认入口切换和 A7 演练以此为前置。
+- 结论：阶段 0–3 与 Linux 双入口基线通过；默认入口已切换到 Nest 编译产物。Docker 镜像、Nix 打包和 RN 设备验收受本机工具链限制，见 §9。
 
 ## 1. 本机验收
 
@@ -70,3 +70,137 @@ GitHub Actions 的 API 作业从同一检出运行两套回归，产物为 `test
 - [停机和重启测试](../../api/test/nest/shutdown.test.js) · [路由矩阵](../../api/test/nest/routes.test.js)
 - [镜像文件检查](../../api/test/dockerfile-copy.test.js) · [CI 作业](../../.github/workflows/test.yml)
 - [基线](BASELINE.md) · [阶段 4 执行与回滚](EXECUTION.md)
+
+---
+
+# 阶段 4 验收（2026-11-19，Windows 11 + WSL 2 Ubuntu）
+
+## 6. 本地候选
+
+| 项目 | 值 |
+| --- | --- |
+| 工作分支 | `nestjs-phase4-work`（从 `handoff/nestjs-phase4` @ `045647b95` 创建） |
+| Linux 检出 | `~/open-gym-stage4`（Ubuntu 文件系统） |
+| 候选提交（代码） | `c62e6ed5cb0f39d4e042a831d50cfe478e39a087` |
+| 候选提交（本记录） | 见文末「候选记录提交」 |
+| 旧版检出 | `git worktree` @ `94777b4ada915c622baf5813af673646c123ebb9` |
+| Windows 候选导出 | `D:\dev\open-gym-stage4-windows`（`git archive 7db77b19a`，用于 RN 脚本的 Windows 侧路径） |
+| Windows 主工作区 | `D:\dev\open-gym` 未改动，仍在原分支与原有未提交改动上 |
+| Node / npm | v24.18.0 / 11.16.0（Linux 官方包，SHA-256 校验通过；Windows 同版本） |
+| 数据 | 全部为合成账号与临时目录，无真实用户数据或凭据 |
+
+入口切换后的构建命令：
+
+```bash
+export PATH="$HOME/.local/opt/node-v24.18.0-linux-x64/bin:$PATH"
+cd ~/open-gym-stage4/api
+npm ci --omit=optional
+npm run build
+```
+
+## 7. Linux 双入口基线（切换前）
+
+同一份检出、同一次依赖安装，报告目录 `~/open-gym-stage4-baseline-1`。
+
+| 入口 | 通过 | 失败 | 跳过 | 退出码 |
+| --- | ---: | ---: | ---: | ---: |
+| 旧版 `server.js`（迁移前代码） | 800 | 0 | 0 | 0 |
+| `dist/src/main.js` | 808 | 0 | 0 | 0 |
+
+- 失败集合差集为 0（两侧都没有失败）；Nest 多出的 8 个用例是 `test/nest/` 专项。
+- `test/nest/shutdown.test.js` 在 Linux 实际执行并通过：
+  - `app.close drains an admitted write and cancels uploads, outbox work and Coach children`
+  - `SIGTERM on the real server.js entry cleans a slow upload before exit`
+  - `SIGINT on the real server.js entry cleans a slow upload before exit`
+- `mcp/` 以 `API_ENTRY=dist/src/main.js` 运行：5 个文件、138 个用例全部通过。
+- 对照：Windows 候选在本机有 2 个 POSIX mode 断言失败（`durable`、`server-media`），Linux 不受影响。
+
+## 8. 切换后的候选回归
+
+`api/server.js` 已是薄入口；以下均在 Linux 候选提交 `c62e6ed5` 上执行。
+
+### 8.1 三种启动方式
+
+| 命令 | 结果 |
+| --- | --- |
+| `node server.js` | `gym-api on :36929 (rpID=localhost, origin=http://localhost:8080)` |
+| `node dist/src/main.js` | `gym-api on :41675 (...)` |
+| `npm start` | `gym-api on :46499 (...)` |
+
+三者均以 `PORT=0` 打印实际监听端口，启动行一致。
+
+### 8.2 回归
+
+| 套件 | 结果 |
+| --- | --- |
+| `node --test test/*.test.js` | 802 通过，0 失败 |
+| `node --test test/nest/*.test.js` | 8 通过，0 失败（路由矩阵、持久化、显式关闭、SIGTERM、SIGINT、双入口对照） |
+| `mcp`（`CI=1 API_ENTRY=dist/src/main.js npm test`） | 138 通过，0 失败 |
+| `node scripts/build-api-docs.mjs --check` | 通过（`website/api.html in sync`） |
+| `node scripts/build-coach-assets.mjs --check` | 通过（5632 动作、8 个 prompt） |
+| `node api/scripts/check-core-loadable.mjs` | 通过 |
+| Windows 候选（`D:\dev\open-gym-stage4-windows`） | 40 个相关用例中 38 通过；2 个失败均为 Windows 不支持的 POSIX 0600/0700 断言 |
+
+路由矩阵：`test/nest/routes.test.js` 反射编译后的 Controller，与 `api/openapi.yaml` 的 91 个 operation 完全一致。`openapi-routes` 的旧 `server.js` 源码扫描已改为 Controller 反射和 `src/auth` 处理器扫描。
+
+### 8.3 镜像载荷演练（无 Docker）
+
+按 `api/Dockerfile` 运行阶段复制同样的文件集到 `~/open-gym-image-dryrun/app`：`package.json`、`package-lock.json`、`server.js`、`dist/`、`dist/recover.js`、`dist/admin-socket.js`，再执行 `npm ci --omit=dev --omit=optional`。
+
+- 目录中没有 `src/`，启动不依赖源码树。
+- `/api/health` 返回 `{"ok":true,"users":0,"writable":true}`。
+- `/api/config` 返回预期的公开字段。
+- `node recover.js --help` 打印原命令用法。
+
+## 9. 镜像、Nix、Nginx 与客户端
+
+| 项 | 状态 | 依据 / 卡点 |
+| --- | --- | --- |
+| Docker 镜像 `default` / `coach` / published | **待验证（环境阻断）** | Windows 无 `docker.exe`、无 Docker Desktop；Ubuntu 无 docker/podman/nerdctl，`sudo -n` 需要密码。无法构建，未产生镜像 ID。 |
+| `docker compose` / Nginx 链路 | **待验证** | 同上，无 daemon。Compose 已加 `stop_grace_period: 15s`，Kubernetes / Helm 已加 `terminationGracePeriodSeconds: 15`。 |
+| Nix `opengym-api` | **待验证（环境阻断）** | 无 `nix`、无 `/nix`，`apt-cache` 无 `nix-bin`，官方安装器需要 sudo 创建 `/nix`。`contrib/nix/api.nix` 已改为安装 `dist` + 薄入口，尚未构建。 |
+| RN 配对 / 同步 / 离线补传 | **待验证（设备与工具链阻断）** | `adb devices` 只有物理设备 `10AD3Z1EPU0029R`（V2227A），不是专用模拟器；回归脚本要求 `emulator-*`、`ro.kernel.qemu=1` 和 `javac.exe`，本机无 JDK、无 AVD（`emulator -list-avds` 为空）。未在个人手机上安装 APK。APK 存在，SHA-256 与交接单一致。 |
+| 恢复 CLI（Linux） | **通过** | `server-recovery` 在 Linux 全量中通过；镜像载荷演练中 `node recover.js --help` 可用；Nest 启动后 `src/lifecycle/admin-socket.service.ts` 提供同一命令。 |
+| MCP | **通过** | 138/138，端到端用例实际启动编译后的 Nest 入口。 |
+
+Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md](features/19_DELIVERY_AND_ROLLBACK.md) 待有 Docker 的环境执行。
+
+## 10. A7 回滚演练（文件级，无容器）
+
+同一数据目录由旧版和候选依次接管，每次只运行一个写入者。证据目录 `~/open-gym-stage4-a7`，脚本 `~/a7-rehearsal.mjs`。
+
+| 阶段 | 入口 | 写入前 readback | 新增 | 结果 rev | 最终训练 |
+| --- | --- | --- | --- | ---: | --- |
+| 1 旧版 | `server.js` @ `94777b4a` | 种子档案 | 训练 `w_legacy_a` + 媒体 `6b7fa434…` | 1 | `w_legacy_a`, `w_parity_1` |
+| 2 Nest | 候选 `server.js`（薄入口） | 读到 `w_legacy_a` 与媒体字节 | 训练 `w_nest_b` + 媒体 `4fa89330…` | 2 | `w_legacy_a`, `w_nest_b`, `w_parity_1` |
+| 3 旧版 | `server.js` @ `94777b4a` | 读到 `w_nest_b` 与媒体字节 | 训练 `w_legacy_c` | 3 | `w_legacy_a`, `w_legacy_c`, `w_nest_b`, `w_parity_1` |
+
+- 每次 GET `/api/media/<hash>` 返回的字节 SHA-256 与文件名一致：`4fa89330625dff3a6bb86ff9bced6f1f15a92372265307d2d62c1f09814c49a9`、`6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0`。
+- 每次切换前保留 `backup-after-legacy`、`backup-after-nest` 副本。
+- 未覆盖：容器停机、镜像 digest、Nginx 前置。Docker 可用后按 HANDOFF §4 重跑并补记镜像 ID。
+
+## 11. 发布验收用例状态
+
+| 用例 | 状态 | 说明 |
+| --- | --- | --- |
+| A1 登录与设备 | **通过（自动化）** | 旧 Cookie / Bearer / Passkey / 设备链接 / 配对在 Linux 与 Windows 回归中通过 |
+| A2 冲突与离线 | **通过（自动化部分）** | `409`、`baseWid`、离线补传的服务端语义通过；RN 设备部分见 §9 |
+| A3 数据与缓存 | **通过** | 并发条件写入、同大小快速写入、损坏档案 `503`、`.bak` 回退 |
+| A4 媒体 | **通过（自动化部分）** | 上传/下载/去重/跨账号/断流/清理；真实 RN/Web 媒体待设备 |
+| A5 部署链路 | **待验证** | 需要 Docker + Nginx / TLS / LAN 环境 |
+| A6 扩展 | **通过（自动化部分）** | Push、提醒、手表、集成、Coach、MCP、Linux 恢复 CLI；真实 Push/Webhook/Zepp 待现场 |
+| A7 重启与回滚 | **部分通过** | 文件级演练通过；容器镜像切换待 Docker |
+| A8 在线训练态 | **通过** | 70 秒 / 45 秒窗口、hidden 恢复、清理 |
+| A9 模块与审计 | **通过** | 单实例 Provider、401/403 审计差异、Owner 清空 |
+| A10 停机 | **通过** | Linux SIGTERM / SIGINT 与 Windows 显式 `app.close()`；Compose/K8s 宽限已配置 |
+| A11 构建入口 | **部分通过** | 干净构建、三种入口、MCP、镜像载荷演练通过；镜像与 Nix 待环境 |
+
+## 12. 需要的输入
+
+1. **Docker**：安装 Docker Desktop 并在 WSL Ubuntu 启用集成，或提供可用的 Linux daemon / sudo 授权。用于三个 API 镜像、Web 镜像、Compose/Nginx 与容器内 A7。
+2. **Nix**：sudo 授权安装 Nix，或提供已安装 Nix 的环境。用于 `nix build ./contrib/nix#opengym-api`。
+3. **RN**：专用 Android 模拟器（`emulator-*`）与 JDK（`javac`），或明确授权在指定测试设备上安装 APK。用于配对、同步与离线补传。
+4. **远端 CI**：授权推送候选分支后，用 Node 24 runner 记录 API/MCP 作业。
+5. **正式切换**：目标实例当前镜像 digest、数据卷路径与维护窗口；本轮不涉及推送、发布和正式切换。
+
+候选记录提交：写入本节后由本地提交记录，见 `git log -1`。
