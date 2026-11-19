@@ -1,8 +1,8 @@
-/* The api image carries only the files named on api/Dockerfile's COPY line (plus coach/). A
-   root-level module that server.js imports and that line forgets is invisible to every test run
-   from the source tree and shows up only when the published image boots — as
-   ERR_MODULE_NOT_FOUND, on every instance that pulled it. So the line is checked here, for
-   server.js and recover.js plus their transitive imports from the api root. */
+/* The api image carries only what the build produced and the thin entry points. A runtime module
+   that the build forgets is invisible to every test run from the source tree and shows up only
+   when the published image boots — as ERR_MODULE_NOT_FOUND, on every instance that pulled it.
+   So the Dockerfile, the build script's required-artifact list and the built tree are checked
+   together here. */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,32 +11,42 @@ import { fileURLToPath } from 'node:url';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = f => fs.readFileSync(path.join(API, f), 'utf8');
+const dockerfile = read('Dockerfile');
 
-// Every `./name.js` a file imports, statically or dynamically — root-level only; coach/ is
-// copied as a whole directory.
-const rootImports = src => [...src.matchAll(/(?:from\s+|import\s*\(\s*)['"]\.\/([^'"/]+\.js)['"]/g)].map(m => m[1]);
-
-test('the Dockerfile copies both API and recovery entry points and their root-level imports', () => {
-  const line = read('Dockerfile').split('\n').find(l => /^COPY\s+server\.js\b/.test(l));
-  assert.ok(line, 'the COPY line that carries server.js');
-  const copied = new Set(line.trim().split(/\s+/).slice(1, -1));
-
-  const needed = new Set(['server.js', 'recover.js']);
-  const queue = [...needed];
-  while (queue.length) {
-    for (const dep of rootImports(read(queue.shift()))) {
-      if (!needed.has(dep)) { needed.add(dep); queue.push(dep); }
-    }
-  }
-  assert.ok(needed.has('media.js'), 'the walk finds the media store');
-  assert.ok(needed.has('admin-socket.js'), 'the recovery CLI can load its socket client');
-  const missing = [...needed].filter(f => !copied.has(f));
-  assert.deepEqual(missing, [], `add ${missing.join(', ')} to the COPY line in api/Dockerfile`);
-  for (const f of copied) assert.ok(fs.existsSync(path.join(API, f)), `${f} is copied but does not exist`);
+test('the image is built from a compiled tree and runs the thin entry', () => {
+  assert.match(dockerfile, /^FROM node:\d+-alpine AS build$/m, 'a build stage compiles the API');
+  assert.match(dockerfile, /^RUN npm run build$/m, 'the build stage runs the API build');
+  assert.match(dockerfile, /^COPY --from=build \/app\/dist \.\/dist$/m, 'the runtime image copies dist');
+  assert.match(dockerfile, /^COPY --from=build \/app\/server\.js \.\/server\.js$/m, 'the thin entry is copied');
+  assert.match(dockerfile, /^COPY --from=build \/app\/dist\/recover\.js \.\/recover\.js$/m, 'recover.js keeps its root path');
+  assert.match(dockerfile, /^COPY --from=build \/app\/dist\/admin-socket\.js \.\/admin-socket\.js$/m, 'the socket client recover.js imports is there');
+  assert.match(dockerfile, /^CMD \["node", "server\.js"\]$/m, 'the container starts npm start\'s entry');
+  // Production dependencies only; npm ci from the committed lockfile, not a fresh resolve.
+  assert.match(dockerfile, /npm ci --omit=dev --omit=optional/, 'the default runtime installs production dependencies');
 });
 
-test('the integrations directory is copied whole, like coach/', () => {
-  const lines = read('Dockerfile').split('\n');
-  assert.ok(lines.some(l => /^COPY\s+integrations\s+\.\/integrations\s*$/.test(l)), 'COPY integrations ./integrations in api/Dockerfile');
-  assert.match(read('server.js'), /from '\.\/integrations\/index\.js'/);
+test('the thin server entry only loads the compiled application', () => {
+  const server = read('server.js');
+  assert.match(server, /await import\('\.\/dist\/src\/main\.js'\)/);
+  assert.doesNotMatch(server, /http\.createServer|readBody\(|route/i, 'business code belongs in api/src');
+  assert.doesNotMatch(server, /process\.env\./, 'the compiled entry reads the environment');
+});
+
+test('the build script requires the entry, recovery CLI and runtime directories', () => {
+  const script = read(path.join('scripts', 'build-api.mjs'));
+  const required = [.../const required = \[([\s\S]*?)\];/.exec(script)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  for (const file of ['src/main.js', 'durable.js', 'media.js', 'recover.js', 'admin-socket.js', 'coach/fixture-cli.mjs', 'integrations/index.js']) {
+    assert.ok(required.includes(file), `build-api.mjs should verify ${file}`);
+  }
+  assert.match(script, /copyDir\(path\.join\(api, dir\), path\.join\(dist, dir\)\)/, 'coach/ and integrations/ are copied');
+});
+
+test('every required artifact exists after npm run build', { skip: !fs.existsSync(path.join(API, 'dist', 'src', 'main.js')) && 'run npm run build first' }, () => {
+  const script = read(path.join('scripts', 'build-api.mjs'));
+  const required = [.../const required = \[([\s\S]*?)\];/.exec(script)[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+  for (const file of required) {
+    assert.ok(fs.existsSync(path.join(API, 'dist', file)), `dist/${file} is missing`);
+  }
+  assert.ok(fs.existsSync(path.join(API, 'dist', 'src', 'app.module.js')), 'the Nest module graph is compiled');
+  assert.ok(fs.existsSync(path.join(API, 'dist', 'coach', 'prompts')), 'the Coach prompt files are copied');
 });

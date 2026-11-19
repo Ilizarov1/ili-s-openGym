@@ -157,25 +157,24 @@ test('the poll really is reading through the stat cache', async t => {
 });
 
 // The other two sites want `lang` for a push payload, which nothing outside the push service can
-// observe — so they are pinned here, at the only place that can see them: the source.
-test('the three hot-path state reads all go through readStateCached', () => {
-  const src = fs.readFileSync(path.join(API, 'server.js'), 'utf8');
-  // Every route is one `'METHOD /path': async (req, res) => {` entry in the routes object, so a
-  // handler runs from its key to the start of the next one.
-  const handler = key => {
-    const at = src.indexOf(`'${key}':`);
-    assert.notEqual(at, -1, `route ${key} is gone — this test needs rewriting`);
-    const end = src.indexOf("\n  '", at + 1);
-    return src.slice(at, end === -1 ? undefined : end);
-  };
-  for (const key of ['GET /api/data/rev', 'POST /api/push/test', 'POST /api/push/rest-timer']) {
-    const body = handler(key);
-    assert.match(body, /readStateCached\(user\.id\)/, `${key} should read through the cache`);
-    assert.doesNotMatch(body, /readState\(user\.id\)/, `${key} parses the whole document again`);
-  }
+// observe — so they are pinned in the services that serve those routes, the only place that can
+// see them now that the routes live in Nest controllers.
+test('the three hot-path state reads all go through the cache', () => {
+  const sync = fs.readFileSync(path.join(API, 'src', 'sync', 'sync.service.ts'), 'utf8');
+  // GET /api/data/rev is the revision probe and must not parse the document again.
+  const readRev = sync.slice(sync.indexOf('readRev('), sync.indexOf('write('));
+  assert.match(readRev, /this\.states\.readCached\(uid\)/, 'the revision probe should read through the cache');
+  assert.doesNotMatch(readRev, /this\.states\.read\(uid\)/, 'the revision probe parses the whole document again');
   // GET /api/data hands out the document itself and PUT compares against it — both want the real
-  // thing, uncached.
-  // (readStateStrict: a file that cannot be read is a 503, not an empty profile.)
-  assert.match(handler('GET /api/data'), /readStateStrict\(user\.id\)/);
-  assert.match(handler('PUT /api/data'), /readStateStrict\(user\.id\)/);
+  // thing, uncached. (readStrict: a file that cannot be read is a 503, not an empty profile.)
+  assert.match(sync, /read\(uid: string\)[\s\S]*?this\.states\.readStrict\(uid\)/);
+  assert.match(sync, /private commit\([\s\S]*?this\.states\.readStrict\(uid\)/);
+
+  // The test push and the rest timer both want the profile language: a cached read is enough.
+  const notifications = fs.readFileSync(path.join(API, 'src', 'notifications', 'notifications.service.ts'), 'utf8');
+  assert.match(notifications, /this\.states\.readCached\(user\.id\)/);
+  assert.doesNotMatch(notifications, /this\.states\.read\(user\.id\)/);
+  const reminders = fs.readFileSync(path.join(API, 'src', 'notifications', 'reminder.service.ts'), 'utf8');
+  assert.match(reminders, /this\.states\.readCached\(user\.id\)/);
+  assert.doesNotMatch(reminders, /this\.states\.read\(user\.id\)/);
 });

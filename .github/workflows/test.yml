@@ -215,7 +215,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             api/package-lock.json
@@ -227,7 +227,7 @@ jobs:
       - name: Build the Nest entry
         working-directory: api
         run: npm run build
-      - name: API tests (legacy)
+      - name: API tests
         working-directory: api
         run: >
           node --test --experimental-test-coverage
@@ -237,15 +237,16 @@ jobs:
           --test-reporter=lcov --test-reporter-destination=lcov.info
           --test-reporter=junit --test-reporter-destination=junit.xml
           test/*.test.js
-      - name: API tests (Nest)
-        # Keep both reports even if the legacy suite finds a failure.
+      - name: Nest-specific tests
+        # Route matrix, parity fixtures, persistence providers and the shutdown/signal cases.
         if: ${{ !cancelled() }}
         working-directory: api
         run: >
-          npm run test:nest --
+          node --test --test-concurrency=4
           --test-reporter=spec --test-reporter-destination=stdout
           --test-reporter=../scripts/ci/node-test-reporter.mjs --test-reporter-destination=nest-results.jsonl
           --test-reporter=junit --test-reporter-destination=nest-junit.xml
+          test/nest/*.test.js
       # The api's copy of the exercise catalogue is generated and committed. A dataset change
       # that forgets to regenerate it would surface as "the Coach can't find that exercise".
       - name: Generated Coach assets are current
@@ -285,7 +286,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             mcp/package-lock.json

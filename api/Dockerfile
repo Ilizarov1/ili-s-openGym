@@ -1,4 +1,4 @@
-# Two targets from one file.
+# Two runtime targets from one file.
 #
 #   default (built when no --target is given) — what every instance has always got. No AI
 #           runtime, no AI dependency: `npm ci --omit=optional` skips the Agent SDK and its
@@ -10,8 +10,19 @@
 #
 # The stage order matters: Docker builds the *last* stage when none is named, so `default` is
 # deliberately last and `coach` sits above it.
+#
+# The API itself is the compiled Nest application. The build stage compiles it with the dev
+# dependencies; the runtime stages carry only dist/, the thin server.js, the recovery CLI and
+# production dependencies.
 
-FROM node:22.23.4-alpine AS base
+FROM node:24-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY . .
+RUN npm run build
+
+FROM node:24-alpine AS base
 
 # Declared on the base stage so both targets inherit the labels and the healthcheck.
 ARG VERSION=dev
@@ -51,11 +62,15 @@ COPY package.json package-lock.json* ./
 # build host happened to be.
 RUN npm ci --omit=dev --omit=optional && npm cache clean --force
 
-# Every module server.js imports from the api root has to be named here: the image carries nothing
-# else, and one that is missing only shows at boot, as ERR_MODULE_NOT_FOUND.
-COPY server.js push-messages.js nudge.js nudge-copy.js wrapped.js wrapped-copy.js verify-error.js password.js rate-limit.js passkeys-store.js device-link.js watch-relay.js media.js queue.js sync-stamps.js durable.js admin-socket.js recover.js net-guard.js ./
-COPY coach ./coach
-COPY integrations ./integrations
+# Only the build output and the two entry points the image is allowed to run. Every runtime
+# module the Nest application imports is inside dist/; the build script checks that the tree is
+# complete before this stage copies it.
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server.js ./server.js
+# `docker compose exec api node recover.js` runs from the working directory, so the recovery CLI
+# and the socket client it imports keep their root-level paths.
+COPY --from=build /app/dist/recover.js ./recover.js
+COPY --from=build /app/dist/admin-socket.js ./admin-socket.js
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000

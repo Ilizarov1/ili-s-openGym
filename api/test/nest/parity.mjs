@@ -1,10 +1,13 @@
 /* Differential fixture for the NestJS migration (docs/nestjs-migration/EXECUTION.md 0.3).
  *
- * The point is to give the legacy entry and the Nest entry the same DATA_DIR contents, drive
- * both over real HTTP and compare what came back and what was left on disk. Everything here is
- * deterministic: ids, dates and the session secret are fixed, so two runs of the same scenario
- * start from byte-identical data. Each entry gets its own copy of the directory because the
- * server is a single writer and boot may create vapid.json, audit.log or a health probe.
+ * The harness was written to give the legacy entry and the Nest entry the same DATA_DIR
+ * contents, drive both over real HTTP and compare what came back and what was left on disk.
+ * After the phase 4 switch `server.js` is the thin loader for `dist/src/main.js`, so the two
+ * sides now prove that the published entry and the compiled entry are the same application.
+ * Everything here is deterministic: ids, dates and the session secret are fixed, so two runs of
+ * the same scenario start from byte-identical data. Each entry gets its own copy of the
+ * directory because the server is a single writer and boot may create vapid.json, audit.log or
+ * a health probe.
  *
  * startBoth() speaks the same readiness protocol as the rest of the suite: PORT=0 and the
  * `gym-api on :<port>` boot line, never a chosen port and never a health poll.

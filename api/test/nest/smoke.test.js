@@ -1,12 +1,10 @@
 /* Smoke test for the parity harness itself (docs/nestjs-migration/EXECUTION.md 0.3).
  *
- * Before the harness is trusted to compare legacy against Nest, it has to agree with itself:
- * the same fixture started twice from the selected entry must produce the same status, keys,
- * headers and disk result, and stopping both must remove every temporary directory. That proves
- * seeding, port discovery, normalisation and cleanup independently of the new implementation.
- *
- * The optional second test uses the same fixture across entries. It is skipped when the Nest
- * build is absent (a clean checkout before `npm run build`), never failed for that reason.
+ * Before the harness was trusted it had to agree with itself: the same fixture started twice
+ * from the selected entry must produce the same status, keys, headers and disk result, and
+ * stopping both must remove every temporary directory. After the phase 4 switch the default
+ * `server.js` is the thin loader for `dist/src/main.js`, so the cross-entry test now proves that
+ * both ways of starting the candidate serve the same application.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,7 +41,7 @@ test('parity fixture: the selected entry matches itself, and cleanup removes its
   assert.equal(fs.existsSync(h.root), false, `temporary fixture directory was left behind: ${h.root}`);
 });
 
-test('legacy and Nest agree on health, config, existing sessions and conditional writes', { skip: !hasNest }, async t => {
+test('the default entry and the compiled entry agree on health, config, sessions and conditional writes', { skip: !hasNest }, async t => {
   const h = await startBoth('default');
   t.after(async () => {
     await h.legacy.stop();

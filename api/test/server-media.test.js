@@ -467,12 +467,12 @@ test('a trickled body is cut after the body deadline on every route but a signed
   assert.equal(r.status, 201, JSON.stringify(r.body));
 });
 
-test('server.js gives a slow upload half an hour, not node\'s default five minutes', () => {
-  const src = fs.readFileSync(path.join(API, 'server.js'), 'utf8');
-  const m = /^server\.requestTimeout\s*=\s*([\d_\s*]+);/m.exec(src);
-  assert.ok(m, 'server.requestTimeout is set');
+test('the Nest entry gives a slow upload half an hour, not node\'s default five minutes', () => {
+  const src = fs.readFileSync(path.join(API, 'src', 'start-api.ts'), 'utf8');
+  const m = /server\.requestTimeout\s*=\s*([\d_\s*]+);/m.exec(src);
+  assert.ok(m, 'the HTTP server request timeout is set');
   const ms = m[1].split('*').reduce((a, x) => a * Number(x.replace(/[_\s]/g, '')), 1);
   assert.ok(ms >= 30 * 60000, `requestTimeout is ${ms} ms`);
-  const hm = /^server\.headersTimeout\s*=\s*([\d_\s*]+);/m.exec(src);
+  const hm = /server\.headersTimeout\s*=\s*([\d_\s*]+);/m.exec(src);
   assert.ok(!hm || hm[1].split('*').reduce((a, x) => a * Number(x.replace(/[_\s]/g, '')), 1) <= 60000, 'headers still have to arrive within a minute');
 });

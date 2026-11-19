@@ -166,11 +166,11 @@ test('app.close drains an admitted write and cancels uploads, outbox work and Co
 });
 
 for (const signal of ['SIGTERM', 'SIGINT']) {
-  test(`${signal} on the real entry cleans a slow upload before exit`, {
+  test(`${signal} on the real server.js entry cleans a slow upload before exit`, {
     skip: !built || process.platform === 'win32', timeout: 12000,
   }, async t => {
     const seed = fixture(t);
-    const child = spawn(process.execPath, [NEST_ENTRY], {
+    const child = spawn(process.execPath, ['server.js'], {
       cwd: API, env: { ...process.env, ...environment(seed) }, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const exit = once(child, 'exit');

@@ -11,14 +11,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildReady, nestRoutes } from './nest/route-list.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = path.join(API, '..');
 const read = f => fs.readFileSync(f, 'utf8');
 const spec = read(path.join(API, 'openapi.yaml'));
-
-/** Every `'GET /api/x': async (req, res)` key in the route table. */
-const routeKeys = src => [...src.matchAll(/^\s*'(GET|POST|PUT|DELETE) (\/api\/[^']*)':/gm)].map(m => `${m[1]} ${m[2]}`);
 
 /** Every operation under `paths:`, as "METHOD /path". */
 function specOperations(yaml) {
@@ -36,14 +34,12 @@ function specOperations(yaml) {
   return out;
 }
 
-test('every route the server registers is in openapi.yaml, and nothing else is', () => {
-  const routes = new Set([
-    ...routeKeys(read(path.join(API, 'server.js'))),
-    ...routeKeys(read(path.join(API, 'coach', 'routes.js'))),
-    ...routeKeys(read(path.join(API, 'integrations', 'routes.js')))
-  ]);
+test('every route the Nest app registers is in openapi.yaml, and nothing else is', { skip: !buildReady(API) && 'run npm run build first' }, async () => {
+  // The listening surface comes from the compiled controllers, not from any source text: the
+  // legacy route table in server.js is gone after the phase 4 switch.
+  const routes = new Set((await nestRoutes(API)).map(r => r.replace(/\/:hash\b/, '/{hash}')));
   const ops = new Set(specOperations(spec));
-  assert.ok(routes.size > 40, `only found ${routes.size} routes — the route table moved`);
+  assert.ok(routes.size > 40, `only found ${routes.size} routes — the controller scan moved`);
 
   assert.deepEqual([...routes].filter(r => !ops.has(r)).sort(), [], 'undocumented routes — add them to api/openapi.yaml');
   assert.deepEqual([...ops].filter(o => !routes.has(o)).sort(), [], 'documented routes the server does not serve');
@@ -67,16 +63,22 @@ test('every tag the spec uses is one the docs generator renders', () => {
 });
 
 /* The e-mail routes answer with codes a client switches on. /api/register/password answered
-   `400 email-invalid` for a while with the spec listing only the password policy under 400. */
+   `400 email-invalid` for a while with the spec listing only the password policy under 400.
+   The handlers live in the Nest auth controller now; the codes they can answer with come from
+   the literal `code:` values plus the EMAIL_ERRORS table and the password policy keys. */
 test('every error code the e-mail and password signup routes return is in their spec entry', () => {
-  const server = read(path.join(API, 'server.js'));
-  const handler = key => {
-    const start = server.indexOf(`  '${key}': async`);
-    assert.ok(start >= 0, key);
-    const next = server.slice(start + 1).search(/\n {2}'(GET|POST|PUT|DELETE) \//);
-    return server.slice(start, next < 0 ? undefined : start + 1 + next);
+  const controller = read(path.join(API, 'src', 'auth', 'auth.controller.ts'));
+  const passwords = read(path.join(API, 'src', 'auth', 'password.service.ts'));
+  const methodBody = marker => {
+    const start = controller.indexOf(`@Post('${marker}')`);
+    assert.ok(start >= 0, `the ${marker} handler is gone — this test needs rewriting`);
+    const next = controller.slice(start + 1).search(/\n {2}@(Get|Post|Put|Delete)\(/);
+    return controller.slice(start, next < 0 ? undefined : start + 1 + next);
   };
-  const emailCodes = Object.fromEntries([...server.matchAll(/^\s{2}(\w+): \{ error: '[^']*', code: '([^']+)' \}/gm)].map(m => [m[1], m[2]]));
+  const emailCodes = Object.fromEntries(
+    [...passwords.matchAll(/^\s{2}(\w+): \{ error: '[^']*', code: '([^']+)' \}/gm)].map(m => [m[1], m[2]]),
+  );
+  const policyCodes = [.../POLICY_ERRORS:[\s\S]*?\n\};/.exec(passwords)[0].matchAll(/^\s{2}'([^']+)':/gm)].map(m => m[1]);
   const operation = (p, method) => {
     const from = spec.indexOf(`\n  ${p}:\n`);
     assert.ok(from >= 0, p);
@@ -93,18 +95,20 @@ test('every error code the e-mail and password signup routes return is in their 
     });
     return [text, ...refs].join('\n');
   };
-  for (const [key, p, method] of [
-    ['POST /api/register/password', '/api/register/password', 'post'],
-    ['POST /api/account/email', '/api/account/email', 'post']
+  for (const [marker, p, method] of [
+    ['register/password', '/api/register/password', 'post'],
+    ['account/email', '/api/account/email', 'post'],
   ]) {
-    const src = handler(key);
+    const src = methodBody(marker);
+    assert.ok(src.includes('readBody(req)'), `${marker} reads a body`);
     const codes = new Set([
       ...[...src.matchAll(/code: '([^']+)'/g)].map(m => m[1]),
-      ...[...src.matchAll(/EMAIL_ERRORS\.(\w+)/g)].map(m => emailCodes[m[1]])
+      ...[...src.matchAll(/EMAIL_ERRORS\.(\w+)/g)].map(m => emailCodes[m[1]]),
+      ...(src.includes('policyError') ? policyCodes : []),
     ]);
-    assert.ok(codes.size > 1, key);
+    assert.ok(codes.size > 1, marker);
     const doc = operation(p, method);
-    for (const c of codes) assert.ok(doc.includes(c), `${key} returns "${c}" but its openapi entry never mentions it`);
+    for (const c of codes) assert.ok(doc.includes(c), `${marker} returns "${c}" but its openapi entry never mentions it`);
   }
 });
 

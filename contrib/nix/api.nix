@@ -18,20 +18,15 @@ buildNpmPackage rec {
   npmDeps = importNpmLock { npmRoot = src; };
   npmConfigHook = importNpmLock.npmConfigHook;
 
-  dontNpmBuild = true;
-
   nativeBuildInputs = [ makeWrapper ];
 
+  # buildNpmPackage runs `npm run build` (tsc + the runtime-asset copy). The
+  # installed tree is the compiled application; server.js is only the thin
+  # loader for dist/src/main.js.
   installPhase = ''
     runHook preInstall
     mkdir -p $out/lib/opengym-api
-    cp -r node_modules $out/lib/opengym-api/
-    cp -r coach $out/lib/opengym-api/
-    # Every top-level module server.js imports: server.js, password.js, passkeys-store.js,
-    # rate-limit.js, media.js, device-link.js, push-messages.js, verify-error.js. Copy the
-    # glob rather than an explicit list — a hand-kept list silently ships an incomplete tree
-    # and the failure only shows up as ERR_MODULE_NOT_FOUND in the systemd journal.
-    cp ./*.js $out/lib/opengym-api/
+    cp -r dist node_modules package.json package-lock.json server.js $out/lib/opengym-api/
 
     mkdir -p $out/bin
     makeWrapper ${nodejs_22}/bin/node $out/bin/opengym-api \
@@ -41,7 +36,7 @@ buildNpmPackage rec {
   '';
 
   meta = with lib; {
-    description = "openGym API — passkey auth + per-user workout data (Node.js)";
+    description = "openGym API — passkey auth + per-user workout data (NestJS on Node.js)";
     homepage = "https://gitlab.com/DuarteSantos8/opengym";
     license = licenses.agpl3Plus;
     platforms = nodejs.meta.platforms;
