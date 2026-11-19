@@ -84,7 +84,7 @@ GitHub Actions 的 API 作业从同一检出运行两套回归，产物为 `test
 | 候选提交（代码） | `c62e6ed5cb0f39d4e042a831d50cfe478e39a087` |
 | 候选提交（本记录） | 见文末「候选记录提交」 |
 | 旧版检出 | `git worktree` @ `94777b4ada915c622baf5813af673646c123ebb9` |
-| Windows 候选导出 | `D:\dev\open-gym-stage4-windows`（`git archive 7db77b19a`，用于 RN 脚本的 Windows 侧路径） |
+| Windows 候选导出 | `D:\dev\open-gym-stage4-windows`（`git archive f131c3e3`，用于 RN 脚本的 Windows 侧路径） |
 | Windows 主工作区 | `D:\dev\open-gym` 未改动，仍在原分支与原有未提交改动上 |
 | Node / npm | v24.18.0 / 11.16.0（Linux 官方包，SHA-256 校验通过；Windows 同版本） |
 | 数据 | 全部为合成账号与临时目录，无真实用户数据或凭据 |
