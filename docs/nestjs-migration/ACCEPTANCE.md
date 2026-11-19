@@ -81,7 +81,7 @@ GitHub Actions 的 API 作业从同一检出运行两套回归，产物为 `test
 | --- | --- |
 | 工作分支 | `nestjs-phase4-work`（从 `handoff/nestjs-phase4` @ `045647b95` 创建） |
 | Linux 检出 | `~/open-gym-stage4`（Ubuntu 文件系统） |
-| 候选提交（代码） | `c62e6ed5cb0f39d4e042a831d50cfe478e39a087` |
+| 候选提交（代码） | `1f81182e194df3a28fe8797145645bd83e9158e7`（入口、部署宽限、镜像构建参数、文档） |
 | 候选提交（本记录） | 见文末「候选记录提交」 |
 | 旧版检出 | `git worktree` @ `94777b4ada915c622baf5813af673646c123ebb9` |
 | Windows 候选导出 | `D:\dev\open-gym-stage4-windows`（`git archive f131c3e3`，用于 RN 脚本的 Windows 侧路径） |
