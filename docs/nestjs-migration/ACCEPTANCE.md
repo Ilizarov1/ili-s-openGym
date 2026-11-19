@@ -4,7 +4,7 @@
 - 代码版本：阶段 0–3 基线 `94777b4ada915c622baf5813af673646c123ebb9`；阶段 4 候选见 §6。
 - 本机环境：Windows 11 + WSL 2 Ubuntu，Node v24.18.0，npm 11.16.0。
 - 测试数据：独立临时数据目录和合成账号。
-- 结论：阶段 0–3 与 Linux 双入口基线通过；默认入口已切换到 Nest 编译产物。Docker 镜像、Nix 打包和 RN 设备验收受本机工具链限制，见 §9。
+- 结论：阶段 0–3、Linux 双入口基线和默认入口切换通过；Docker 镜像与 Nix 打包受本机工具链限制，见 §9。RN 配对、同步和离线补传已在专用模拟器通过。
 
 ## 1. 本机验收
 
@@ -159,7 +159,7 @@ npm run build
 | Docker 镜像 `default` / `coach` / published | **待验证（环境阻断）** | Windows 无 `docker.exe`、无 Docker Desktop；Ubuntu 无 docker/podman/nerdctl，`sudo -n` 需要密码。无法构建，未产生镜像 ID。 |
 | `docker compose` / Nginx 链路 | **待验证** | 同上，无 daemon。Compose 已加 `stop_grace_period: 15s`，Kubernetes / Helm 已加 `terminationGracePeriodSeconds: 15`。 |
 | Nix `opengym-api` | **待验证（环境阻断）** | 无 `nix`、无 `/nix`，`apt-cache` 无 `nix-bin`，官方安装器需要 sudo 创建 `/nix`。`contrib/nix/api.nix` 已改为安装 `dist` + 薄入口，尚未构建。 |
-| RN 配对 / 同步 / 离线补传 | **待验证（设备与工具链阻断）** | `adb devices` 只有物理设备 `10AD3Z1EPU0029R`（V2227A），不是专用模拟器；回归脚本要求 `emulator-*`、`ro.kernel.qemu=1` 和 `javac.exe`，本机无 JDK、无 AVD（`emulator -list-avds` 为空）。未在个人手机上安装 APK。APK 存在，SHA-256 与交接单一致。 |
+| RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
 | 恢复 CLI（Linux） | **通过** | `server-recovery` 在 Linux 全量中通过；镜像载荷演练中 `node recover.js --help` 可用；Nest 启动后 `src/lifecycle/admin-socket.service.ts` 提供同一命令。 |
 | MCP | **通过** | 138/138，端到端用例实际启动编译后的 Nest 入口。 |
 
@@ -199,7 +199,7 @@ Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md
 
 1. **Docker**：安装 Docker Desktop 并在 WSL Ubuntu 启用集成，或提供可用的 Linux daemon / sudo 授权。用于三个 API 镜像、Web 镜像、Compose/Nginx 与容器内 A7。
 2. **Nix**：sudo 授权安装 Nix，或提供已安装 Nix 的环境。用于 `nix build ./contrib/nix#opengym-api`。
-3. **RN**：专用 Android 模拟器（`emulator-*`）与 JDK（`javac`），或明确授权在指定测试设备上安装 APK。用于配对、同步与离线补传。
+3. **RN**：已用 `%LOCALAPPDATA%\OpenGymRnToolchain` 的 JDK 17 与 AVD `openGymRnQa` 完成配对、同步和离线补传。脚本 `handoff-tools/README.md` 记录了 `JAVA_HOME`、`ANDROID_AVD_HOME` 的启动方式。
 4. **远端 CI**：授权推送候选分支后，用 Node 24 runner 记录 API/MCP 作业。
 5. **正式切换**：目标实例当前镜像 digest、数据卷路径与维护窗口；本轮不涉及推送、发布和正式切换。
 
