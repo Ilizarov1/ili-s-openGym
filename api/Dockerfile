@@ -18,7 +18,7 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+RUN npm ci --omit=optional --no-audit --no-fund
 COPY . .
 RUN npm run build
 
