@@ -172,6 +172,20 @@ let running = 0;
 const inflight = new Set();     // uids with a job queued or running (FR-07 single-flight)
 const forgetSeq = new Map();    // uid → bumped by every clearUser; a job carries the value it saw at enqueue
 const aborts = new Map();       // uid → AbortController of the provider call in flight, for clearUser to pull
+const activeJobs = new Set();
+let paused = false;
+let shutdownSignal;
+
+export function resumeJobs(signal) {
+  shutdownSignal = signal;
+  paused = false;
+}
+
+export function pauseJobs() {
+  paused = true;
+  for (const job of queue.splice(0)) inflight.delete(job.uid);
+  return Promise.allSettled([...activeJobs]).then(() => undefined);
+}
 
 class CoachError extends Error {
   constructor(code, message) { super(message); this.code = code; }
@@ -196,6 +210,7 @@ export function clampMessage(text) {
  * `off`, `busy`, `cap`, `consent`.
  */
 export function enqueue(uid, opts) {
+  if (paused) throw new CoachError('off', 'the server is shutting down');
   if (!cfgStore.isEnabled() || !cfgStore.isConnected()) throw new CoachError('off', 'the Coach is not set up on this instance');
   if (inflight.has(uid)) throw new CoachError('busy', 'the Coach is already thinking about your training');
 
@@ -265,12 +280,21 @@ export function enqueue(uid, opts) {
 }
 
 function pump() {
-  while (running < MAX_CONCURRENT && queue.length) {
+  while (!paused && running < MAX_CONCURRENT && queue.length) {
     const job = queue.shift();
+    const stopSignal = shutdownSignal;
     running++;
-    execute(job)
-      .catch(e => { console.error('coach job crashed', job.id, e); finish(job, { outcome: 'failed', errorClass: 'internal' }); })
-      .finally(() => { running--; inflight.delete(job.uid); pump(); });
+    const work = execute(job, stopSignal).catch(e => {
+      if (stopSignal?.aborted) return;
+      console.error('coach job crashed', job.id, e);
+      finish(job, { outcome: 'failed', errorClass: 'internal' });
+    }).finally(() => {
+      activeJobs.delete(work);
+      running--;
+      inflight.delete(job.uid);
+      pump();
+    });
+    activeJobs.add(work);
   }
 }
 
@@ -320,7 +344,7 @@ export function setProposalHook(fn) { onProposal = fn; }
 
 /* ---------- execution ---------- */
 
-async function execute(job) {
+async function execute(job, stopSignal) {
   patchUser(job.uid, { current: { id: job.id, kind: job.kind, state: 'running', startedAt: job.startedAt } });
 
   const S = readState(job.uid);
@@ -378,12 +402,16 @@ async function execute(job) {
     const ids = jobDir && unprivilegedIds();
     if (ids) shareJobDir(jobDir, ids);
 
+    const signal = adapter.spawns === false
+      ? stopSignal ? AbortSignal.any([ctl.signal, stopSignal]) : ctl.signal
+      : stopSignal;
     const attempt = await runPipeline({
       adapter, cfg, kind: job.kind, payload, model: cfgStore.modelFor(cfg), timeoutMs: TIMEOUT_MS,
-      // The HTTP adapters take the fetch and the abort signal they are given; the runtime
-      // adapters ignore both.
-      invokeOpts: { jobDir, env, fetch: fetchFor(TIMEOUT_MS), signal: ctl.signal, maxTokens: cfg.maxOutputTokens }
+      invokeOpts: { jobDir, env, fetch: fetchFor(TIMEOUT_MS, signal), signal, maxTokens: cfg.maxOutputTokens }
     });
+    // Leave the interrupted current record for recoverOnBoot; prior proposals
+    // still belong to the user and are preserved.
+    if (stopSignal?.aborted) return;
     if (!attempt.ok) {
       // Cancelled by a forget, not failed by the provider: the log must not blame the job budget.
       const errorClass = ctl.signal.aborted ? 'forgotten' : attempt.errorClass;
@@ -479,6 +507,7 @@ function removeJobDir(jobDir, ids) {
 }
 
 export async function testRun() {
+  if (paused) return { ok: false, error: 'the server is shutting down' };
   const cfg = cfgStore.load();
   const adapter = adapterFor(cfg.provider);
   if (!adapter) return { ok: false, error: 'no provider configured' };
@@ -495,10 +524,13 @@ export async function testRun() {
     const env = cfgStore.jobEnv(jobDir || os.tmpdir(), cfgStore.credentialFor(cfgStore.boundUidFor(cfg)));
     const ids = jobDir && unprivilegedIds();
     if (ids) shareJobDir(jobDir, ids);
-    const check = await adapter.check(cfg, env);
+    const check = await adapter.check(cfg, env, shutdownSignal
+      ? { signal: shutdownSignal, fetch: fetchFor(20000, shutdownSignal) }
+      : undefined);
     if (!check.ok) return { ok: false, error: check.error || 'the provider runtime could not be run' };
     const r = await adapter.invoke({
-      cfg, jobDir, env, model: cfgStore.modelFor(cfg), timeoutMs: 90000, fetch: fetchFor(90000),
+      cfg, jobDir, env, model: cfgStore.modelFor(cfg), timeoutMs: 90000,
+      fetch: fetchFor(90000, shutdownSignal), signal: shutdownSignal,
       prompt: 'Reply with exactly this JSON object and nothing else: {"coach_contract":1,"ok":true}'
     });
     if (r.timedOut) return { ok: false, version: check.version, error: 'the provider did not answer in time' };

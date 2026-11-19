@@ -44,10 +44,13 @@ export function makeTransport({ allowLan }) {
     'https:': new https.Agent({ lookup: outboundLookup({ allowLan }), keepAlive: false }),
     'http:': new http.Agent({ lookup: outboundLookup({ allowLan, plain: true }), keepAlive: false }),
   };
-  return (url, { body, headers }) => new Promise((resolve, reject) => {
+  return (url, { body, headers, signal }) => new Promise((resolve, reject) => {
     const u = new URL(url);
     const lib = u.protocol === 'http:' ? http : https;
-    const req = lib.request(u, { method: 'POST', agent: agents[u.protocol], headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }, timeout: TIMEOUT_MS }, res => {
+    const req = lib.request(u, {
+      method: 'POST', agent: agents[u.protocol], signal,
+      headers: { ...headers, 'Content-Length': Buffer.byteLength(body) }, timeout: TIMEOUT_MS,
+    }, res => {
       let n = 0;
       res.on('data', d => { n += d.length; if (n > READ_MAX) res.destroy(); });
       const finish = () => resolve({ status: res.statusCode, headers: res.headers });
@@ -82,7 +85,7 @@ export function judge(r, err, now = Date.now()) {
   return { ok: false, retry: false, status: s, code: 'refused', msg: `The receiver answered ${s}.` };
 }
 
-export function webhookProvider({ allowLan = false, transport = null, version = 'dev' } = {}) {
+export function webhookProvider({ allowLan = false, transport = null, version = 'dev', signal = undefined } = {}) {
   const send = transport || makeTransport({ allowLan });
 
   async function post(url, secret, envelope) {
@@ -94,6 +97,7 @@ export function webhookProvider({ allowLan = false, transport = null, version = 
     try {
       r = await send(url, {
         body,
+        signal,
         headers: {
           'Content-Type': 'application/json',
           'User-Agent': `openGym-Webhook/${version}`,

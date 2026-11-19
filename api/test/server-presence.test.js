@@ -18,7 +18,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { API_ENTRY, boundPort } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRET = crypto.randomBytes(32).toString('hex');
@@ -41,7 +41,7 @@ async function startServer(t) {
       { id: ATHLETE, name: 'Athlete', created: new Date().toISOString() }
     ], creds: [], subs: [], invites: []
   }));
-  const child = spawn(process.execPath, ['--import', './test/fake-clock.mjs', 'server.js'], {
+  const child = spawn(process.execPath, ['--import', './test/fake-clock.mjs', API_ENTRY], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' }
   });

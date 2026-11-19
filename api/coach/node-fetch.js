@@ -27,7 +27,11 @@ export function dispatcherFor(timeoutMs) {
 }
 
 /** fetch(url, init) that will wait `timeoutMs` for the provider; AbortController still wins. */
-export function fetchFor(timeoutMs) {
+export function fetchFor(timeoutMs, signal) {
   const dispatcher = dispatcherFor(timeoutMs);
-  return (url, init = {}) => undiciFetch(url, { ...init, dispatcher });
+  return (url, init = {}) => {
+    // Keep cancellation attached even after fetch returns response headers.
+    const requestSignal = signal && init.signal ? AbortSignal.any([signal, init.signal]) : signal || init.signal;
+    return undiciFetch(url, { ...init, signal: requestSignal, dispatcher });
+  };
 }

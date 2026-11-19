@@ -63,7 +63,7 @@ export function createBuckets({ now = Date.now, maxKeys = 5000 } = {}) {
 
 const okKey = k => typeof k === 'string' && k.length > 0 && k.length <= 200;
 
-export function createOutbox({ file, deliver, rateOf = () => [], onSettled = () => {}, now = Date.now, random = Math.random, concurrency = 2 }) {
+export function createOutbox({ file, deliver, rateOf = () => [], onSettled = () => {}, now = Date.now, random = Math.random, concurrency = 2, signal = undefined }) {
   let st = { jobs: [], done: {}, failed: [] };
   try {
     const d = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -78,7 +78,7 @@ export function createOutbox({ file, deliver, rateOf = () => [], onSettled = () 
   for (const j of st.jobs) delete j.running;
 
   const buckets = createBuckets({ now });
-  let timer = null, kick = null, running = false;
+  let timer = null, kick = null, running = null, stopped = false;
 
   function prune() {
     const cut = now() - DONE_KEEP_MS;
@@ -124,7 +124,7 @@ export function createOutbox({ file, deliver, rateOf = () => [], onSettled = () 
     try { res = await deliver(j); }
     catch (e) { res = { ok: false, retry: true, msg: e?.message || 'delivery failed' }; }
     delete j.running;
-    if (!st.jobs.includes(j)) return;                  // dropped meanwhile (disconnected)
+    if (signal?.aborted || !st.jobs.includes(j)) return; // leave an interrupted job due with the same ID
     // Not now, and not a failure either (a paused connection): later, without spending an attempt.
     if (res?.defer) { j.nextAt = now() + res.defer; return; }
     j.attempts += 1;
@@ -147,22 +147,35 @@ export function createOutbox({ file, deliver, rateOf = () => [], onSettled = () 
 
   /** Send what is due. One pass at a time; resolves when the pass is over. */
   async function run() {
-    if (running) return;
-    running = true;
-    try {
+    if (running || stopped) return;
+    const pass = async () => {
       const due = st.jobs.filter(j => !j.running && j.nextAt <= now()).sort((a, b) => a.nextAt - b.nextAt);
-      for (let i = 0; i < due.length; i += concurrency) {
+      for (let i = 0; i < due.length && !stopped; i += concurrency) {
         await Promise.all(due.slice(i, i + concurrency).map(runOne));
       }
       if (due.length) persist();
-    } finally { running = false; }
+    };
+    running = pass().finally(() => { running = null; });
+    return running;
   }
 
   return {
     enqueue,
     run,
-    start(everyMs = 5000) { if (!timer) { timer = setInterval(run, everyMs); timer.unref?.(); } soon(); },
-    stop() { clearInterval(timer); clearTimeout(kick); timer = null; kick = null; },
+    start(everyMs = 5000) {
+      if (signal?.aborted) return;
+      stopped = false;
+      if (!timer) { timer = setInterval(run, everyMs); timer.unref?.(); }
+      soon();
+    },
+    stop() {
+      stopped = true;
+      clearInterval(timer);
+      clearTimeout(kick);
+      timer = null;
+      kick = null;
+      return running ?? undefined;
+    },
     /** The connection's failed jobs, queued again from attempt 0. Answers how many. */
     retry(uid, conn) {
       const back = st.failed.filter(j => j.uid === uid && j.conn === conn);

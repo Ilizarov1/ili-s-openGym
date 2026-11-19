@@ -12,6 +12,7 @@
  * codebase — routes, jobs, payload, validation, UI — knows which one is configured.
  */
 import { run } from './spawn.js';
+import { fileURLToPath } from 'node:url';
 import claude from './claude.js';
 import codex from './codex.js';
 import anthropic from '../core/adapters/anthropic.js';
@@ -24,15 +25,15 @@ import compatible from '../core/adapters/compatible.js';
  * lets an instance owner see the entire Coach loop — intake, proposal, apply, revert —
  * before deciding whether to connect a real account to it.
  */
-const FIXTURE = new URL('../fixture-cli.mjs', import.meta.url).pathname;
+const FIXTURE = fileURLToPath(new URL('../fixture-cli.mjs', import.meta.url));
 const fixture = {
   id: 'fixture',
   spawns: true,
   cli: process.execPath,
   async check() { return { ok: true, version: 'fixture' }; },
-  async invoke({ prompt, jobDir, env, timeoutMs }) {
+  async invoke({ prompt, jobDir, env, timeoutMs, signal }) {
     const r = await run(process.execPath, [FIXTURE], {
-      stdin: prompt, cwd: jobDir, timeoutMs,
+      stdin: prompt, cwd: jobDir, timeoutMs, signal,
       // The fixture needs its mode knob, which the sanitised job env deliberately drops.
       env: { ...env, FIXTURE_MODE: process.env.FIXTURE_MODE || '' },
       asCoach: false   // a temp dir owned by root in tests; the fixture reads only stdin anyway

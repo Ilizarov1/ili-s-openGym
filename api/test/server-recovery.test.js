@@ -13,7 +13,7 @@ import { spawn, execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { hashLinkCode } from '../device-link.js';
 import { MAX_PASSKEYS } from '../passkeys-store.js';
-import { boundPort } from './helpers.mjs';
+import { API_ENTRY, boundPort } from './helpers.mjs';
 import { softPasskey, ORIGIN } from './soft-passkey.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -30,7 +30,7 @@ async function startServer(t, { env = {}, users = [], creds = [] } = {}) {
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users, creds, subs: [], invites: [] }));
   // Password sign-in OFF: recovery has to work without it.
   const childEnv = { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN, RP_ID: 'localhost', PASSWORD_LOGIN: '', TRUST_PROXY: '1', INVITE_ONLY: '', ADMIN_UIDS: '', AUDIT_LOG: '1', ...env };
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
+  const child = spawn(process.execPath, [API_ENTRY], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'], env: childEnv });
   const h = { api: '', log: '', dataDir, env: childEnv, child };
   child.stdout.on('data', d => h.log += d);
   child.stderr.on('data', d => h.log += d);

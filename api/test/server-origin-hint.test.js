@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort, softPasskey } from './helpers.mjs';
+import { API_ENTRY, boundPort, softPasskey } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ORIGIN = 'http://localhost:8080';
@@ -24,7 +24,7 @@ async function startServer(t) {
     users: [{ id: 'u1', name: 'Ana', created: new Date().toISOString() }],
     creds: [key.row('u1')], subs: [], invites: []
   }));
-  const child = spawn(process.execPath, ['server.js'], {
+  const child = spawn(process.execPath, [API_ENTRY], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN, RP_ID: 'localhost' }
   });

@@ -1,9 +1,10 @@
-// log_workout against the real api/server.js in a child process, on a temp data directory: what
+// log_workout against a real API entry in a child process, on a temp data directory: what
 // the server stores when the MCP writes, read back off disk and through the server's own routes.
 // Needs api/'s dependencies (`npm ci` in api/). Without them it skips on a laptop and fails in CI,
 // so a green run there always means it ran.
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import crypto from 'node:crypto'
+import { once } from 'node:events'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,8 +12,12 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'api')
+const API_ENTRY = process.env.API_ENTRY || 'server.js'
 const HAVE_API = fs.existsSync(path.join(API, 'node_modules', '@simplewebauthn', 'server'))
 if (!HAVE_API && process.env.CI) throw new Error('api/node_modules is missing: run `npm ci` in api/ before the MCP tests in CI')
+if (HAVE_API && !fs.existsSync(path.resolve(API, API_ENTRY))) {
+  throw new Error(`API entry ${API_ENTRY} is missing: run npm run build in api/ before testing the Nest entry`)
+}
 
 const SECRET = crypto.randomBytes(32).toString('hex')
 const UID = 'u_mcp_1'
@@ -39,13 +44,13 @@ const get = async p => (await fetch(base + p, { headers: { authorization: 'Beare
 const stored = () => JSON.parse(fs.readFileSync(path.join(dataDir, `state-${UID}.json`), 'utf8'))
 
 describe.skipIf(!HAVE_API)('log_workout against the real api', () => {
-  let logWorkout, getState, TOOLS
+  let logWorkout, getState, _seedStateForTests, TOOLS
   beforeAll(async () => {
     dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-mcp-e2e-'))
     fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 })
     fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [{ id: UID, name: 'Matt', created: new Date().toISOString() }], creds: [], subs: [], invites: [] }))
     fs.writeFileSync(path.join(dataDir, `state-${UID}.json`), JSON.stringify(DOC))
-    child = spawn(process.execPath, ['server.js'], {
+    child = spawn(process.execPath, [API_ENTRY], {
       cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' },
     })
@@ -66,11 +71,16 @@ describe.skipIf(!HAVE_API)('log_workout against the real api', () => {
     process.env.OPENGYM_DATA = dataDir
     process.env.OPENGYM_UID = UID
     ;({ logWorkout } = await import('../src/write-tools.js'))
-    ;({ getState } = await import('../src/state.js'))
+    ;({ getState, _seedStateForTests } = await import('../src/state.js'))
     ;({ TOOLS } = await import('../src/tools.js'))
   }, 30000)
-  afterAll(() => {
-    child?.kill('SIGKILL')
+  afterAll(async () => {
+    _seedStateForTests?.(null) // release the watcher before deleting its file on Windows
+    if (child && child.exitCode === null && child.signalCode === null) {
+      const exited = once(child, 'exit')
+      child.kill('SIGKILL')
+      await exited
+    }
     if (dataDir) fs.rmSync(dataDir, { recursive: true, force: true })
   })
 

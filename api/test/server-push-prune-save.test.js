@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { API_ENTRY, boundPort } from './helpers.mjs';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SECRET = crypto.randomBytes(32).toString('hex');
@@ -36,7 +36,7 @@ async function startServer(t) {
     subs: [{ userId: 'u_test_1', endpoint: 'https://10.1.2.3/push/abc', keys: { p256dh: 'p', auth: 'a' }, created: new Date().toISOString() }]
   }));
   fs.writeFileSync(path.join(dataDir, 'state-u_test_1.json'), JSON.stringify({ _rev: 1, lang: 'en', workouts: [], routines: [] }));
-  const child = spawn(process.execPath, ['server.js'], {
+  const child = spawn(process.execPath, [API_ENTRY], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     // AUDIT_LOG off and the reminder tick parked: the only write this test wants to fail is the prune's
     env: {

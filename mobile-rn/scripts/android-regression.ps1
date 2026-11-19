@@ -276,7 +276,7 @@ function Remove-Reverse {
 try {
     $screenSize = Invoke-Adb shell wm size | Select-Object -Last 1
     if ($screenSize -notmatch '(\d+)x(\d+)') { throw 'Could not read emulator display size.' }
-    $screenWidth, $screenHeight = $Matches[1], $Matches[2]
+    $screenWidth, $screenHeight = [int]$Matches[1], [int]$Matches[2]
     & $javac --release 8 -classpath $platformJar -d $runDirectory (Join-Path $PSScriptRoot 'DumpActiveWindow.java')
     if ($LASTEXITCODE -ne 0) { throw 'Could not compile the emulator UI dumper.' }
     & $d8 --min-api 26 --lib $platformJar --output $runDirectory (Join-Path $runDirectory 'DumpActiveWindow.class')
@@ -323,7 +323,7 @@ try {
     Start-App
     Open-Stats
     Tap-Workout '全身力量 A'
-    Wait-Label '37.5 kg × 8' | Out-Null
+    Wait-Label '37.5 kg × 8' -Scroll | Out-Null
     if ($FeatureChecks) {
         Open-PlanList
         Start-Routine '全身力量 A'
@@ -378,6 +378,7 @@ try {
     Invoke-Adb shell input text $baseUrl | Out-Null
     Tap-Label '配对码' -Field -Scroll
     Invoke-Adb shell input text $pairing.code | Out-Null
+    Invoke-Adb shell input keyevent KEYCODE_BACK | Out-Null
     Tap-Label '连接服务器' -Scroll
     Wait-Node { $_.GetAttribute('text') -like "*$name*" } 'Paired account' | Out-Null
     Open-PlanList
@@ -403,7 +404,7 @@ try {
     if ($offlineState.state.workouts.Count -ne 0) { throw 'The workout reached the API while the emulator was offline.' }
     Wait-Node {
         $_.GetAttribute('text') -eq '待同步' -or $_.GetAttribute('content-desc') -like '*待同步*'
-    } 'Offline workout pending sync' | Out-Null
+    } 'Offline workout pending sync' -Scroll | Out-Null
 
     Add-Reverse $reversePort
     Open-Settings
@@ -427,7 +428,7 @@ try {
     Open-Stats
     Tap-Workout $routineName
     if ($FeatureChecks) {
-        Wait-Node { $_.GetAttribute('text') -like '热身 * · 25 kg × 8' } 'Warm-up and work in history' | Out-Null
+        Wait-Node { $_.GetAttribute('text') -like '热身 * · 25 kg × 8' } 'Warm-up and work in history' -Scroll | Out-Null
 
         Write-Host 'Checking planned backup exercise and saved exercise identity'
         Open-PlanList
@@ -467,7 +468,7 @@ try {
         Tap-Workout $routineName
         Wait-Label '杠铃上斜卧推' | Out-Null
     } else {
-        Wait-Label '25 kg × 8' | Out-Null
+        Wait-Label '25 kg × 8' -Scroll | Out-Null
     }
 
     if ($P1Checks) {
@@ -572,7 +573,7 @@ try {
         Tap-Label '完成训练' -Scroll
         Wait-Stats
         Tap-Workout 'Mixed training'
-        Wait-Label '32 秒 · 12.5 kg' | Out-Null
+        Wait-Label '32 秒 · 12.5 kg' -Scroll | Out-Null
         Wait-Label '7.5 分钟 · 速度 9.2' -Scroll | Out-Null
         $mixedLog = (Sync-App).workouts | Where-Object name -eq 'Mixed training'
         if ($mixedLog.entries[0].sets[0].sec -ne 32 -or $mixedLog.entries[0].sets[0].w -ne 12.5 -or
@@ -655,7 +656,7 @@ try {
         Tap-Label '返回'
         Wait-Label '首页' | Out-Null
         Open-PlanList
-        Start-Routine 'Regression routine'
+        Start-Routine $shortRest.state.routines[0].name
         Tap-Label '第 1 组完成'
         Invoke-Adb shell input keyevent KEYCODE_SLEEP | Out-Null
         $deadline = [DateTime]::UtcNow.AddSeconds(25)
@@ -788,7 +789,7 @@ try {
         Tap-Label '完成训练' -Scroll
         Wait-Stats
         Tap-Workout $supersetPlan
-        Wait-Label '超级组 · Push pair' | Out-Null
+        Wait-Label '超级组 · Push pair' -Scroll | Out-Null
         $savedSuperset = (Sync-App).workouts | Where-Object name -eq $supersetPlan
         if ($savedSuperset.entries.Count -ne 2 -or $savedSuperset.entries[0].id -ne '0025' -or $savedSuperset.entries[1].id -ne '1323' -or
             $savedSuperset.entries[0].sets.Count -ne 2 -or $savedSuperset.entries[1].sets.Count -ne 1 -or

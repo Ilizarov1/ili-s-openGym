@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { API_ENTRY, boundPort } from './helpers.mjs';
 import { stampPut } from '../sync-stamps.js';
 
 const clone = v => JSON.parse(JSON.stringify(v));
@@ -99,7 +99,7 @@ test('PUT /api/data: an older app\'s push does not wipe the records, and its del
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-stamps-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [{ id: 'u1', name: 'One', created: new Date().toISOString() }], creds: [], subs: [], invites: [] }));
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(process.execPath, [API_ENTRY], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
   let log = '';
   child.stdout.on('data', d => log += d); child.stderr.on('data', d => log += d);
@@ -246,7 +246,7 @@ test('PUT /api/data: a document the server corrected for an older app is one rev
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-stamps-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [{ id: 'u1', name: 'One', created: new Date().toISOString() }], creds: [], subs: [], invites: [] }));
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(process.execPath, [API_ENTRY], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
   let log = '';
   child.stdout.on('data', d => log += d); child.stderr.on('data', d => log += d);
@@ -384,7 +384,7 @@ test('PUT /api/data: an older app\'s two changes of one setting in a row both la
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'gym-stamps-'));
   fs.writeFileSync(path.join(dataDir, 'secret'), SECRET, { mode: 0o600 });
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({ users: [{ id: 'u1', name: 'One', created: new Date().toISOString() }], creds: [], subs: [], invites: [] }));
-  const child = spawn(process.execPath, ['server.js'], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
+  const child = spawn(process.execPath, [API_ENTRY], { cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost' } });
   let log = '';
   child.stdout.on('data', d => log += d); child.stderr.on('data', d => log += d);

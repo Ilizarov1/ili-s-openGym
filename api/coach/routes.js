@@ -8,6 +8,7 @@ import * as cfgStore from './config.js';
 import * as jobs from './jobs.js';
 import { computeCohort } from './cohort.js';
 import { adapterFor } from './adapters/index.js';
+import { fetchFor } from './node-fetch.js';
 import { canDropPrivileges, privilegeRefusal } from './adapters/spawn.js';
 import { DATA_CATEGORIES } from './core/payload.js';
 import { validateBaseUrl, validateHeaders, baseUrlFor } from './core/providers.js';
@@ -27,7 +28,8 @@ const USER_ERROR = {
 const hostOf = url => { try { return url ? new URL(url).host : null; } catch { return null; } };
 const HTTP_FOR = { off: 503, busy: 409, cap: 429, consent: 403, shared: 409, unprivileged: 503 };
 
-export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
+export function coachRoutes({ json, readBody, readSession, requireAdmin, signal = /** @type {AbortSignal | undefined} */ (undefined) }) {
+  const checkOptions = () => signal ? { signal, fetch: fetchFor(20000, signal) } : undefined;
   /** Every user route starts the same way: signed in, feature on, feature reachable. The class
    *  goes beside the words, as enqueue's refusal sends it: the app shows its own translated line
    *  for the class, and these English words only where it has none. */
@@ -200,7 +202,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
       const refusal = privilegeRefusal(adapter);
       const check = !adapter ? { ok: false, error: 'unknown provider' }
         : refusal ? { ok: false, error: refusal }
-        : await adapter.check(cfg, cfgStore.jobEnv(process.env.TMPDIR || '/tmp', cred?.ok ? cred : undefined));
+        : await adapter.check(cfg, cfgStore.jobEnv(process.env.TMPDIR || '/tmp', cred?.ok ? cred : undefined), checkOptions());
       const log = cfg.log || [];
       const today = new Date().toISOString().slice(0, 10);
       json(res, 200, {
@@ -341,7 +343,7 @@ export function coachRoutes({ json, readBody, readSession, requireAdmin }) {
       if (!adapter || typeof adapter.models !== 'function') return json(res, 200, { ok: false, error: 'this provider does not list models', models: [] });
       const cred = cfgStore.credentialFor(cfgStore.boundUidFor(cfg));
       const env = cfgStore.jobEnv(process.env.TMPDIR || '/tmp', cred.ok ? cred : undefined);
-      json(res, 200, await adapter.models(cfg, env));
+      json(res, 200, await adapter.models(cfg, env, checkOptions()));
     },
 
     /* Connect the instance credential. Deferred while the fixture was the only provider — it

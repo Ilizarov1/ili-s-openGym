@@ -39,9 +39,9 @@ export function enabledIds(env, known) {
   return out;
 }
 
-export function createIntegrations({ dataDir, secret, env = process.env, now = Date.now, transport = null, version = 'dev' }) {
+export function createIntegrations({ dataDir, secret, env = process.env, now = Date.now, transport = null, version = 'dev', signal = /** @type {AbortSignal | undefined} */ (undefined) }) {
   const allowLan = on(env.INTEGRATIONS_ALLOW_LAN);
-  const all = { webhook: webhookProvider({ allowLan, transport, version }) };
+  const all = { webhook: webhookProvider({ allowLan, transport, version, signal }) };
   const ids = enabledIds(env, Object.keys(all)).filter(id => {
     if (all[id].configured(env)) return true;
     console.warn(`INTEGRATIONS: ${id} needs ${all[id].env.join(', ')}; left off`);
@@ -58,7 +58,7 @@ export function createIntegrations({ dataDir, secret, env = process.env, now = D
     const key = deriveKey(secret);
     store = createStore({ dir, key, now });
     outbox = createOutbox({
-      file: path.join(dir, 'outbox.json'), now,
+      file: path.join(dir, 'outbox.json'), now, signal,
       deliver: job => {
         const p = providers[job.provider];
         const rec = store.get(job.uid, job.conn);
@@ -172,7 +172,7 @@ export function createIntegrations({ dataDir, secret, env = process.env, now = D
       const ev = EVENTS.includes(type) ? type : rec.events[0] || 'workout.finished';
       const job = { id: newId('evt'), uid, conn: id, provider: rec.provider, ev: 'test', payload: envelope({ id: newId('evt'), type: ev, data: testData(ev, now()), at: now(), test: true }) };
       const res = await providers[rec.provider].deliver(job, name => store.reveal(uid, rec, name));
-      settle(uid, id, 'test', res, !res.ok && !res.retry);
+      if (!signal?.aborted) settle(uid, id, 'test', res, !res.ok && !res.retry);
       return { ok: !!res.ok, status: res.status ?? null, ms: res.ms ?? null, msg: res.ok ? null : res.msg, connection: view(uid, store.get(uid, id)) };
     },
 
@@ -225,7 +225,7 @@ export function createIntegrations({ dataDir, secret, env = process.env, now = D
     },
 
     start(everyMs) { if (active) outbox.start(everyMs); },
-    stop() { outbox?.stop(); },
+    stop() { return outbox?.stop(); },
     // For the tests.
     _outbox: () => outbox,
     _store: () => store,

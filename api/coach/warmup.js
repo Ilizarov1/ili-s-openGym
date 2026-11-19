@@ -26,7 +26,7 @@ const KINDS = ['debrief', 'review'];
 
 let running = false;
 
-export async function warmOnce({ log = console, fetch: fetchImpl } = {}) {
+export async function warmOnce({ log = console, fetch: fetchImpl, signal = /** @type {AbortSignal | undefined} */ (undefined) } = {}) {
   const cfg = cfgStore.load();
   if (!cfgStore.isEnabled() || cfg.provider !== 'compatible') return { skipped: true };
   const adapter = adapterFor(cfg.provider);
@@ -35,6 +35,7 @@ export async function warmOnce({ log = console, fetch: fetchImpl } = {}) {
   running = true;
   try {
     for (const kind of KINDS) {
+      if (signal?.aborted) return { skipped: true };
       const parts = buildPromptParts(kind, {});
       const t0 = Date.now();
       const r = await adapter.invoke({
@@ -43,7 +44,8 @@ export async function warmOnce({ log = console, fetch: fetchImpl } = {}) {
         prompt: 'Reply with exactly {"coach_contract":1} and nothing else.',
         model: cfgStore.modelFor(cfg),
         timeoutMs: TIMEOUT_MS,
-        fetch: fetchImpl || fetchFor(TIMEOUT_MS)
+        fetch: fetchImpl || fetchFor(TIMEOUT_MS, signal),
+        signal
       });
       const ms = Date.now() - t0;
       if (r.code !== 0) {

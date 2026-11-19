@@ -11,7 +11,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort } from './helpers.mjs';
+import { API_ENTRY, boundPort } from './helpers.mjs';
 import { verifySignature } from '../integrations/crypto.js';
 
 const API = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,7 +25,7 @@ async function startServer(t, env) {
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
     users: [{ id: 'u_a', name: 'A', created: new Date().toISOString() }, { id: 'u_b', name: 'B', created: new Date().toISOString() }], creds: [], subs: [], invites: []
   }));
-  const child = spawn(process.execPath, ['server.js'], {
+  const child = spawn(process.execPath, [API_ENTRY], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', ...env }
   });

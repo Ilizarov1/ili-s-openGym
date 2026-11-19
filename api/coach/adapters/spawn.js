@@ -79,8 +79,12 @@ export function privilegeRefusal(adapter) {
  * Never rejects on a non-zero exit: the caller classifies failures, and a CLI that prints a
  * useful error and exits 1 is more informative than a thrown Error with none of it.
  */
-export function run(cmd, argv, { stdin = '', env = {}, cwd, timeoutMs = 300000, asCoach = true } = {}) {
+export function run(cmd, argv, { stdin = '', env = {}, cwd, timeoutMs = 300000, asCoach = true, signal } = {}) {
   return new Promise(resolve => {
+    if (signal?.aborted) {
+      resolve({ code: -1, stdout: '', stderr: 'cancelled' });
+      return;
+    }
     const ids = asCoach ? unprivilegedIds() : null;
     let child;
     try {
@@ -93,16 +97,20 @@ export function run(cmd, argv, { stdin = '', env = {}, cwd, timeoutMs = 300000, 
     // Output is bounded: a CLI stuck in a loop must not take the server's memory with it.
     const CAP = 4 * 1024 * 1024;
     const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL'); }, timeoutMs);
+    const abort = () => child.kill('SIGKILL');
+    signal?.addEventListener('abort', abort, { once: true });
     child.stdout.on('data', d => { if (stdout.length < CAP) stdout += d; });
     child.stderr.on('data', d => { if (stderr.length < CAP) stderr += d; });
     const finish = (code, err) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
       resolve({ code, stdout, stderr: stderr || (err ? err.message : ''), timedOut, spawnError: !!err });
     };
     child.on('error', e => finish(-1, e));
     child.on('close', code => finish(code));
+    child.stdin.on('error', () => {}); // the child can exit before it reads the whole prompt
     try { child.stdin.end(stdin); } catch { /* child already gone; 'close' handles it */ }
   });
 }

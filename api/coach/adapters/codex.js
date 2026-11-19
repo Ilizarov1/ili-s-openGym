@@ -31,15 +31,15 @@ export default {
   spawns: true,
   cli: CLI,
 
-  async check(cfg, env) {
-    const r = await run(CLI, ['--version'], { env, timeoutMs: 20000 });
+  async check(cfg, env, { signal } = {}) {
+    const r = await run(CLI, ['--version'], { env, timeoutMs: 20000, signal });
     if (r.spawnError) return { ok: false, error: `the ${CLI} CLI is not installed in this image` };
     if (r.timedOut) return { ok: false, error: `the ${CLI} CLI did not respond` };
     if (r.code !== 0) return { ok: false, error: (r.stderr || '').trim().slice(0, 300) || `${CLI} --version exited ${r.code}` };
     return { ok: true, version: (r.stdout || '').trim() };
   },
 
-  async invoke({ prompt, jobDir, env, model, timeoutMs }) {
+  async invoke({ prompt, jobDir, env, model, timeoutMs, signal }) {
     const argv = argvFor(model);
     // $CODEX_HOME itself is still set (config.jobEnv), because that is where the CLI keeps its
     // refreshable login cache and a job whose HOME is a temp dir would otherwise find no login
@@ -48,7 +48,7 @@ export default {
     // Sandbox mode is left at the CLI's default (read-only). The job only needs the model
     // to write an answer to stdout, and this process is already an unprivileged user in a
     // container -- widening it here would trade that away for nothing.
-    const r = await run(CLI, argv, { stdin: prompt, cwd: jobDir, env, timeoutMs });
+    const r = await run(CLI, argv, { stdin: prompt, cwd: jobDir, env, timeoutMs, signal });
     return { ...r, text: (r.stdout || '').trim() };
   }
 };

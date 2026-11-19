@@ -10,6 +10,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+/* Which entry point a test spawns, relative to api/. The default keeps the whole suite on the
+ * legacy server; API_ENTRY=dist/src/main.js runs the same cases against the Nest entry. */
+export const API_ENTRY = process.env.API_ENTRY || 'server.js';
+
 /* The port a spawned server.js actually bound.
  *
  * Never pick one for it. Opening a listener on 0, reading the port, closing it and handing the

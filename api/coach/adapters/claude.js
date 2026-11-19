@@ -73,7 +73,7 @@ function installedVersion() {
    something an adapter can forget to do. */
 function spawnAsCoach({ command, args, cwd, env, signal }) {
   const ids = unprivilegedIds();
-  return spawn(command, args, { cwd, env, signal, stdio: ['pipe', 'pipe', 'pipe'], ...(ids || {}) });
+  return spawn(command, args, { cwd, env, signal, killSignal: 'SIGKILL', stdio: ['pipe', 'pipe', 'pipe'], ...(ids || {}) });
 }
 
 export default {
@@ -92,12 +92,15 @@ export default {
     return { ok: true, version: v ? `Claude Agent SDK ${v}` : 'Claude Agent SDK' };
   },
 
-  async invoke({ prompt, jobDir, env, model, timeoutMs }) {
+  async invoke({ prompt, jobDir, env, model, timeoutMs, signal }) {
     const m = await sdk();
     if (!m) return { code: -1, text: '', stderr: `${PKG} is not installed`, timedOut: false, spawnError: true };
 
     let text = '', stderr = '', failure = '', timedOut = false;
     const abortController = new AbortController();
+    if (signal?.aborted) return { code: -1, text: '', stderr: 'cancelled', timedOut: false, spawnError: false };
+    const abort = () => abortController.abort();
+    signal?.addEventListener('abort', abort, { once: true });
     const timer = setTimeout(() => { timedOut = true; abortController.abort(); }, timeoutMs);
 
     try {
@@ -128,6 +131,7 @@ export default {
       return { code: -1, text: '', stderr: stderr || (e instanceof Error ? e.message : String(e)), timedOut: false, spawnError: true };
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
     }
 
     if (timedOut) return { code: -1, text: '', stderr: 'the Agent SDK timed out', timedOut: true, spawnError: false };

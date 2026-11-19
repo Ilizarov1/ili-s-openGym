@@ -92,13 +92,18 @@ jobs:
               - '.github/workflows/test.yml'
               - 'scripts/ci/**'
               - 'mcp/**'
+              - 'api/**'
               - 'frontend/src/lib/**'
             images:
               - '.github/workflows/test.yml'
               - 'api/Dockerfile'
               - 'api/package*.json'
               - 'api/*.js'
+              - 'api/src/**'
+              - 'api/tsconfig*.json'
+              - 'api/scripts/build-api.mjs'
               - 'api/coach/**'
+              - 'api/integrations/**'
               - 'web/**'
               - 'frontend/package*.json'
               - 'frontend/vite.config.js'
@@ -219,7 +224,10 @@ jobs:
       # Completions shape: no AI account, no network. The Agent SDK is optional and stays out.
       - run: npm ci --omit=optional --no-audit --no-fund
         working-directory: api
-      - name: API tests
+      - name: Build the Nest entry
+        working-directory: api
+        run: npm run build
+      - name: API tests (legacy)
         working-directory: api
         run: >
           node --test --experimental-test-coverage
@@ -229,6 +237,15 @@ jobs:
           --test-reporter=lcov --test-reporter-destination=lcov.info
           --test-reporter=junit --test-reporter-destination=junit.xml
           test/*.test.js
+      - name: API tests (Nest)
+        # Keep both reports even if the legacy suite finds a failure.
+        if: ${{ !cancelled() }}
+        working-directory: api
+        run: >
+          npm run test:nest --
+          --test-reporter=spec --test-reporter-destination=stdout
+          --test-reporter=../scripts/ci/node-test-reporter.mjs --test-reporter-destination=nest-results.jsonl
+          --test-reporter=junit --test-reporter-destination=nest-junit.xml
       # The api's copy of the exercise catalogue is generated and committed. A dataset change
       # that forgets to regenerate it would surface as "the Coach can't find that exercise".
       - name: Generated Coach assets are current
@@ -250,7 +267,10 @@ jobs:
           name: stats-api
           path: |
             stats/api.json
+            api/test-results.jsonl
             api/junit.xml
+            api/nest-results.jsonl
+            api/nest-junit.xml
           retention-days: 30
           if-no-files-found: ignore
 
@@ -272,13 +292,16 @@ jobs:
             api/package-lock.json
       - run: npm ci --no-audit --no-fund
         working-directory: mcp
-      # log_workout's end-to-end test drives the real api/server.js, so the api's own
-      # dependencies are here too (same install as the api job). Without them that test fails
-      # under CI rather than skipping, so a green run means it ran.
+      # log_workout drives the candidate API in a child process with its own data directory.
       - run: npm ci --no-audit --no-fund --omit=optional
         working-directory: api
+      - name: Build the Nest entry
+        working-directory: api
+        run: npm run build
       - name: MCP tests
         working-directory: mcp
+        env:
+          API_ENTRY: dist/src/main.js
         run: >
           npx vitest run
           --reporter=default --reporter=json --outputFile.json=test-results.json
@@ -382,7 +405,7 @@ jobs:
       - name: the default image boots and serves, with no AI runtime in it
         run: |
           docker network create og
-          docker run -d --name api-default --network og --network-alias api -e DATA_DIR=/data -p 3000:3000 opengym-api:default
+          docker run -d --name api-default --network og --network-alias api -e DATA_DIR=/data -e PASSWORD_LOGIN=1 -e INVITE_ONLY=0 -p 3000:3000 opengym-api:default
           for i in $(seq 1 30); do
             curl -fsS http://localhost:3000/api/config >/dev/null 2>&1 && break
             sleep 1
@@ -390,6 +413,14 @@ jobs:
           curl -fsS http://localhost:3000/api/config | tee /dev/stderr | grep -q '"invite_only"'
           docker run --rm opengym-api:default node -e \
             'import("@anthropic-ai/claude-agent-sdk").then(()=>{console.error("AI runtime present in the default image");process.exit(1)},()=>process.exit(0))'
+
+      - name: the shipped recovery command reaches the API's Unix socket
+        run: |
+          curl -fsS -X POST http://localhost:3000/api/register/password \
+            -H 'Content-Type: application/json' \
+            --data '{"name":"CI Recovery Owner","password":"fixture-celery-mountain-42"}' >/dev/null
+          recovery="$(docker exec api-default node recover.js "CI Recovery Owner")"
+          [[ "$recovery" == *"Recovery code for"* ]]
 
       # The stack the way docker-compose.yml wires it: nginx in the web image proxies /api to
       # the api container. A green api image and a green web image can still not talk.

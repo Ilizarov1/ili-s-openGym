@@ -10,7 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { boundPort, softPasskey } from './helpers.mjs';
+import { API_ENTRY, boundPort, softPasskey } from './helpers.mjs';
 
 const KEY = softPasskey();
 
@@ -29,7 +29,7 @@ async function startServer(t) {
   fs.writeFileSync(path.join(dataDir, 'db.json'), JSON.stringify({
     users: [{ id: 'u_test_1', name: 'One', created: new Date().toISOString() }], creds: [KEY.row('u_test_1')], subs: [], invites: []
   }));
-  const child = spawn(process.execPath, ['server.js'], {
+  const child = spawn(process.execPath, [API_ENTRY], {
     cwd: API, stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, PORT: '0', DATA_DIR: dataDir, ORIGIN: 'http://localhost:8080', RP_ID: 'localhost', AUDIT_LOG: '1' }
   });

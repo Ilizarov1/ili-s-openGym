@@ -65,6 +65,12 @@ docs/
   RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
   RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
+  nestjs-migration/
+    DESIGN.md                            服务端 NestJS 迁移设计
+    EXECUTION.md                         迁移执行、测试、验收和回滚方案
+    BASELINE.md                          代码、配置与 91 路由基线
+    ACCEPTANCE.md                        阶段 0–3 回归证据与阶段 4 待办
+    features/README.md                   功能点拆分索引和各功能执行文档
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/
@@ -141,3 +147,14 @@ mcp/README.md                            MCP 接入、工具与认证
 scripts/README.md                        构建和发布脚本索引
 website/README.md                        官网源码和维护方式
 ```
+
+<!-- CODEGRAPH_START -->
+## CodeGraph
+
+In repositories indexed by CodeGraph (a `.codegraph/` directory exists at the repo root), reach for it BEFORE grep/find or reading files when you need to understand or locate code:
+
+- **MCP tool** (when available): `codegraph_explore` answers most code questions in one call — the relevant symbols' verbatim source plus the call paths between them, including dynamic-dispatch hops grep can't follow. Name a file or symbol in the query to read its current line-numbered source. If it's listed but deferred, load it by name via tool search.
+- **Shell** (always works): `codegraph explore "<symbol names or question>"` prints the same output.
+
+If there is no `.codegraph/` directory, skip CodeGraph entirely — indexing is the user's decision.
+<!-- CODEGRAPH_END -->

@@ -17,8 +17,13 @@ Object.assign(process.env, {
 });
 
 const listen = Server.prototype.listen;
-// The upstream entry point takes a port only. Bind this test process to loopback.
-Server.prototype.listen = function (port, callback) {
+// The entry point takes a port only; accept (port, callback) as well as the
+// (port, host, callback) shape a framework adapter may use, and bind loopback.
+Server.prototype.listen = function (port, host, callback) {
+  if (typeof host === 'function') {
+    callback = host;
+    host = undefined;
+  }
   // ADB reverse removal blocks new connections. Close each response so the
   // mobile client cannot reuse an existing connection during the offline step.
   this.prependListener('request', (_request, response) => response.setHeader('Connection', 'close'));
