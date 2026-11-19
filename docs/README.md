@@ -43,7 +43,7 @@ All settings live in `.env`; [`.env.example`](../.env.example) explains each one
 |---|---|
 | [Contributing](../CONTRIBUTING.md) | Before your first pull request: setup, guidelines, what CI checks |
 | [Architecture](ARCHITECTURE.md) | You want the map: how the app, server, phones and watch fit together, with diagrams |
-| [NestJS API migration](nestjs-migration/DESIGN.md) | You're moving the API from `api/server.js` to NestJS; the [execution plan](nestjs-migration/EXECUTION.md) covers steps, tests and acceptance, with [per-feature documents](nestjs-migration/features/README.md), [baseline](nestjs-migration/BASELINE.md) and [acceptance record](nestjs-migration/ACCEPTANCE.md) |
+| [NestJS API migration](nestjs-migration/DESIGN.md) | [Execution plan](nestjs-migration/EXECUTION.md), [phase 4 handoff](nestjs-migration/HANDOFF.md), [per-feature documents](nestjs-migration/features/README.md), [baseline](nestjs-migration/BASELINE.md) and [acceptance record](nestjs-migration/ACCEPTANCE.md) |
 | [App stores and releases](APP_STORES.md) | You're shipping a release: the APK, Google Play and the App Store |
 | [scripts/](../scripts/README.md) | You want to know which build script does what |
 | [CLAUDE.md](../CLAUDE.md) | The same project context in the form Claude Code sessions start from |
