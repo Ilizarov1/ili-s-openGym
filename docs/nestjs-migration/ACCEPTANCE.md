@@ -4,7 +4,7 @@
 - 代码版本：阶段 0–3 基线 `94777b4ada915c622baf5813af673646c123ebb9`；阶段 4 候选见 §6。
 - 本机环境：Windows 11 + WSL 2 Ubuntu，Node v24.18.0，npm 11.16.0。
 - 测试数据：独立临时数据目录和合成账号。
-- 结论：阶段 0–3、Linux 双入口基线和默认入口切换通过；Docker 镜像与 Nix 打包受本机工具链限制，见 §9。RN 配对、同步和离线补传已在专用模拟器通过。
+- 结论：阶段 0–3、Linux 双入口基线、默认入口切换和 RN 回归通过；Docker 镜像待验证；Nix/NixOS 兼容本轮不纳入，见 §9。
 
 ## 1. 本机验收
 
@@ -154,11 +154,13 @@ npm run build
 
 ## 9. 镜像、Nix、Nginx 与客户端
 
+> **范围调整（2026-11-19）**：Nix/NixOS 兼容本轮不纳入验收。`contrib/nix/api.nix` 已随入口切换改为安装 `dist`，但没有完成构建验证，也没有 `result/bin/opengym-api` 产物；Nix 包不作为本轮发布门禁。恢复验证时按 HANDOFF §3 执行，并在本文补记。
+
 | 项 | 状态 | 依据 / 卡点 |
 | --- | --- | --- |
 | Docker 镜像 `default` / `coach` / published | **待验证（环境阻断）** | Windows 无 `docker.exe`、无 Docker Desktop；Ubuntu 无 docker/podman/nerdctl，`sudo -n` 需要密码。无法构建，未产生镜像 ID。 |
 | `docker compose` / Nginx 链路 | **待验证** | 同上，无 daemon。Compose 已加 `stop_grace_period: 15s`，Kubernetes / Helm 已加 `terminationGracePeriodSeconds: 15`。 |
-| Nix `opengym-api` | **待验证（环境阻断）** | 无 `nix`、无 `/nix`，`apt-cache` 无 `nix-bin`，官方安装器需要 sudo 创建 `/nix`。`contrib/nix/api.nix` 已改为安装 `dist` + 薄入口，尚未构建。 |
+| Nix `opengym-api` | **本轮不纳入（暂缓）** | `contrib/nix/api.nix` 已更新为安装 `dist` + 薄入口，但未完成构建；`nix build` 停在拉取 nixpkgs 源码路径，没有进入编译。NixOS 用户升级前需单独补验。 |
 | RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
 | 恢复 CLI（Linux） | **通过** | `server-recovery` 在 Linux 全量中通过；镜像载荷演练中 `node recover.js --help` 可用；Nest 启动后 `src/lifecycle/admin-socket.service.ts` 提供同一命令。 |
 | MCP | **通过** | 138/138，端到端用例实际启动编译后的 Nest 入口。 |
@@ -193,12 +195,12 @@ Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md
 | A8 在线训练态 | **通过** | 70 秒 / 45 秒窗口、hidden 恢复、清理 |
 | A9 模块与审计 | **通过** | 单实例 Provider、401/403 审计差异、Owner 清空 |
 | A10 停机 | **通过** | Linux SIGTERM / SIGINT 与 Windows 显式 `app.close()`；Compose/K8s 宽限已配置 |
-| A11 构建入口 | **部分通过** | 干净构建、三种入口、MCP、镜像载荷演练通过；镜像与 Nix 待环境 |
+| A11 构建入口 | **部分通过** | 干净构建、三种入口、MCP、镜像载荷演练通过；镜像待环境；Nix 本轮不纳入 |
 
 ## 12. 需要的输入
 
 1. **Docker**：安装 Docker Desktop 并在 WSL Ubuntu 启用集成，或提供可用的 Linux daemon / sudo 授权。用于三个 API 镜像、Web 镜像、Compose/Nginx 与容器内 A7。
-2. **Nix**：sudo 授权安装 Nix，或提供已安装 Nix 的环境。用于 `nix build ./contrib/nix#opengym-api`。
+2. **Nix/NixOS**：本轮不纳入范围。`contrib/nix/api.nix` 已更新但未构建；恢复时需要的输入是已安装 Nix 的 Linux 环境和 `nix build ./contrib/nix#opengym-api`。
 3. **RN**：已用 `%LOCALAPPDATA%\OpenGymRnToolchain` 的 JDK 17 与 AVD `openGymRnQa` 完成配对、同步和离线补传。脚本 `handoff-tools/README.md` 记录了 `JAVA_HOME`、`ANDROID_AVD_HOME` 的启动方式。
 4. **远端 CI**：授权推送候选分支后，用 Node 24 runner 记录 API/MCP 作业。
 5. **正式切换**：目标实例当前镜像 digest、数据卷路径与维护窗口；本轮不涉及推送、发布和正式切换。

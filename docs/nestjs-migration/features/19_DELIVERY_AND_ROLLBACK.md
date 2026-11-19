@@ -79,11 +79,13 @@
 
 ### 2.5 Nix / 部署清单
 
-- [ ] 更新 `contrib/nix/api.nix`：
-  - 执行构建脚本（`npmBuildScript = "build"` 或等价）。
-  - 安装 `dist`、`server.js`、`recover.js`、`admin-socket.js`、`package.json` 和运行期依赖。
-  - 使用 `nodejs_24` 构建，并通过 `makeWrapper` 启动同一 Node 主版本，保留 `NODE_ENV=production`。
-  - 确认 ESM 包元数据（`type: module`）随 `package.json` 安装。
+> **范围调整（2026-11-19）**：Nix/NixOS 本轮不纳入。`api.nix` 已改为安装 `dist` + 薄入口，但未完成构建验证，且仍使用 `nodejs_22`；本节的 Nix 项不阻塞本轮交付，恢复时逐项补验。
+
+- [ ] ~~更新 `contrib/nix/api.nix`：~~
+  - ~~执行构建脚本（`npmBuildScript = "build"` 或等价）。~~
+  - ~~安装 `dist`、`server.js`、`recover.js`、`admin-socket.js`、`package.json` 和运行期依赖。~~
+  - ~~使用 `nodejs_24` 构建，并通过 `makeWrapper` 启动同一 Node 主版本，保留 `NODE_ENV=production`。~~
+  - ~~确认 ESM 包元数据（`type: module`）随 `package.json` 安装。~~
 - [ ] Compose：
   - `api` 服务增加 `stop_grace_period: 10s` 或更长。
   - 保持 `DATA_DIR=/data`、`./data:/data`、`./coach-auth:/coach-auth`、`TRUST_PROXY`、`PORT` 不变。

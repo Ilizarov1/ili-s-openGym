@@ -581,7 +581,8 @@ node .\dist\src\main.js
   - `CMD` 保持 `node server.js`；健康检查仍请求 `/api/health`；`EXPOSE` 和 `PORT` 不变。
 - [ ] 确认 `dist` 包含 `coach/`、`integrations/`、`fixture-cli.mjs` 等运行期资源；`default` 不包含 Agent SDK，`coach` 包含。
 - [ ] 构建并启动 `default`、`coach` 和无 target 的发布镜像。验证健康、配置、Nginx 和启动日志。在两个 target 里实际运行 `node recover.js <测试账号>`，核对 socket 和审计。
-- [ ] 更新 `contrib/nix/api.nix`。构建和 `makeWrapper` 均使用 `nodejs_24`，安装 `dist`、`server.js`、`recover.js`、`admin-socket.js`、`package.json` 和运行期依赖。保留 `NODE_ENV=production`，验证包装入口的 Node 主版本和启动结果。
+- [ ] ~~更新 `contrib/nix/api.nix`。构建和 `makeWrapper` 均使用 `nodejs_24`，安装 `dist`、`server.js`、`recover.js`、`admin-socket.js`、`package.json` 和运行期依赖。保留 `NODE_ENV=production`，验证包装入口的 Node 主版本和启动结果。~~
+  **本轮不纳入（2026-11-19）**：`api.nix` 已改为安装 `dist` + 薄入口，但仍使用 `nodejs_22`，且没有完成构建验证。恢复这项时先对齐 `nodejs_24`、补 `recover.js`/`admin-socket.js` 的安装，再执行 HANDOFF §3 的构建与启动检查。
 - [ ] 在 `.github/workflows/docker-publish.yml` 的发布路径中确认镜像 target 和构建上下文没有变化；发布 tag 仍对应同一版本。
 
 #### 4.4 CI
@@ -631,7 +632,7 @@ node .\dist\src\main.js
 
 - OpenAPI 与实际 Nest 路由一致，91/91 通过。
 - `default` 和 `coach` 镜像从预期入口启动，Nginx 链路和健康检查通过。
-- Linux / Node.js 24 的干净检出构建、API 回归和 MCP 集成通过。RN loopback 连接 Nest API 通过，API 镜像和 Nix 包均从 Node.js 24 启动。
+- Linux / Node.js 24 的干净检出构建、API 回归和 MCP 集成通过。RN loopback 连接 Nest API 通过，API 镜像从 Node.js 24 启动。Nix 包本轮不纳入（见 4.3）。
 - A1–A11 有发布验收记录。阶段 3 提供 A10 的 Linux 信号和 Windows 显式关闭证据，阶段 4 在候选镜像与目标部署链路复核停机，对启用的扩展执行实机验收。
 - 旧入口不再承载业务逻辑，回滚路径已演练。
 

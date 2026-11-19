@@ -1,5 +1,11 @@
 # openGym on NixOS — Flake & NixOS Module
 
+> **Status (2026-11-19): not verified for the NestJS build.** The API is now a compiled Nest
+> application started through a thin `api/server.js`; `contrib/nix/api.nix` was updated to install
+> the compiled `dist` tree, but the Nix package was not built or started in this migration round.
+> Before upgrading a NixOS deployment past 1.4.4, build and smoke-test the package yourself, or
+> stay on the previous release. The Docker and plain-Node deployments are unaffected.
+
 openGym can run natively on NixOS through its **Nix flake** and **NixOS module** — no Docker, no
 `docker compose`. The flake builds every openGym component (frontend with the exercise media, API,
 MCP server) as reproducible Nix packages; the module declares the whole stack as systemd services

@@ -94,8 +94,10 @@ CI=1 API_ENTRY=dist/src/main.js npm test | tee "$report/mcp.txt"
 
 ## 3. 候选镜像、Nix 和客户端
 
+> **范围调整（2026-11-19）**：Nix/NixOS 本轮不纳入。`contrib/nix/api.nix` 已随入口切换更新，但不做构建验收；恢复时按本节原来的 Nix 步骤补验。Docker 与客户端验收不受影响。
+
 - 在候选提交运行 `docker info`、`docker compose version` 确认工具链，构建 `default`、`coach` 和无 target 三个镜像，分别使用本地标签 `opengym-handoff-api:nest-default`、`opengym-handoff-api:nest-coach`、`opengym-handoff-api:nest-published`，另构建 `opengym-handoff-web:test`。用 `docker image inspect` 记录镜像 ID 和可用的仓库 digest。依照镜像 CI 验证健康、Nginx 代理、可选 Coach 依赖和两个 target 的 `node recover.js <测试账号>`。
-- 在候选提交运行 `nix --extra-experimental-features 'nix-command flakes' build ./contrib/nix#opengym-api`。用独立测试 `DATA_DIR` 启动 `result/bin/opengym-api`，核对 Node 主版本、恢复命令与健康检查。[Nix 构建说明](../NIX.md)
+- ~~在候选提交运行 `nix --extra-experimental-features 'nix-command flakes' build ./contrib/nix#opengym-api`。~~（本轮不纳入；恢复时用独立测试 `DATA_DIR` 启动 `result/bin/opengym-api`，核对 Node 主版本、恢复命令与健康检查。）[Nix 构建说明](../NIX.md)
 - 用 WSL 检出的 `git archive <候选 SHA>` 导出到 Windows 新目录，在其中构建 `api/dist`，再用以下脚本验证配对、同步和离线补传。脚本会启动 Windows 上的 Nest loopback，第 4 项另用同一个测试客户端连接 Linux Compose。脚本会安装 APK，指定专用模拟器。需要重置时只清理专用测试设备上的 openGym 数据。[Android 工具与验收](../RN_ANDROID_EXECUTION.md)
 
 ```powershell
