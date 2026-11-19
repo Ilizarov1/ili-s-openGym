@@ -4,7 +4,7 @@
 - 代码版本：阶段 0–3 基线 `94777b4ada915c622baf5813af673646c123ebb9`；阶段 4 候选见 §6。
 - 本机环境：Windows 11 + WSL 2 Ubuntu，Node v24.18.0，npm 11.16.0。
 - 测试数据：独立临时数据目录和合成账号。
-- 结论：阶段 0–3、Linux 双入口基线、默认入口切换和 RN 回归通过；Docker 镜像待验证；Nix/NixOS 兼容本轮不纳入，见 §9。
+- 结论：阶段 0–3、Linux 双入口基线、默认入口切换、Docker 镜像、Compose/Nginx、RN 回归和容器级回滚演练均通过；Nix/NixOS 本轮不纳入；A5 的 TLS / LAN / 真实 Passkey 分项待人工。
 
 ## 1. 本机验收
 
@@ -152,22 +152,51 @@ npm run build
 - `/api/config` 返回预期的公开字段。
 - `node recover.js --help` 打印原命令用法。
 
-## 9. 镜像、Nix、Nginx 与客户端
+## 9. 镜像、Compose/Nginx 与客户端
 
-> **范围调整（2026-11-19）**：Nix/NixOS 兼容本轮不纳入验收。`contrib/nix/api.nix` 已随入口切换改为安装 `dist`，但没有完成构建验证，也没有 `result/bin/opengym-api` 产物；Nix 包不作为本轮发布门禁。恢复验证时按 HANDOFF §3 执行，并在本文补记。
+> **范围调整（2026-11-19）**：Nix/NixOS 兼容本轮不纳入验收。`contrib/nix/api.nix` 已随入口切换改为安装 `dist`，但没有完成构建验证，也没有 `result/bin/opengym-api` 产物；Nix 包不作为本轮发布门禁。
 
 | 项 | 状态 | 依据 / 卡点 |
 | --- | --- | --- |
-| Docker 镜像 `default` / `coach` / published | **待验证（环境阻断）** | Windows 无 `docker.exe`、无 Docker Desktop；Ubuntu 无 docker/podman/nerdctl，`sudo -n` 需要密码。无法构建，未产生镜像 ID。 |
-| `docker compose` / Nginx 链路 | **待验证** | 同上，无 daemon。Compose 已加 `stop_grace_period: 15s`，Kubernetes / Helm 已加 `terminationGracePeriodSeconds: 15`。 |
-| Nix `opengym-api` | **本轮不纳入（暂缓）** | `contrib/nix/api.nix` 已更新为安装 `dist` + 薄入口，但未完成构建；`nix build` 停在拉取 nixpkgs 源码路径，没有进入编译。NixOS 用户升级前需单独补验。 |
+| Docker 镜像 `default` / `coach` / published | **通过** | 本地构建并启动；ID 与检查见 §9.1。未推送，因此没有仓库 digest。 |
+| `docker compose` / Nginx 链路 | **通过（本地 HTTP）** | `WEB_PORT=18080` 起 api + web，经 Nginx 访问 `/api/health`、`/api/config` 和 SPA 根路径均正常。TLS、子路径、LAN 和真实 Passkey 仍需人工分项。 |
+| Nix `opengym-api` | **本轮不纳入（暂缓）** | `contrib/nix/api.nix` 已更新为安装 `dist` + 薄入口，但未完成构建；NixOS 用户升级前需单独补验。 |
 | RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
-| 恢复 CLI（Linux） | **通过** | `server-recovery` 在 Linux 全量中通过；镜像载荷演练中 `node recover.js --help` 可用；Nest 启动后 `src/lifecycle/admin-socket.service.ts` 提供同一命令。 |
+| 恢复 CLI（Linux / 容器） | **通过** | `default` 与 `coach` 容器内 `node recover.js Owner` 均返回一次性恢复码；Linux 回归 `server-recovery` 通过。 |
 | MCP | **通过** | 138/138，端到端用例实际启动编译后的 Nest 入口。 |
 
-Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md](features/19_DELIVERY_AND_ROLLBACK.md) 待有 Docker 的环境执行。
+### 9.1 候选镜像
 
-## 10. A7 回滚演练（文件级，无容器）
+| 镜像 | 镜像 ID | 大小 | 验证 |
+| --- | --- | --- | --- |
+| `opengym-handoff-api:nest-default` | `sha256:2eb529cbc7e68dd34c091973d0949b48c0c7cb285bb5addad9cff0b7593e1185` | 290 MB | `/api/health`、`/api/config`、恢复 CLI；无 Agent SDK / Codex / bwrap；`/app/coach/adapters/index.js` 存在 |
+| `opengym-handoff-api:nest-coach` | `sha256:fe0fc149d94bb12d08dfa201b8eb30ac637dfa32e1cbcfc40a4d6f8a633807c5` | 1.81 GB | Claude Agent SDK `0.3.302` 可加载；`codex-cli 0.160.0`；`bubblewrap 0.12.0`；`/coach-auth` 为 `coach 700`；恢复 CLI 通过 |
+| `opengym-handoff-api:nest-published` | `sha256:782627d876322c58af34f1a0db6c55033846bb60a53f42ab7fe9751527eab789` | 290 MB | 无 Agent SDK、无 Codex、无 bwrap |
+| `opengym-handoff-web:test` | `sha256:64c9599ae3274ba889bd3d0ce6c762da0f8e7a6345422ec467257216981adb2d` | 560 MB | SPA 根路径、`/api` 代理、`/api/config` |
+| `opengym-handoff-api:legacy`（回滚基线） | `sha256:329b8bb5d918fdd1451efbb9ad9794c7520ece3233207c188970be06ceea4224` | 265 MB | 旧版 `94777b4a` 的 Dockerfile；A7 旧版阶段使用 |
+
+构建命令（中国镜像源）：
+
+```bash
+cd ~/open-gym-stage4/api
+docker build --build-arg APK_MIRROR=https://mirrors.aliyun.com/alpine \
+  --build-arg NPM_REGISTRY=https://registry.npmmirror.com \
+  --target default -t opengym-handoff-api:nest-default .
+docker build ... --target coach -t opengym-handoff-api:nest-coach .
+docker build ... -t opengym-handoff-api:nest-published .
+cd ~/open-gym-stage4
+docker build -f web/Dockerfile -t opengym-handoff-web:test .
+cd ~/open-gym-stage4-legacy/api
+docker build -t opengym-handoff-api:legacy .
+```
+
+基础镜像 `node:24-alpine`、`node:22.23.4-alpine`、`nginxinc/nginx-unprivileged:1.30.6-alpine` 先从 `docker.m.daocloud.io` 拉取并本地打回原名；Docker Hub 直连在本机超时。`NPM_REGISTRY` / `APK_MIRROR` 是 Dockerfile 的可选构建参数，默认仍用上游源。
+
+Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md](features/19_DELIVERY_AND_ROLLBACK.md) 在有浏览器和 TLS 环境时补验。
+
+## 10. A7 回滚演练（文件级 + 容器级）
+
+### 10.1 文件级（无容器）
 
 同一数据目录由旧版和候选依次接管，每次只运行一个写入者。证据目录 `~/open-gym-stage4-a7`，脚本 `~/a7-rehearsal.mjs`。
 
@@ -179,29 +208,43 @@ Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md
 
 - 每次 GET `/api/media/<hash>` 返回的字节 SHA-256 与文件名一致：`4fa89330625dff3a6bb86ff9bced6f1f15a92372265307d2d62c1f09814c49a9`、`6b7fa434f92a8b80aab02d9bf1a12e49ffcae424e4013a1c4f68b67e3d2bbcd0`。
 - 每次切换前保留 `backup-after-legacy`、`backup-after-nest` 副本。
-- 未覆盖：容器停机、镜像 digest、Nginx 前置。Docker 可用后按 HANDOFF §4 重跑并补记镜像 ID。
+
+### 10.2 容器级（Compose + Nginx）
+
+演练目录 `~/a7-compose3`，项目 `opengym-a7c`，前端固定 `opengym-handoff-web:test`，API 通过 `OPENGYM_HANDOFF_API_IMAGE` 切换。全部请求走 `http://127.0.0.1:18083`，即 Nginx 的 `/api` 代理；一个测试账号、旧 Cookie 贯穿三次启动。
+
+| 阶段 | API 镜像 | 写入前回读 | 新增 | rev | `compose stop` 耗时 |
+| --- | --- | --- | --- | ---: | ---: |
+| 1 旧版 | `opengym-handoff-api:legacy`（`329b8bb5…`） | 新注册账号，无档案 | `w_legacy_a` + 媒体 `6b7fa434…` | 1 | 15.51 s（达到 15 s 宽限） |
+| 2 Nest | `opengym-handoff-api:nest-default`（`2eb529cb…`） | 读到 `w_legacy_a` 与媒体字节 | `w_nest_b` + 媒体 `4fa89330…` | 2 | 0.53 s |
+| 3 旧版 | `opengym-handoff-api:legacy` | 读到 `w_legacy_a`、`w_nest_b` 与媒体字节 | `w_legacy_c` | 3 | 15.51 s |
+
+- 媒体在卷内的 SHA-256 与文件名一致；`GET /api/media/4fa89330…` 在三阶段均返回同一字节。
+- `~/a7-compose3/backups` 保留 `after-legacy.tgz`、`after-nest.tgz`、`after-final.tgz`，以及各阶段的 `disk-*.json` 和 `media-*.txt`。
+- 旧镜像不响应优雅停机，必须等满 `stop -t 15`；Nest 入口 0.53 s 内退出。这是 A10 的容器侧证据。
+- 未覆盖：真实 TLS、自定义子路径、LAN 客户端和浏览器 Passkey（见 §11 A5）。
 
 ## 11. 发布验收用例状态
 
 | 用例 | 状态 | 说明 |
 | --- | --- | --- |
 | A1 登录与设备 | **通过（自动化）** | 旧 Cookie / Bearer / Passkey / 设备链接 / 配对在 Linux 与 Windows 回归中通过 |
-| A2 冲突与离线 | **通过（自动化部分）** | `409`、`baseWid`、离线补传的服务端语义通过；RN 设备部分见 §9 |
+| A2 冲突与离线 | **通过（自动化 + RN）** | `409`、`baseWid`、离线补传语义通过；RN 模拟器完成离线练习、重连和去重 |
 | A3 数据与缓存 | **通过** | 并发条件写入、同大小快速写入、损坏档案 `503`、`.bak` 回退 |
-| A4 媒体 | **通过（自动化部分）** | 上传/下载/去重/跨账号/断流/清理；真实 RN/Web 媒体待设备 |
-| A5 部署链路 | **待验证** | 需要 Docker + Nginx / TLS / LAN 环境 |
-| A6 扩展 | **通过（自动化部分）** | Push、提醒、手表、集成、Coach、MCP、Linux 恢复 CLI；真实 Push/Webhook/Zepp 待现场 |
-| A7 重启与回滚 | **部分通过** | 文件级演练通过；容器镜像切换待 Docker |
+| A4 媒体 | **通过（自动化部分）** | 上传/下载/去重/跨账号/断流/清理；容器 A7 跨镜像读取媒体通过；真实 RN 照片上传待补 |
+| A5 部署链路 | **部分通过** | 本地 Compose + Nginx 的 `/api` 代理、健康检查和 SPA 通过；TLS、子路径、LAN、真实 Passkey 待人工 |
+| A6 扩展 | **通过（自动化部分）** | Push、提醒、手表、集成、Coach、MCP、Linux/容器恢复 CLI；真实 Push/Webhook/Zepp 待现场 |
+| A7 重启与回滚 | **通过** | 文件级与容器级两次演练；旧版读回 Nest 训练与媒体并继续写入 |
 | A8 在线训练态 | **通过** | 70 秒 / 45 秒窗口、hidden 恢复、清理 |
 | A9 模块与审计 | **通过** | 单实例 Provider、401/403 审计差异、Owner 清空 |
-| A10 停机 | **通过** | Linux SIGTERM / SIGINT 与 Windows 显式 `app.close()`；Compose/K8s 宽限已配置 |
-| A11 构建入口 | **部分通过** | 干净构建、三种入口、MCP、镜像载荷演练通过；镜像待环境；Nix 本轮不纳入 |
+| A10 停机 | **通过** | Linux SIGTERM / SIGINT、Windows 显式 `app.close()`；容器停止 Nest 0.53 s，旧版 15.51 s |
+| A11 构建入口 | **通过（Nix 除外）** | 干净构建、三种入口、MCP、五个镜像构建并启动；Nix 本轮不纳入 |
 
 ## 12. 需要的输入
 
-1. **Docker**：安装 Docker Desktop 并在 WSL Ubuntu 启用集成，或提供可用的 Linux daemon / sudo 授权。用于三个 API 镜像、Web 镜像、Compose/Nginx 与容器内 A7。
-2. **Nix/NixOS**：本轮不纳入范围。`contrib/nix/api.nix` 已更新但未构建；恢复时需要的输入是已安装 Nix 的 Linux 环境和 `nix build ./contrib/nix#opengym-api`。
-3. **RN**：已用 `%LOCALAPPDATA%\OpenGymRnToolchain` 的 JDK 17 与 AVD `openGymRnQa` 完成配对、同步和离线补传。脚本 `handoff-tools/README.md` 记录了 `JAVA_HOME`、`ANDROID_AVD_HOME` 的启动方式。
+1. **Nix/NixOS**：本轮不纳入范围。`contrib/nix/api.nix` 已更新但未构建；恢复时需要的输入是已安装 Nix 的 Linux 环境和 `nix build ./contrib/nix#opengym-api`。
+2. **RN 媒体补验**：如需覆盖真实照片上传，在专用模拟器上执行进度照片流程。
+3. **A5 人工分项**：有效 TLS 证书 / 域名、子路径代理、LAN 客户端和真实浏览器 Passkey。
 4. **远端 CI**：授权推送候选分支后，用 Node 24 runner 记录 API/MCP 作业。
 5. **正式切换**：目标实例当前镜像 digest、数据卷路径与维护窗口；本轮不涉及推送、发布和正式切换。
 

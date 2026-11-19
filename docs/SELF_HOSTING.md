@@ -69,7 +69,8 @@ you're poking at the API directly:
 
 - `POST /api/pair/create` (needs a session plus the owner proof: a passkey, or the current
   password where that counts) and `POST /api/pair/redeem` (doesn't) implement
-  this — see `api/server.js`. The returned token is the exact same signed value a cookie
+  this — see the pairing controllers in `api/src/accounts/` and `api/src/auth/`. The returned
+  token is the exact same signed value a cookie
   carries, so "sign out everywhere" invalidates it too — and a phone has no passkey to sign
   back in with, so every paired phone has to be **paired again** afterwards. The phone says
   so ("Your server no longer accepts this phone") and keeps its data until it is.

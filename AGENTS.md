@@ -18,7 +18,7 @@ mobile-rn/scripts/   Android 模拟器回归、五 Tab 冒烟、视觉截图、f
 frontend/src/        Web 与 Capacitor 共用的页面、状态、训练和同步逻辑
 frontend/android/    上游 Capacitor Android 工程与原生插件
 frontend/ios/        上游 iOS、Apple Watch 和小组件
-api/                 Node HTTP 路由、认证、设备配对、JSON 存储和同步
+api/                 NestJS 路由、认证、设备配对、JSON 存储和同步；server.js 加载 dist
 api/coach/           AI Coach 服务与共用逻辑
 api/integrations/    外部集成和投递队列
 web/                 Web 镜像构建和 Nginx 配置

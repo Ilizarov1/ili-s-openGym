@@ -22,7 +22,7 @@ flowchart LR
 
   subgraph Server["Your server (docker compose)"]
     N["web: nginx<br/>app files, 180 px media"]
-    API["api: node:http<br/>server.js"]
+    API["api: NestJS<br/>dist + thin server.js"]
     D[("./data<br/>db.json, state-&lt;user&gt;.json,<br/>uploads/, audit.log")]
   end
 
@@ -53,7 +53,7 @@ in a file in the app's private storage (MOBILE.md explains the modes).
 | `frontend/src/locales/` | One pack per language. The key is the English text, English itself has no pack |
 | `frontend/src/{instr,exercise-names,exercise-desc}/`, `lib/exercises-data.js` | Generated from `catalogue/` by `scripts/catalogue/build.mjs`. Don't edit by hand |
 | `frontend/android/`, `frontend/ios/` | The Capacitor shells and the native plugins (rest alarm, Health Connect, Apple Health, watch, widgets, animation packs) |
-| `api/` | `server.js` (routes, sessions, storage), plus small modules split out so they can be tested alone: `media.js`, `sync-stamps.js`, `queue.js`, `nudge.js`, `rate-limit.js`, `durable.js`, `password.js`, `passkeys-store.js`, `device-link.js` |
+| `api/` | The API. `server.js` is a thin loader for the compiled Nest application in `src/` + `dist/`; the domain modules live under `src/{accounts,auth,audit,presence,sync,media,notifications,watch,integrations,coach,system,lifecycle}/`, with small shared modules kept at the root: `media.js`, `sync-stamps.js`, `queue.js`, `nudge.js`, `rate-limit.js`, `durable.js`, `password.js`, `passkeys-store.js`, `device-link.js` |
 | `api/coach/` | The optional AI Coach. `core/` has no server state and is shared with the phone apps |
 | `api/integrations/` | Settings → Integrations on the server: providers (the webhook first), sealed per-profile connections in `DATA_DIR/integrations/`, a durable outbox with idempotency, backoff and rate limits ([INTEGRATIONS.md](INTEGRATIONS.md)) |
 | `web/` | The nginx image: builds the frontend, adds `catalogue/media`, proxies `/api` |
@@ -137,16 +137,29 @@ copies `api/coach/core/` into its build stage.
 
 ## Server
 
-`api/server.js` is a single `node:http` server. Routes are keys of one object
-(`routes['GET /api/health']`), matched on method and path. Storage is two kinds of JSON file under
-`DATA_DIR`: `db.json` for users, passkeys, invites and push subscriptions,
-and one `state-<uid>.json` per profile. Every write goes to a temp file first and is renamed over
-the old one (`durable.js`), so a crash never leaves half a file.
+The API is a NestJS application. `api/server.js` only loads the compiled entry at
+`api/dist/src/main.js`, so `npm start`, `node server.js` and `node dist/src/main.js` start the same
+thing. `npm run build` compiles `api/src/**/*.ts` with `tsc` and copies the ESM modules the
+application still reuses (`durable.js`, `media.js`, `coach/`, `integrations/`) into `dist/`.
+
+Controllers own HTTP paths and methods; services own the business steps and the authenticated
+data access. One `AccessGuard` applies CSRF, the entry throttle and the route's session / admin /
+owner level before a handler runs. Storage is two kinds of JSON file under `DATA_DIR`: `db.json`
+for users, passkeys, invites and push subscriptions, and one `state-<uid>.json` per profile. Every
+write goes to a temp file first and is renamed over the old one (`durable.js`), so a crash never
+leaves half a file. The account store, state cache, audit sequence and presence map are single
+in-process providers shared through module exports.
 
 Sign-in is a passkey (`@simplewebauthn/server`), optionally a password, plus a signed session
 cookie. Phones get the same signed session as a bearer token, made by pairing with a one-time code
-(`device-link.js`). Every route is listed in `api/openapi.yaml`, and `openapi-routes.test.js` fails
-when the two disagree.
+(`device-link.js`). Every route is listed in `api/openapi.yaml`; `test/nest/routes.test.js` reflects
+the compiled controllers and fails when the two disagree.
+
+Background work starts only after `app.listen` succeeds, through the lifecycle coordinator:
+reminders, the integrations outbox, Coach cadence/warmup, media cleanup, presence, audit
+maintenance and the local recovery socket. Shutdown sets a closing gate, stops timers and queues,
+drains admitted writes and pushes for up to 8 seconds, then closes the remaining sockets. The
+container targets allow 15 seconds (`stop_grace_period` / `terminationGracePeriodSeconds`).
 
 ## Exercise media
 

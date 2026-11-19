@@ -16,9 +16,15 @@
 # production dependencies.
 
 FROM node:24-alpine AS build
+# Optional build-time mirrors for slow networks: for example
+#   --build-arg APK_MIRROR=https://mirrors.aliyun.com/alpine
+#   --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+# Empty values keep the upstream defaults, so a normal build is unchanged.
+ARG NPM_REGISTRY=
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --omit=optional --no-audit --no-fund
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ && npm ci --omit=optional --no-audit --no-fund
 COPY . .
 RUN npm run build
 
@@ -28,6 +34,8 @@ FROM node:24-alpine AS base
 ARG VERSION=dev
 ARG VCS_REF=dev
 ARG BUILD_DATE=unknown
+ARG APK_MIRROR=
+ARG NPM_REGISTRY=
 
 LABEL maintainer="Duarte Santos https://github.com/DuarteSantos8" \
     org.opencontainers.image.title="opengym-api" \
@@ -45,7 +53,10 @@ WORKDIR /app
 # The base image is rebuilt on node's schedule, not alpine's: between two node releases the
 # alpine packages it ships (openssl above all) fall behind their fixes. Taking the upgrades at
 # build time keeps the published image at alpine's current state without waiting for node.
-RUN apk upgrade --no-cache
+RUN if [ -n "$APK_MIRROR" ]; then \
+      sed -i "s#https://dl-cdn.alpinelinux.org/alpine#$APK_MIRROR#g" /etc/apk/repositories; \
+    fi \
+ && apk upgrade --no-cache
 
 # The unprivileged user Coach jobs drop to. Its uid cannot read /data, which is the control that
 # keeps a provider runtime away from users, passkeys and the session secret.
@@ -60,7 +71,8 @@ COPY package.json package-lock.json* ./
 # `npm ci` rather than `npm install`: the lockfile is the point of committing one, and the SDK's
 # per-platform runtime is resolved from it (musl on this base) rather than from whatever the
 # build host happened to be.
-RUN npm ci --omit=dev --omit=optional && npm cache clean --force
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ && npm ci --omit=dev --omit=optional && npm cache clean --force
 
 # Only the build output and the two entry points the image is allowed to run. Every runtime
 # module the Nest application imports is inside dist/; the build script checks that the tree is
@@ -71,6 +83,11 @@ COPY --from=build /app/server.js ./server.js
 # and the socket client it imports keep their root-level paths.
 COPY --from=build /app/dist/recover.js ./recover.js
 COPY --from=build /app/dist/admin-socket.js ./admin-socket.js
+# The pre-migration image exposed coach/ and integrations/ at the root. Keep
+# that layout: the image smoke test and operator scripts look there, even
+# though the compiled app imports its own copy under dist/.
+COPY --from=build /app/dist/coach ./coach
+COPY --from=build /app/dist/integrations ./integrations
 ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE 3000
@@ -90,12 +107,15 @@ HEALTHCHECK --interval=30s \
 # @anthropic-ai/claude-agent-sdk together with the one platform runtime this base needs
 # (linux-*-musl), both pinned by the lockfile.
 FROM base AS coach
-RUN npm ci --omit=dev && npm cache clean --force
+ARG NPM_REGISTRY=
+RUN if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
+ && npm ci --omit=dev && npm cache clean --force
 
 # Codex ships as a CLI rather than a library, so it is installed rather than resolved, and
 # bubblewrap is its sandbox — a Codex requirement, which is why neither appears in the default
 # target or anywhere in this tree until now.
 RUN apk add --no-cache bubblewrap \
+ && if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY"; fi \
  && npm install -g @openai/codex@0.160.0 \
  && npm cache clean --force
 
