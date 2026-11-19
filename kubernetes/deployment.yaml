@@ -16,6 +16,8 @@ spec:
       labels:
         app: opengym
     spec:
+      # The API drains admitted work for up to 8 s before closing sockets.
+      terminationGracePeriodSeconds: 15
       containers:
         - name: api
           # Pin both images to one release and move them together: a tag names what you run and

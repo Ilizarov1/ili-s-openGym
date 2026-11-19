@@ -14,6 +14,9 @@ services:
       context: ./api
       target: ${API_TARGET:-default}
     restart: unless-stopped
+    # The API drains admitted work for up to 8 s (SHUTDOWN_BUDGET_MS) before closing sockets.
+    # Compose's default 10 s is too tight once a slow write or push is in flight.
+    stop_grace_period: 15s
     env_file: .env
     environment:
       # The port the API listens on. web proxies to this same value, so the two

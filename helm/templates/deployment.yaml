@@ -32,6 +32,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "helm.serviceAccountName" . }}
+      # The API drains admitted work for up to 8 s before closing sockets.
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 15 }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
