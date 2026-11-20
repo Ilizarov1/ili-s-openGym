@@ -134,36 +134,70 @@ function EntryRows({ workout, profile, unit, onExercise }: {
   if (entries.length === 0) {
     return <Text tone="secondary" variant="subhead">这次训练没有记录动作。</Text>;
   }
-  const units = exerciseUnits(entries.map(entry => ({ sg: entry.sg ?? entry.target?.sg })));
+  const sections = sessionSections(entries);
+  const multiple = sections.length > 1;
+  const sectionTitle = (rid: string | null) => {
+    if (rid == null) return '其他动作';
+    return (profile.routines ?? []).find(routine => routine?.id === rid)?.name ?? '已移除的计划';
+  };
   return (
     <>
-      {units.map(indices => {
-        const name = indices.length > 1 ? supersetMeta(entries, indices, { onTarget: true }).name : '';
-        return (
-          <View key={indices[0]} style={{ gap: theme.space.xxs }}>
-            {indices.length > 1 ? (
-              <Text tone="secondary" variant="caption">{name ? `超级组 · ${name}` : '超级组'}</Text>
-            ) : null}
-            {indices.map(index => {
-              const entry = entries[index];
-              const title = exerciseName(profile, entry.id);
-              const summary = setsSummary((entry.sets ?? []).filter(set => set?.done), unit);
-              return (
-                <ListRow
-                  key={index}
-                  accessibilityLabel={`${title}，查看动作历史`}
-                  chevron
-                  onPress={() => onExercise(entry.id)}
-                  subtitle={summary || '没有完成的组'}
-                  title={title}
-                />
-              );
-            })}
-          </View>
-        );
-      })}
+      {sections.map(section => (
+        <View key={section.rid ?? 'none'} style={{ gap: theme.space.xxs }}>
+          {multiple ? <Text tone="secondary" variant="caption">{sectionTitle(section.rid)}</Text> : null}
+          {section.units.map(indices => {
+            const name = indices.length > 1 ? supersetMeta(entries, indices, { onTarget: true }).name : '';
+            return (
+              <View key={indices[0]} style={{ gap: theme.space.xxs }}>
+                {indices.length > 1 ? (
+                  <Text tone="secondary" variant="caption">{name ? `超级组 · ${name}` : '超级组'}</Text>
+                ) : null}
+                {indices.map(index => {
+                  const entry = entries[index];
+                  const title = exerciseName(profile, entry.id);
+                  const summary = setsSummary((entry.sets ?? []).filter(set => set?.done), unit);
+                  return (
+                    <ListRow
+                      key={index}
+                      accessibilityLabel={`${title}，查看动作历史`}
+                      chevron
+                      onPress={() => onExercise(entry.id)}
+                      subtitle={summary || '没有完成的组'}
+                      title={title}
+                    />
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+      ))}
     </>
   );
+}
+
+/**
+ * Entries partitioned by the routine slot they came from (`rid`), in first-appearance
+ * order with the slot-less entries last. A superset never spans two sections, exactly
+ * like the Web's `sessionSections`, so a combined session reads back under each plan.
+ */
+function sessionSections(entries: Workout['entries']) {
+  const list = entries.filter(Boolean);
+  const sections: { rid: string | null; items: number[] }[] = [];
+  list.forEach((entry, index) => {
+    const rid = entry?.rid || null;
+    let section = sections.find(item => item.rid === rid);
+    if (!section) {
+      section = { rid, items: [] };
+      sections.push(section);
+    }
+    section.items.push(index);
+  });
+  return sections.map(({ rid, items }) => ({
+    rid,
+    units: exerciseUnits(items.map(index => ({ sg: list[index]?.sg ?? list[index]?.target?.sg })))
+      .map(unit => unit.map(offset => items[offset])),
+  }));
 }
 
 export function StatsScreen({ profile, history, onEdit, onDelete, onBackfill, onOpenBody, onOpenProgress }: StatsScreenProps) {

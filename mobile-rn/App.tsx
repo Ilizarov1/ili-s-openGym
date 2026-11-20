@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Linking, Modal, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { randomUUID } from 'expo-crypto';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { TabBar, Text, ThemeProvider, useTheme, useThemeController, type TabItem } from './src/design';
 import { DesignGallery } from './src/design/gallery/DesignGallery';
 import {
-  BodyDataScreen, ExerciseLibraryScreen, HistoryEditorScreen, HistoryImportScreen, HomeScreen,
+  BodyDataScreen, DayOverrideSheet, ExerciseLibraryScreen, HistoryEditorScreen, HistoryImportScreen, HomeScreen,
   PlanEditorScreen, PlanScreen, PlanShareScreen, ProgressScreen, QrPairScreen, ReminderSettingsScreen,
-  ScheduleEditorScreen, SettingsScreen, StartSheet, StatsScreen, WorkoutScreen,
+  ScheduleEditorScreen, SettingsScreen, StartScreen, StatsScreen, WorkoutScreen, WorkoutSummarySheet,
 } from './src/screens';
+import { RestTimer } from './src/restTimer';
+import { workoutSummary, type WorkoutSummary } from './src/progress';
 import { useGym } from './src/useGym';
 import { readLocal } from './src/storage';
-import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines, type ProfileChange } from './src/profileChanges';
+import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines } from './src/profileChanges';
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
 import {
@@ -23,7 +26,7 @@ import {
 } from './src/reminders';
 import {
   DEFAULT_REST_PAUSE_SEC,
-  addExercise, effortOf, exerciseMode, finishWorkout, localDate, mergeHistoryEntries, startWorkout, unitOf, workoutKey,
+  addExercise, effortOf, exerciseMode, finishWorkout, inProfileUnit, localDate, mergeHistoryEntries, startSession, startWorkout, unitOf, workoutKey,
   type CustomExercise, type Draft, type Profile, type Routine, type RoutineExercise, type Unit, type Workout,
 } from './src/training';
 
@@ -36,7 +39,7 @@ const tabs: [TabItem, TabItem, TabItem, TabItem] = [
 
 type Tab = 'home' | 'plan' | 'stats' | 'library';
 type Panel =
-  | { kind: 'plan'; routine?: Routine }
+  | { kind: 'plan'; routineId?: string }
   | { kind: 'schedule' }
   | { kind: 'history'; workout: Workout; unit: Unit }
   | { kind: 'settings' }
@@ -47,6 +50,8 @@ type Panel =
   | { kind: 'qrPair' }
   | { kind: 'planShare'; mode?: 'export' | 'import' }
   | { kind: 'reminder' }
+  | { kind: 'start' }
+  | { kind: 'dayOverride' }
   | { kind: 'design' };
 
 function showOperationError(error: unknown) {
@@ -60,10 +65,16 @@ function AppScreen() {
   const { setMode, setAccent } = useThemeController();
   const [tab, setTab] = useState<Tab>('home');
   const [panel, setPanel] = useState<Panel | null>(null);
-  const [startOpen, setStartOpen] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
   const [e2e, setE2e] = useState(false);
   const [startRequest, setStartRequest] = useState<{ routine?: string } | null>(null);
+  // The live workout is its own screen, shown only while `workoutOpen`. A draft can
+  // exist with the tabs on screen: that is a collapsed workout and its rest dock.
+  const [workoutOpen, setWorkoutOpen] = useState(true);
+  const [summary, setSummary] = useState<{ workout: Workout; summary: WorkoutSummary; unit: Unit } | null>(null);
+  const savingRef = useRef(false);
+  const savedDraftId = useRef<string | null>(null);
+  const planClose = useRef<(() => void) | null>(null);
   const connection = workspace?.connection;
   const currentDraft = workspace?.data.draft;
   const restAlertError = useRestNotification(
@@ -87,6 +98,7 @@ function AppScreen() {
   });
   useTrainingReminderNavigation(() => {
     setPanel(null);
+    setWorkoutOpen(false);
     setTab('plan');
   });
 
@@ -98,9 +110,30 @@ function AppScreen() {
     setPanel(null);
   }, [panel?.kind, setMode, setAccent]);
 
+  // The plan editor owns unsaved input, so every request to leave the plan panel
+  // (hardware back, Modal request-close, its own back button) goes through it.
+  const requestClosePanel = useCallback(() => {
+    if (panel?.kind === 'plan' && planClose.current) {
+      planClose.current();
+      return;
+    }
+    closePanel();
+  }, [closePanel, panel?.kind]);
+
+  const registerPlanClose = useCallback((close: () => void) => {
+    planClose.current = close;
+    return () => {
+      if (planClose.current === close) planClose.current = null;
+    };
+  }, []);
+
+  const onMissingPlan = useCallback(() => {
+    setPanel(null);
+    Alert.alert('计划已不存在', '这套计划已在本机或同步中删除，无法继续编辑。');
+  }, []);
+
   useEffect(() => {
     if (connection) setPanel(null);
-    setStartOpen(false);
   }, [connection]);
 
   useEffect(() => {
@@ -122,10 +155,11 @@ function AppScreen() {
       if (route === 'history-import') { setPanel({ kind: 'historyImport' }); return; }
       if (route === 'plan-share') { setPanel({ kind: 'planShare', mode: params.mode === 'import' ? 'import' : 'export' }); return; }
       if (route === 'pair') { setPanel({ kind: 'qrPair' }); return; }
-      if (route === 'start-sheet') { setStartOpen(true); return; }
+      if (route === 'start-sheet') { setPanel({ kind: 'start' }); return; }
       if (route === 'start' || route === 'workout') { setStartRequest({ routine: params.routine }); return; }
       if (route === 'home' || route === 'plan' || route === 'stats' || route === 'library') {
         setPanel(null);
+        setWorkoutOpen(false);
         setTab(route);
       }
     };
@@ -136,19 +170,25 @@ function AppScreen() {
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (panel) { closePanel(); return true; }
-      if (currentDraft) {
-        Alert.alert('训练进行中', '完成或放弃训练后再离开。', [
-          { text: '继续训练', style: 'cancel' },
-          { text: '放弃训练', style: 'destructive', onPress: () => change(data => ({ ...data, draft: null })) },
-        ]);
+      if (panel) { requestClosePanel(); return true; }
+      // A live workout collapses to the tabs; a backfill keeps its own way out.
+      if (currentDraft && workoutOpen) {
+        if (currentDraft.backfillDay != null) {
+          Alert.alert('补录进行中', '保存或放弃这次补录后再离开。', [
+            { text: '继续补录', style: 'cancel' },
+            { text: '放弃补录', style: 'destructive', onPress: () => change(data => ({ ...data, draft: null })) },
+          ]);
+        } else {
+          setWorkoutOpen(false);
+          setTab('home');
+        }
         return true;
       }
       if (tab !== 'home') { setTab('home'); return true; }
       return false;
     });
     return () => subscription.remove();
-  }, [change, closePanel, currentDraft, panel, tab]);
+  }, [change, currentDraft, panel, requestClosePanel, tab, workoutOpen]);
 
   // A deep link can open a tab/panel or ask for a workout. This must stay
   // above the workspace loading return so the hook order never changes.
@@ -156,13 +196,18 @@ function AppScreen() {
     if (!startRequest || !workspace) return;
     const request = startRequest;
     setStartRequest(null);
-    if (workspace.data.draft) return;
+    // An unfinished draft always wins over a new start request: the entry point
+    // resumes what is already running instead of overwriting it.
+    if (workspace.data.draft) {
+      setWorkoutOpen(true);
+      return;
+    }
     const { profile, queue } = workspace.data;
     const routine = request.routine ? (profile.routines ?? []).find(item => item.id === request.routine) : undefined;
     const next = routine
-      ? startWorkout(routine, profile, queue)
-      : startWorkout({ id: '', name: '自由训练', ex: [] }, profile, queue);
-    change(data => ({ ...data, draft: next }));
+      ? startSession([routine], profile, queue)
+      : startSession([], profile, queue, '自由训练');
+    if (change(data => ({ ...data, draft: next }))) setWorkoutOpen(true);
   }, [change, startRequest, workspace]);
 
   if (!workspace) {
@@ -174,7 +219,11 @@ function AppScreen() {
   }
 
   const { profile, draft, queue, workoutDeletes } = workspace.data;
-  const openWorkout = (next: Draft) => gym.change(data => ({ ...data, draft: next }));
+  const openWorkout = (next: Draft) => {
+    const saved = gym.change(data => ({ ...data, draft: next }));
+    if (saved) setWorkoutOpen(true);
+    return saved;
+  };
 
   const performDataAction = (work: () => Promise<void>) => {
     setDataBusy(true);
@@ -236,32 +285,95 @@ function AppScreen() {
   };
 
   const saveWorkout = () => {
-    if (!draft) return;
-    const record = finishWorkout(draft);
-    if (!record) return;
-    const saved = gym.change(data => connection ? {
-      ...data, draft: null, queue: [...data.queue, record],
-    } : {
-      ...data, draft: null, profile: advanceRotation({ ...data.profile, workouts: [...(data.profile.workouts ?? []), record.workout] }, Date.now()),
-    });
-    if (saved) setTab('stats');
+    if (!draft || savingRef.current || savedDraftId.current === draft.id) return;
+    savingRef.current = true;
+    try {
+      const record = finishWorkout(draft);
+      if (!record) return;
+      // PRs are judged against the history saved before this session; the record's
+      // own id is not in it yet. Weight PRs are persisted on the workout, the 1RM
+      // list is summary-only, exactly like the Web client.
+      const unit = unitOf(profile);
+      const prior = history.map(item => inProfileUnit({
+        workout: { ...item.workout, id: item.workout.id ?? workoutKey(item.workout) },
+        unit: item.unit,
+      }, unit));
+      const result = workoutSummary(profile, record.workout, prior);
+      record.workout.prs = result.weightPrs;
+      const saved = gym.change(data => {
+        // A second confirm from the same render, or a stale callback, must not
+        // append the same id twice or clear a newer draft.
+        if (data.draft?.id !== draft.id) return data;
+        return connection ? {
+          ...data, draft: null, queue: [...data.queue, record],
+        } : {
+          ...data, draft: null, profile: advanceRotation({ ...data.profile, workouts: [...(data.profile.workouts ?? []), record.workout] }, Date.now()),
+        };
+      });
+      if (!saved) {
+        Alert.alert('保存失败', '本机写入失败，训练和休息状态仍保留，请检查可用存储空间后重试。');
+        return;
+      }
+      savedDraftId.current = draft.id;
+      setWorkoutOpen(false);
+      if (draft.backfillDay != null) {
+        // The backfill save flow stays as it was: no live summary.
+        setTab('stats');
+        return;
+      }
+      setSummary({ workout: record.workout, summary: result, unit: record.unit });
+    } finally {
+      savingRef.current = false;
+    }
+  };
+
+  const discardWorkout = () => {
+    Alert.alert('放弃这次训练？', '本次已输入的组数会清除。', [
+      { text: '继续训练', style: 'cancel' },
+      { text: '放弃', style: 'destructive', onPress: () => {
+        if (gym.change(data => ({ ...data, draft: null }))) {
+          setWorkoutOpen(false);
+          setTab('home');
+        }
+      } },
+    ]);
   };
 
   const startRoutine = (routine: Routine) => {
-    setStartOpen(false);
+    if (draft) { setPanel(null); setWorkoutOpen(true); return; }
+    setPanel(null);
     openWorkout(startWorkout(routine, profile, queue));
   };
 
+  const startToday = () => {
+    if (draft) { setPanel(null); setWorkoutOpen(true); return; }
+    if (!recommended.some(routine => (routine.ex ?? []).some(Boolean))) return;
+    setPanel(null);
+    openWorkout(startSession(recommended, profile, queue));
+  };
+
   const startFree = (backfill = false) => {
-    const base = startWorkout({ id: '', name: backfill ? '补录训练' : '自由训练', ex: [] }, profile, queue);
-    setStartOpen(false);
+    if (draft) { setPanel(null); setWorkoutOpen(true); return; }
+    const base = startSession([], profile, queue, backfill ? '补录训练' : '自由训练');
+    setPanel(null);
     openWorkout(backfill ? { ...base, backfillDay: localDate(Date.now()) } : base);
   };
 
+  // The centre button: resume a draft, merge today's whole list when it has work,
+  // otherwise open the independent chooser (the Web TabBar's rule).
   const openStart = () => {
-    if (draft) return;
-    if (recommended.length === 1) startRoutine(recommended[0]);
-    else setStartOpen(true);
+    if (draft) { setWorkoutOpen(true); return; }
+    if (recommended.some(routine => (routine.ex ?? []).some(Boolean))) startToday();
+    else setPanel({ kind: 'start' });
+  };
+
+  const setDayPlan = (id: string | null) => {
+    if (gym.commit([{ kind: 'dayPlan', day: localDate(Date.now()), id }])) setPanel(null);
+  };
+
+  const startWithExercise = (target: RoutineExercise) => {
+    if (draft) { setWorkoutOpen(true); return; }
+    openWorkout(startWorkout({ id: '', name: '自由训练', ex: [target] }, profile, queue));
   };
 
   const onCustom = (exercise: CustomExercise, create: boolean) => {
@@ -270,6 +382,17 @@ function AppScreen() {
 
   const onFavorite = (id: string, favourite: boolean) => {
     gym.commit([{ kind: 'favorite', id, fav: favourite }]);
+  };
+
+  // A new routine is written before its editor opens: the editor always works on a saved id,
+  // and a storage failure leaves the user on the list instead of an editor that cannot save.
+  const createRoutine = () => {
+    const routine: Routine = { id: randomUUID(), name: '新计划', ex: [] };
+    if (gym.commit([{ kind: 'routine', create: true, routine }])) {
+      setPanel({ kind: 'plan', routineId: routine.id });
+      return;
+    }
+    Alert.alert('无法新建计划', '本机保存失败，请检查可用存储空间后重试。');
   };
 
   const pickForWorkout = (target: RoutineExercise, replaceIndex?: number) => {
@@ -281,10 +404,6 @@ function AppScreen() {
       restSec: previous.restSec, restOff: previous.restOff, intensifier: previous.intensifier,
     } : target;
     openWorkout(addExercise(draft, next, profile, queue, replaceIndex));
-  };
-
-  const startWithExercise = (target: RoutineExercise) => {
-    openWorkout(startWorkout({ id: '', name: '自由训练', ex: [target] }, profile, queue));
   };
 
   const removeRoutine = (routine: Routine) => {
@@ -346,17 +465,15 @@ function AppScreen() {
 
   return <>
     <StatusBar style="light" />
-    {draft ? <WorkoutScreen
+    {draft && workoutOpen ? <WorkoutScreen
       profile={profile}
       draft={draft}
       queue={queue}
       e2e={e2e}
       onChange={openWorkout}
+      onCollapse={() => { setWorkoutOpen(false); setTab('home'); }}
+      onDiscard={discardWorkout}
       onFinish={saveWorkout}
-      onDiscard={() => Alert.alert('放弃这次训练？', '本次已输入的组数会清除。', [
-        { text: '继续训练', style: 'cancel' },
-        { text: '放弃', style: 'destructive', onPress: () => gym.change(data => ({ ...data, draft: null })) },
-      ])}
       onPick={replaceIndex => setPanel({ kind: 'library', replaceIndex })}
     /> : <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
       {tab === 'home' && <HomeScreen
@@ -367,6 +484,12 @@ function AppScreen() {
         pending={gym.pending}
         onSettings={() => setPanel({ kind: 'settings' })}
         onStartRoutine={startRoutine}
+        onStartToday={startToday}
+        onOpenDayOverride={() => setPanel({ kind: 'dayOverride' })}
+        onChooseWorkout={() => {
+          if (draft) setWorkoutOpen(true);
+          else setPanel({ kind: 'start' });
+        }}
         onStartFree={() => startFree()}
         onOpenStats={() => setTab('stats')}
         onOpenPlan={() => setTab('plan')}
@@ -374,8 +497,8 @@ function AppScreen() {
       {tab === 'plan' && <PlanScreen
         profile={profile}
         connection={connection ?? null}
-        onCreate={() => setPanel({ kind: 'plan' })}
-        onEdit={routine => setPanel({ kind: 'plan', routine })}
+        onCreate={createRoutine}
+        onEdit={routine => setPanel({ kind: 'plan', routineId: routine.id })}
         onDelete={removeRoutine}
         onStart={startRoutine}
         onSchedule={() => setPanel({ kind: 'schedule' })}
@@ -399,30 +522,52 @@ function AppScreen() {
         onPick={startWithExercise}
         onCustom={onCustom}
       />}
-      <TabBar tabs={tabs} active={tab} onSelect={key => setTab(key as Tab)} onStart={openStart} />
+      {draft ? (
+        <RestTimer
+          onChange={rest => gym.change(data => data.draft ? { ...data, draft: { ...data.draft, rest } } : data)}
+          rest={draft.rest}
+        />
+      ) : null}
+      <TabBar
+        active={tab}
+        onSelect={key => setTab(key as Tab)}
+        onStart={openStart}
+        running={Boolean(draft)}
+        runningLabel={draft?.backfillDay ? '补录' : '继续'}
+        runningStart={draft && draft.backfillDay == null ? draft.start : undefined}
+        tabs={tabs}
+      />
     </View>}
 
-    {panel ? <Modal visible onRequestClose={closePanel}>
+    {panel ? <Modal visible onRequestClose={requestClosePanel}>
       <View style={{ flex: 1, backgroundColor: theme.colors.bg }}>
         {panel.kind === 'plan' && <PlanEditorScreen
+          key={panel.routineId ?? 'missing-plan'}
           profile={profile}
-          routine={panel.routine}
+          routineId={panel.routineId}
           server={connection?.server ?? null}
           connection={connection ?? null}
+          onCommit={changes => gym.commit(changes)}
+          onMissing={onMissingPlan}
           onCustom={onCustom}
           onFavorite={onFavorite}
           onClose={closePanel}
-          onSave={routine => {
-            const original = panel.routine;
-            const change: ProfileChange = original ? {
-              kind: 'routine', create: false, routine: {
-                id: routine.id,
-                ...(routine.name !== original.name ? { name: routine.name } : {}),
-                ...(JSON.stringify(routine.ex) !== JSON.stringify(original.ex) ? { ex: routine.ex } : {}),
-              },
-            } : { kind: 'routine', create: true, routine };
-            if (gym.commit([change])) closePanel();
-          }}
+          registerClose={registerPlanClose}
+        />}
+        {panel.kind === 'start' && <StartScreen
+          onClose={closePanel}
+          onStartFree={() => startFree()}
+          onStartRoutine={startRoutine}
+          onStartToday={startToday}
+          routines={profile.routines ?? []}
+          today={recommended}
+        />}
+        {panel.kind === 'dayOverride' && <DayOverrideSheet
+          current={recommended.map(routine => routine.id)}
+          onClose={closePanel}
+          onPick={setDayPlan}
+          override={profile.dayPlan?.[localDate(Date.now())]}
+          routines={profile.routines ?? []}
         />}
         {panel.kind === 'schedule' && <ScheduleEditorScreen
           profile={profile}
@@ -468,6 +613,9 @@ function AppScreen() {
           restAlerts={workspace.data.restAlerts === true}
           effort={effortOf(profile)}
           restPauseSec={profile.restPauseSec ?? DEFAULT_REST_PAUSE_SEC}
+          workoutView={profile.workoutView}
+          foldDone={profile.foldDone === true}
+          skipDone={profile.skipDone === true}
           onClose={closePanel}
           onConnect={(address, code) => { gym.connect(address, code).catch(showOperationError); }}
           onSync={() => { gym.sync().catch(showOperationError); }}
@@ -481,6 +629,7 @@ function AppScreen() {
           onToggleRestAlerts={toggleRestAlerts}
           onChangeEffort={effort => gym.commit([{ kind: 'effort', effort }])}
           onChangeRestPauseSec={restPauseSec => gym.commit([{ kind: 'settings', values: { restPauseSec } }])}
+          onChangeSettings={values => gym.commit([{ kind: 'settings', values }])}
           onOpenAlarmSettings={() => {
             Linking.sendIntent('android.settings.REQUEST_SCHEDULE_EXACT_ALARM')
               .catch(() => Linking.openSettings())
@@ -556,15 +705,13 @@ function AppScreen() {
       </View>
     </Modal> : null}
 
-    <StartSheet
-      visible={startOpen}
-      recommended={recommended}
-      routines={profile.routines ?? []}
-      onStartRoutine={startRoutine}
-      onStartFree={() => startFree()}
-      onBackfill={() => startFree(true)}
-      onClose={() => setStartOpen(false)}
-    />
+    {summary ? <WorkoutSummarySheet
+      onClose={() => { setSummary(null); setWorkoutOpen(false); setTab('home'); }}
+      profile={profile}
+      summary={summary.summary}
+      unit={summary.unit}
+      workout={summary.workout}
+    /> : null}
   </>;
 }
 

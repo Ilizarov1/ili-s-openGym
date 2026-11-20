@@ -144,10 +144,12 @@ Screenshot 'five-tab-library-filter'
 Tap-Text '完成'
 Wait-Text '5632 个动画动作 + 0 个自建' 15 | Out-Null
 
-Tap-Text '开始'
+Tap-Text '首页'
+Wait-Text '今日训练' 15 | Out-Null
+Tap-Text '选择其他训练'
 Wait-Text '开始训练' 15 | Out-Null
 Screenshot 'five-tab-start-sheet'
 Tap-Text '取消'
-Wait-Text '5632 个动画动作 + 0 个自建' 15 | Out-Null
+Wait-Text '最近训练' 15 | Out-Null
 
 Write-Output 'PASS: five-tab shell, home, plan, stats, library, filter and start sheet verified'

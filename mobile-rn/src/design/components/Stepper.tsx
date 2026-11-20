@@ -7,6 +7,8 @@ import { Text } from './Text';
 export type StepperProps = {
   value: string;
   onChangeText: (value: string) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   step: number;
   min?: number;
   max?: number;
@@ -68,6 +70,8 @@ function format(value: number, precision: number): string {
 export function Stepper({
   value,
   onChangeText,
+  onFocus,
+  onBlur,
   step,
   min,
   max,
@@ -132,7 +136,9 @@ export function Stepper({
         accessibilityLabel={accessibilityLabel}
         editable={!disabled}
         keyboardType={keyboardType}
+        onBlur={onBlur}
         onChangeText={onChangeText}
+        onFocus={onFocus}
         selectTextOnFocus
         style={[
           theme.type.body,

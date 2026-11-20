@@ -33,7 +33,13 @@ export type HomeScreenProps = {
   recommended: Routine[];
   pending: number;
   onSettings: () => void;
+  /** Starts today's whole list as one merged session. */
+  onStartToday?: () => void;
   onStartRoutine: (routine: Routine) => void;
+  /** Opens the per-date override chooser on a rest day. */
+  onOpenDayOverride?: () => void;
+  /** The "choose a different workout" doorway into the start page. */
+  onChooseWorkout?: () => void;
   onStartFree: () => void;
   onOpenStats: () => void;
   onOpenPlan: () => void;
@@ -104,7 +110,10 @@ export function HomeScreen({
   recommended,
   pending,
   onSettings,
+  onStartToday,
   onStartRoutine,
+  onOpenDayOverride,
+  onChooseWorkout,
   onStartFree,
   onOpenStats,
   onOpenPlan,
@@ -133,7 +142,11 @@ export function HomeScreen({
   const remaining = Math.max(0, planned - completed);
   const progress = planned > 0 ? Math.min(1, completed / planned) : 0;
 
-  const recommendations = recommended.filter(routine => (routine.ex ?? []).some(Boolean));
+  const recommendations = recommended;
+  const trainable = recommended.filter(routine => (routine.ex ?? []).some(Boolean));
+  const queueRoutines = [...new Set(profile.queue?.ids ?? [])]
+    .map(id => (profile.routines ?? []).find(routine => routine?.id === id))
+    .filter((routine): routine is Routine => Boolean(routine));
   const recent = history.slice(0, 3);
   const showBadges = !connection || pending > 0;
 
@@ -226,42 +239,72 @@ export function HomeScreen({
         }
         title="今日训练"
       />
-      {recommendations.length > 0 ? (
-        recommendations.map(routine => (
-          <Card key={routine.id}>
-            <View style={styles.routineHead}>
-              <IconTile name="dumbbell" />
-              <View style={styles.routineTitle}>
-                <Text numberOfLines={1} variant="headline">
-                  {routine.name}
-                </Text>
-                <Text tone="secondary" variant="footnote">
-                  {`${(routine.ex ?? []).filter(Boolean).length} 个动作`}
-                </Text>
-              </View>
-              <MiniBodyMap height={theme.sizes.tileLg} routines={[routine]} />
+      {trainable.length > 0 ? (
+        <Card>
+          <View style={styles.routineHead}>
+            <IconTile name="dumbbell" />
+            <View style={styles.routineTitle}>
+              <Text numberOfLines={2} variant="headline">
+                {recommendations.map(routine => routine.name).join(' + ')}
+              </Text>
+              <Text tone="secondary" variant="footnote">
+                {`${recommendations.reduce((total, routine) => total + (routine.ex ?? []).filter(Boolean).length, 0)} 个动作` +
+                  (recommendations.length > 1 ? ` · ${recommendations.length} 套计划合并为一场` : '')}
+              </Text>
             </View>
-            <Button
-              icon="play"
-              onPress={() => onStartRoutine(routine)}
-              size="sm"
-              style={styles.startButton}
-              variant="primary"
-            >
-              开始
-            </Button>
-          </Card>
-        ))
+            <MiniBodyMap height={theme.sizes.tileLg} routines={recommendations} />
+          </View>
+          <Button
+            icon="play"
+            onPress={onStartToday}
+            size="sm"
+            style={styles.startButton}
+            testID="home-start-today"
+            variant="primary"
+          >
+            开始
+          </Button>
+        </Card>
       ) : (
-        <EmptyState icon="calendar" text="挑一套计划开始，或者直接自由训练。" title="今天没有安排">
-          <Button onPress={onOpenPlan} variant="primary">
-            打开计划
+        <EmptyState icon="calendar" text="挑一套计划作为今天的训练，或者直接自由训练。" title="今天没有安排">
+          <Button onPress={onOpenDayOverride} variant="primary">
+            选择今天的计划
           </Button>
           <Button onPress={onStartFree} variant="secondary">
             自由训练
           </Button>
         </EmptyState>
       )}
+
+      {onChooseWorkout ? (
+        <View style={{ alignItems: 'center' }}>
+          <Button icon="swap" onPress={onChooseWorkout} size="sm" variant="ghost">
+            选择其他训练
+          </Button>
+        </View>
+      ) : null}
+
+      {queueRoutines.length > 0 ? (
+        <>
+          <SectionHeader title="轮换队列" />
+          <Card padded={false}>
+            {queueRoutines.map((routine, index) => (
+              <View key={routine.id}>
+                {index > 0 ? (
+                  <Divider inset={theme.layout.listRowPaddingX + theme.sizes.tileSm + theme.space.md} />
+                ) : null}
+                <ListRow
+                  chevron
+                  leading={<IconTile name="shuffle" size="sm" tone="neutral" />}
+                  onPress={() => onStartRoutine(routine)}
+                  subtitle={`${(routine.ex ?? []).filter(Boolean).length} 个动作 · 只开始这一套`}
+                  title={routine.name}
+                />
+              </View>
+            ))}
+          </Card>
+        </>
+      ) : null}
 
       <SectionHeader
         action={
