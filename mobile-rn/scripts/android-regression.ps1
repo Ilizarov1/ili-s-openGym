@@ -175,6 +175,21 @@ function Start-Routine([string]$Name) {
     Wait-Label '完成训练' | Out-Null
 }
 
+# The finish panel and summary (06): live workouts save through "结束并保存",
+# then the summary's "完成" returns Home.
+function Finish-Workout {
+    $donePrompt = (Read-Ui).SelectSingleNode("//node[@text='全部完成！']")
+    if (!$donePrompt) { Tap-Label '完成训练' -Scroll }
+    Tap-Label '结束并保存'
+    Wait-Label '训练完成' | Out-Null
+    Tap-Label '完成'
+}
+
+function Finish-ToStats {
+    Finish-Workout
+    Open-Stats
+}
+
 function Open-PlanEditor([string]$Name) {
     Tap-PlanAction $Name '编辑计划'
     Wait-Label '编辑计划' | Out-Null
@@ -317,8 +332,7 @@ try {
         }
         Wait-Label '已完成 1 组' | Out-Null
     }
-    Tap-Label '完成训练' -Scroll
-    Wait-Stats
+    Finish-ToStats
     Invoke-Adb shell am force-stop $appId | Out-Null
     Start-App
     Open-Stats
@@ -397,8 +411,7 @@ try {
         Tap-Label '热身第 1 组完成'
         Wait-Label '已完成 2 组' | Out-Null
     }
-    Tap-Label '完成训练' -Scroll
-    Wait-Stats
+    Finish-ToStats
     $offlineState = Invoke-RestMethod "$baseUrl/api/data" -WebSession $apiSession -TimeoutSec 10
     if ($offlineState.state.workouts.Count -ne 0) { throw 'The workout reached the API while the emulator was offline.' }
     Wait-Node {
@@ -443,8 +456,7 @@ try {
         Wait-Node { $_.GetAttribute('content-desc') -eq '第 1 组重量' -and $_.GetAttribute('text') -eq '0' } 'Backup did not inherit bench weight' | Out-Null
         Tap-Label '第 1 组完成'
         Wait-Label '已完成 1 组' | Out-Null
-        Tap-Label '完成训练' -Scroll
-        Wait-Stats
+        Finish-ToStats
         Open-Settings
         Tap-Label '立即同步' -Scroll
         Wait-Node { $_.GetAttribute('text') -like '0 条待同步*' } 'Backup workout synced' | Out-Null
@@ -532,7 +544,7 @@ try {
         Set-Field '分钟' '7.5' -Scroll
         Set-Field '速度' '9.2' -Scroll
         Scroll-ToTop
-        Tap-Label '保存'
+        Tap-Label '返回'
         $program = Sync-App
         $mixed = $program.routines | Where-Object name -eq 'Mixed training'
         if ($mixed.ex.Count -ne 2 -or $program.customEx[0].n -ne 'QA Hold' -or $mixed.ex[0].id -ne $program.customEx[0].id -or
@@ -569,8 +581,7 @@ try {
         Wait-Label '已完成 1 组' | Out-Null
         $cardioSet = Wait-Node { $_.GetAttribute('content-desc') -eq '第 1 组完成' -and $_.GetAttribute('checked') -eq 'false' } 'Incomplete cardio set' -Scroll
         Tap-Node $cardioSet 'Incomplete cardio set'
-        Tap-Label '完成训练' -Scroll
-        Wait-Stats
+        Finish-ToStats
         Tap-Workout 'Mixed training'
         Wait-Label '32 秒 · 12.5 kg' | Out-Null
         Wait-Label '7.5 分钟 · 速度 9.2' -Scroll | Out-Null
@@ -589,7 +600,7 @@ try {
         Open-PlanEditor 'Mixed training'
         Set-Field '计划名称' 'Revised plan'
         Scroll-ToTop
-        Tap-Label '保存'
+        Tap-Label '返回'
         $revised = (Sync-App).routines | Where-Object id -eq $mixed.id
         if ($revised.name -ne 'Revised plan' -or $revised.ex.Count -ne 2) { throw 'Plan edits did not sync.' }
         Tap-PlanAction 'Revised plan' '删除计划'
@@ -609,8 +620,7 @@ try {
         Tap-Label '选择 杠铃卧推'
         Wait-Label '杠铃卧推' | Out-Null
         Tap-Label '第 1 组完成'
-        Tap-Label '完成训练' -Scroll
-        Wait-Stats
+        Finish-ToStats
         $free = (Sync-App).workouts | Where-Object name -eq '自由训练'
         if ($free.routineId -or $free.entries[0].id -ne '0025') { throw 'Freestyle replacement was not saved.' }
         Open-Stats
@@ -738,7 +748,7 @@ try {
         Set-Field '超级组名称' 'Push pair' -Scroll
         Set-Field '轮间休息秒数' '73' -Scroll
         Scroll-ToTop
-        Tap-Label '保存'
+        Tap-Label '返回'
         $paired = (Sync-App).routines | Where-Object id -eq 'rn-superset'
         $group = $paired.ex[0].sg
         if (!$group -or $paired.ex[1].sg -ne $group -or $paired.ex[0].sgName -ne 'Push pair' -or
@@ -785,8 +795,7 @@ try {
         Tap-Label '杠铃卧推 第 2 组完成'
         Wait-Node { $_.GetAttribute('content-desc') -eq '杠铃卧推 第 2 组完成' -and $_.GetAttribute('checked') -eq 'true' } 'Last superset set completed' | Out-Null
         if ((Read-Ui).SelectSingleNode("//node[@text='组间休息']")) { throw 'The last set of the workout started a rest.' }
-        Tap-Label '完成训练' -Scroll
-        Wait-Stats
+        Finish-ToStats
         Tap-Workout $supersetPlan
         Wait-Label '超级组 · Push pair' | Out-Null
         $savedSuperset = (Sync-App).workouts | Where-Object name -eq $supersetPlan

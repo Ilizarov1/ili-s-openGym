@@ -8,6 +8,7 @@ import {
 import {
   applyIntensifierPlan,
   barFloor,
+  cleanupSg,
   effortOf as preferenceOf,
   insertWarmupRow,
   MAX_PLANNED_WARMUPS,
@@ -149,6 +150,8 @@ export type LoggedSet = {
 export type WorkoutEntry = {
   id: string;
   sg?: string;
+  /** The routine slot this entry was planned by in a combined session. */
+  rid?: string;
   sets: LoggedSet[];
   topW?: number | null;
   target?: RoutineExercise;
@@ -177,6 +180,14 @@ export type Profile = {
   restSec?: number;
   restPauseSec?: number;
   volumeWarmups?: boolean;
+  /** Saved default for the active workout's layout; unknown values read as cards. */
+  workoutView?: WorkoutView;
+  /** Settings → "Last time means": the routine's own sessions, or any workout. */
+  lastFrom?: 'routine' | 'any';
+  /** List and compact layouts fold finished exercises. */
+  foldDone?: boolean;
+  /** Cards and focus step over units whose every set is finished. */
+  skipDone?: boolean;
   /** Explicit choice; wins over the legacy `showRir` boolean, including `none`. */
   effort?: EffortScale;
   /** Pre-`effort` preference. Only read when `effort` says nothing. */
@@ -224,6 +235,11 @@ export type DraftSet = {
   reps: string;
   at: number | null;
   warmup?: boolean;
+  /**
+   * This load was typed by hand, so an earlier set's cascade leaves it alone. Old
+   * rows without the mark are read as inherited, the Web-compatible default.
+   */
+  manual?: boolean;
   /** Scale and value of the saved effort. Both absent means unrated. */
   effortScale?: RatingScale;
   effort?: number;
@@ -231,19 +247,85 @@ export type DraftSet = {
   drops?: DraftDrop[];
   clusters?: DraftCluster[];
 };
-type DraftExercise = { target: RoutineExercise; sets: DraftSet[] };
+export type DraftExercise = {
+  target: RoutineExercise;
+  sets: DraftSet[];
+  /** The routine this exercise's slot came from; absent on old and freestyle drafts. */
+  rid?: string;
+  /** This exercise does not count toward progression for this session only. */
+  noProg?: boolean;
+};
+
+/**
+ * The running workout's rest. A running rest stores the absolute `endsAt` so a
+ * backgrounded app or a restart cannot drift it; a paused one stores the frozen
+ * `remainingSec` and nothing else. Reaching `endsAt` reads as ready without
+ * rewriting the draft; closing a ready rest clears it.
+ */
+export type DraftRest = {
+  endsAt?: number;
+  remainingSec?: number;
+  exerciseIndex: number;
+  setIndex: number;
+};
 
 export type Draft = {
   id: string;
+  /** First routine, kept for older readers; `routineIds` is the ordered source. */
   routineId: string;
+  routineIds?: string[];
   name: string;
   unit: Unit;
   start: number;
   volumeWarmups?: boolean;
   exercises: DraftExercise[];
-  rest?: { endsAt: number; exerciseIndex: number; setIndex: number } | null;
+  rest?: DraftRest | null;
   backfillDay?: string;
+  /** This session's layout, snapshotted from the profile when it started. */
+  view?: WorkoutView;
+  /** Exercise index the workout screen is parked on, so a restart resumes there. */
+  position?: number;
+  /** This session's override of the list layouts' fold-finished setting. */
+  foldDone?: boolean;
 };
+
+export type WorkoutView = 'cards' | 'list' | 'compact' | 'focus';
+export const WORKOUT_VIEWS: WorkoutView[] = ['cards', 'list', 'compact', 'focus'];
+export const WORKOUT_VIEW_LABELS: Record<WorkoutView, string> = {
+  cards: '卡片', list: '列表', compact: '紧凑', focus: '专注',
+};
+
+/** Unknown and pre-setting values read as cards, exactly like the Web client. */
+export function workoutViewOf(value: unknown): WorkoutView {
+  return value === 'list' || value === 'compact' || value === 'focus' ? value : 'cards';
+}
+
+/** A draft's source routines in merge order, with the legacy single id as the fallback. */
+export function draftRoutineIds(draft: Pick<Draft, 'routineId' | 'routineIds'>) {
+  const ids = Array.isArray(draft.routineIds) ? draft.routineIds.filter(id => typeof id === 'string' && id) : [];
+  if (ids.length) return ids;
+  return draft.routineId ? [draft.routineId] : [];
+}
+
+/**
+ * The saved exercise position, clamped to the current exercise list. Old drafts
+ * without one resume at the first exercise; removing exercises never leaves the
+ * pointer past the end.
+ */
+export function draftPosition(draft: Pick<Draft, 'position' | 'exercises'>) {
+  const count = draft.exercises.length;
+  if (!count) return 0;
+  const index = Math.trunc(Number(draft.position));
+  return Number.isFinite(index) ? Math.min(count - 1, Math.max(0, index)) : 0;
+}
+
+/** The merged-session name rule: 1–3 names joined, 4+ as "first + second + N more". */
+export function deriveSessionName(names: string[]) {
+  const clean = names.filter(name => typeof name === 'string' && name.trim() !== '');
+  if (!clean.length) return '';
+  if (clean.length <= 3) return clean.join(' + ');
+  return `${clean[0]} + ${clean[1]} + ${clean.length - 2} more`;
+}
 
 export type QueuedWorkout = { workout: Workout & { id: string }; unit: Unit };
 
@@ -342,13 +424,18 @@ export function exerciseMode(item: RoutineExercise, profile: Profile) {
 export function addExercise(draft: Draft, target: RoutineExercise, profile: Profile, pending: readonly QueuedWorkout[], replaceIndex?: number) {
   const previous = replaceIndex == null ? undefined : draft.exercises[replaceIndex];
   if (replaceIndex != null && (!previous || previous.sets.some(set => set.at !== null))) return draft;
+  const sourceRid = previous?.rid ?? draft.exercises[draft.position ?? 0]?.rid;
   const exercise = startWorkout(
     { id: draft.routineId, name: draft.name, ex: [{ ...target, ...supersetFields(previous?.target) }] },
     inDraftUnit(profile, draft.unit), pending,
   ).exercises[0];
+  if (!exercise) return draft;
   return {
     ...draft,
-    exercises: replaceIndex == null ? [...draft.exercises, exercise] : draft.exercises.map((entry, index) => index === replaceIndex ? exercise : entry),
+    exercises: replaceIndex == null
+      ? [...draft.exercises, ...(sourceRid ? [{ ...exercise, rid: sourceRid }] : [exercise])]
+      : draft.exercises.map((entry, index) => index === replaceIndex
+        ? { ...exercise, ...(entry.rid ? { rid: entry.rid } : {}) } : entry),
     rest: replaceIndex != null && draft.rest?.exerciseIndex === replaceIndex ? null : draft.rest,
   };
 }
@@ -363,19 +450,38 @@ function workoutTime(workout: Workout) {
   return Date.parse(workout.d) || 0;
 }
 
-function lastWorkingWeight(history: Workout[], target: RoutineExercise) {
-  for (const workout of history) {
-    for (const entry of workout.entries ?? []) {
-      if (entry?.id !== target.id || entry.noProg ||
-          (entry.target?.dbLoad ?? 'as') !== (target.dbLoad ?? 'as')) continue;
-      const row = (entry.sets ?? []).findLast(set =>
-        set?.done === true && !isWarmupRow(set) && modeForSet(set, entry.target) === 'reps' &&
-        typeof set.r === 'number' && set.r > 0 && typeof set.w === 'number' && set.w >= 0 && set.w <= MAX_WEIGHT
-      );
-      if (row) return row.w;
+function entryRoutineId(workout: Workout, entry: WorkoutEntry) {
+  if (entry?.rid) return entry.rid;
+  if ((workout.entries ?? []).some(row => row?.rid)) return null;
+  return workout.routineIds?.[0] ?? workout.routineId ?? null;
+}
+
+/**
+ * The last load this exercise was trained at. With a routine id the routine's own
+ * sessions win; a routine that never trained it falls back to any workout, and
+ * `lastFrom: 'any'` (Settings → "Last time means") skips the routine filter.
+ */
+function lastWorkingWeight(history: Workout[], target: RoutineExercise, rid?: string, lastFromAny = false) {
+  const find = (routineOnly: boolean) => {
+    for (const workout of history) {
+      for (const entry of workout.entries ?? []) {
+        if (entry?.id !== target.id || entry.noProg) continue;
+        if (routineOnly && entryRoutineId(workout, entry) !== rid) continue;
+        if ((entry.target?.dbLoad ?? 'as') !== (target.dbLoad ?? 'as')) continue;
+        const row = (entry.sets ?? []).findLast(set =>
+          set?.done === true && !isWarmupRow(set) && modeForSet(set, entry.target) === 'reps' &&
+          typeof set.r === 'number' && set.r > 0 && typeof set.w === 'number' && set.w >= 0 && set.w <= MAX_WEIGHT
+        );
+        if (row) return row.w;
+      }
     }
+    return undefined;
+  };
+  if (rid && !lastFromAny) {
+    const own = find(true);
+    if (own !== undefined) return own;
   }
-  return undefined;
+  return find(false);
 }
 
 function draftSetFromRow(row: {
@@ -397,7 +503,79 @@ function draftSetFromRow(row: {
   return set;
 }
 
-export function startWorkout(routine: Routine, profile: Profile, pending: readonly QueuedWorkout[] = []): Draft {
+function buildDraftExercise(
+  target: RoutineExercise,
+  routine: Routine,
+  profile: Profile,
+  history: Workout[],
+  unit: Unit,
+): DraftExercise {
+  const rid = routine.id || undefined;
+  const noProg = routine.excludeFromProgression === true || target.noProg === true;
+  const count = Math.max(1, Math.min(MAX_WORK_SETS, Math.trunc(Number(target.sets) || 3)));
+  const mode = exerciseMode(target, profile);
+  const source = { ...(rid ? { rid } : {}), ...(noProg ? { noProg: true } : {}) };
+  if (mode !== 'reps') {
+    const { intensifier: _intensifier, ...plain } = target;
+    return {
+      target: { ...plain, mode },
+      sets: Array.from({ length: count }, (_, index) => ({
+        key: String(index),
+        weight: String(mode === 'time' ? target.weight ?? 0 : target.speed ?? 0),
+        reps: String(mode === 'time' ? target.sec ?? 45 : target.min ?? 20),
+        at: null,
+      })),
+      ...source,
+    };
+  }
+  const reps = String(target.reps ?? '').match(/^\d+/)?.[0] ?? '8';
+  const previous = noProg ? undefined : lastWorkingWeight(history, target, rid, profile.lastFrom === 'any');
+  const cfg = { ...target, mode: 'reps' as const };
+  const floor = barFloor(profile, target.id);
+  const work = Array.from({ length: count }, () => ({ w: previous ?? target.weight ?? 0, r: Number(reps), done: false }));
+  const options = { grid: dropGrid(profile, cfg), floor, unit };
+  const block = warmupBlock(profile, cfg, work, options);
+  let rows = block ? [...block, ...work] : work;
+  if (block === null && warmupSource(profile, cfg).kind === 'count') {
+    const warmups = Math.min(MAX_PLANNED_WARMUPS, Math.round(target.warmupSets ?? 0));
+    const step = ownedWeightsFor(profile, cfg) || weightIncrement(cfg, unit);
+    for (let i = 0; i < warmups; i++) rows = insertWarmupRow(rows, 'reps', cfg, step, floor) ?? rows;
+  }
+  // The routine's intensifier shapes the final prescribed rows, warm-ups included for
+  // rest-pause (upstream builds exactly one warm-up and one work row there). RN logs a
+  // unilateral weight as one both-sides total, so the plan is applied without `side`:
+  // new records stay bilateral even when the exercise is per side.
+  const intensifier = plannedIntensifier(target);
+  if (intensifier) {
+    rows = applyIntensifierPlan(rows, { ...cfg, reps: Number(reps), side: false, intensifier }, dropGrid(profile, cfg));
+  }
+  const sets = rows.map((row, index) => draftSetFromRow(row, index));
+  return { target: intensifier ? { ...target, intensifier } : target, sets, ...source };
+}
+
+/**
+ * Build one session from an ordered list of routines. Dead ids and duplicates are
+ * dropped (first occurrence wins); each routine contributes its exercises in order
+ * with its own `rid`, and an empty routine still contributes its name and id.
+ */
+export function startSession(
+  routines: Routine[],
+  profile: Profile,
+  pending: readonly QueuedWorkout[] = [],
+  name?: string,
+): Draft {
+  const seen = new Set<string>();
+  const resolved = (Array.isArray(routines) ? routines : []).filter(routine => {
+    if (!routine) return false;
+    const id = typeof routine.id === 'string' ? routine.id : '';
+    if (id !== '') {
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    }
+    // An unnamed routine is the freestyle slot: kept only when it carries exercises.
+    return (routine.ex ?? []).some(item => item?.id);
+  });
   const unit = unitOf(profile);
   const saved = (profile.workouts ?? []).filter(Boolean);
   const savedIds = new Set(saved.map(workout => workout.id));
@@ -405,43 +583,26 @@ export function startWorkout(routine: Routine, profile: Profile, pending: readon
     ...saved,
     ...pending.filter(item => !savedIds.has(item.workout.id)).map(item => inProfileUnit(item, unit)),
   ].filter(workout => !workout.excludeFromProgression).sort((a, b) => workoutTime(b) - workoutTime(a));
-  const exercises = (routine.ex ?? [])
+  const exercises = resolved.flatMap(routine => (routine.ex ?? [])
     .filter(item => item?.id)
-    .map(target => {
-      const count = Math.max(1, Math.min(MAX_WORK_SETS, Math.trunc(Number(target.sets) || 3)));
-      const mode = exerciseMode(target, profile);
-      if (mode !== 'reps') {
-        const { intensifier: _intensifier, ...plain } = target;
-        return { target: { ...plain, mode }, sets: Array.from({ length: count }, (_, index) => ({
-          key: String(index), weight: String(mode === 'time' ? target.weight ?? 0 : target.speed ?? 0),
-          reps: String(mode === 'time' ? target.sec ?? 45 : target.min ?? 20), at: null,
-        })) };
-      }
-      const reps = String(target.reps ?? '').match(/^\d+/)?.[0] ?? '8';
-      const previous = routine.excludeFromProgression || target.noProg ? undefined : lastWorkingWeight(history, target);
-      const cfg = { ...target, mode: 'reps' };
-      const floor = barFloor(profile, target.id);
-      const work = Array.from({ length: count }, () => ({ w: previous ?? target.weight ?? 0, r: Number(reps), done: false }));
-      const options = { grid: dropGrid(profile, cfg), floor, unit };
-      const block = warmupBlock(profile, cfg, work, options);
-      let rows = block ? [...block, ...work] : work;
-      if (block === null && warmupSource(profile, cfg).kind === 'count') {
-        const warmups = Math.min(MAX_PLANNED_WARMUPS, Math.round(target.warmupSets ?? 0));
-        const step = ownedWeightsFor(profile, cfg) || weightIncrement(cfg, unit);
-        for (let i = 0; i < warmups; i++) rows = insertWarmupRow(rows, 'reps', cfg, step, floor) ?? rows;
-      }
-      // The routine's intensifier shapes the final prescribed rows, warm-ups included for
-      // rest-pause (upstream builds exactly one warm-up and one work row there). RN logs a
-      // unilateral weight as one both-sides total, so the plan is applied without `side`:
-      // new records stay bilateral even when the exercise is per side.
-      const intensifier = plannedIntensifier(target);
-      if (intensifier) {
-        rows = applyIntensifierPlan(rows, { ...cfg, reps: Number(reps), side: false, intensifier }, dropGrid(profile, cfg));
-      }
-      const sets = rows.map((row, index) => draftSetFromRow(row, index));
-      return { target: intensifier ? { ...target, intensifier } : target, sets };
-    });
-  return { id: randomUUID(), routineId: routine.id, name: routine.name, unit, start: Date.now(), exercises, volumeWarmups: profile.volumeWarmups === true };
+    .map(target => buildDraftExercise(target, routine, profile, history, unit)));
+  const routineIds = resolved.map(routine => routine.id).filter(id => typeof id === 'string' && id);
+  return {
+    id: randomUUID(),
+    routineId: routineIds[0] ?? '',
+    routineIds,
+    name: name ?? (resolved.length ? deriveSessionName(resolved.map(routine => routine.name)) : '自由训练'),
+    unit,
+    start: Date.now(),
+    exercises,
+    volumeWarmups: profile.volumeWarmups === true,
+    view: workoutViewOf(profile.workoutView),
+  };
+}
+
+/** The single-routine form every old start path uses; freestyle keeps its own name. */
+export function startWorkout(routine: Routine, profile: Profile, pending: readonly QueuedWorkout[] = []): Draft {
+  return startSession([routine], profile, pending, routine?.id ? undefined : routine?.name || '自由训练');
 }
 
 export function addWorkSet(draft: Draft, exerciseIndex: number): Draft {
@@ -484,14 +645,18 @@ export function swapExercise(draft: Draft, exerciseIndex: number, id: string, pr
   };
   const routine = profile.routines?.find(item => item.id === draft.routineId);
   const replacement = startWorkout(
-    { id: draft.routineId, name: draft.name, ex: [target], excludeFromProgression: routine?.excludeFromProgression },
+    { id: entry.rid ?? draft.routineId, name: draft.name, ex: [target], excludeFromProgression: routine?.excludeFromProgression },
     inDraftUnit(profile, draft.unit), pending,
   ).exercises[0];
   if (!replacement) return draft;
   return {
     ...draft,
     rest: draft.rest?.exerciseIndex === exerciseIndex ? null : draft.rest,
-    exercises: draft.exercises.map((exercise, index) => index === exerciseIndex ? replacement : exercise),
+    exercises: draft.exercises.map((exercise, index) => index === exerciseIndex ? {
+      ...replacement,
+      ...(entry.rid ? { rid: entry.rid } : {}),
+      ...(entry.noProg ? { noProg: true } : {}),
+    } : exercise),
   };
 }
 
@@ -538,6 +703,145 @@ export function updateSet(draft: Draft, exerciseIndex: number, setIndex: number,
     } : exercise),
   };
 }
+
+export const REST_MAX_SEC = 15 * 60;
+
+/** Seconds left in a rest, paused or running; 0 for none or an elapsed one. */
+export function restRemaining(rest: DraftRest | null | undefined, now = Date.now()) {
+  if (!rest) return 0;
+  if (typeof rest.remainingSec === 'number' && Number.isFinite(rest.remainingSec)) {
+    return Math.max(0, Math.round(rest.remainingSec));
+  }
+  if (typeof rest.endsAt === 'number' && Number.isFinite(rest.endsAt)) {
+    return Math.max(0, Math.ceil((rest.endsAt - now) / 1000));
+  }
+  return 0;
+}
+
+export function restRunning(rest: DraftRest | null | undefined) {
+  return typeof rest?.endsAt === 'number' && Number.isFinite(rest.endsAt);
+}
+
+/** A running rest whose deadline has passed: the dock says ready until it is closed. */
+export function restReady(rest: DraftRest | null | undefined, now = Date.now()) {
+  return restRunning(rest) && restRemaining(rest, now) === 0;
+}
+
+/** A newly earned rest, always running against an absolute deadline. */
+export function startDraftRest(
+  exerciseIndex: number,
+  setIndex: number,
+  seconds: number,
+  now = Date.now(),
+): DraftRest | null {
+  const sec = Math.min(REST_MAX_SEC, Math.max(0, Math.round(seconds)));
+  return sec > 0 ? { endsAt: now + sec * 1000, exerciseIndex, setIndex } : null;
+}
+
+/** Freeze the seconds left; the deadline keys are dropped so no notification is scheduled. */
+export function pauseDraftRest(rest: DraftRest, now = Date.now()): DraftRest {
+  return {
+    exerciseIndex: rest.exerciseIndex,
+    setIndex: rest.setIndex,
+    remainingSec: restRemaining(rest, now),
+  };
+}
+
+/** Continue a paused rest from its frozen seconds, against a fresh deadline. */
+export function resumeDraftRest(rest: DraftRest, now = Date.now()): DraftRest {
+  const seconds = restRemaining(rest, now);
+  if (seconds <= 0) return rest;
+  return { exerciseIndex: rest.exerciseIndex, setIndex: rest.setIndex, endsAt: now + seconds * 1000 };
+}
+
+/**
+ * Commit an absolute remaining duration. 0 closes the rest, exactly like skipping;
+ * a paused rest keeps its paused state, a running (or ready) one re-aims its deadline.
+ */
+export function setDraftRestSeconds(rest: DraftRest, seconds: number, now = Date.now()): DraftRest | null {
+  const sec = Math.min(REST_MAX_SEC, Math.max(0, Math.round(seconds)));
+  if (sec === 0) return null;
+  if (typeof rest.remainingSec === 'number') {
+    return { exerciseIndex: rest.exerciseIndex, setIndex: rest.setIndex, remainingSec: sec };
+  }
+  return { exerciseIndex: rest.exerciseIndex, setIndex: rest.setIndex, endsAt: now + sec * 1000 };
+}
+
+/** ±15 s from the current state; a ready rest restarts from 0 before the delta. */
+export function nudgeDraftRest(rest: DraftRest, delta: number, now = Date.now()): DraftRest | null {
+  return setDraftRestSeconds(rest, restRemaining(rest, now) + delta, now);
+}
+
+function rerampDraftWarmups(sets: DraftSet[], cfg: RoutineExercise, profile: Profile, value: number) {
+  const firstWork = sets.findIndex(row => !row.warmup);
+  if (firstWork <= 0) return sets;
+  const grid = dropGrid(profile, cfg) as number | ((weight: number) => number);
+  const floor = barFloor(profile, cfg.id);
+  const snap = (weight: number) => typeof grid === 'function' ? grid(weight) : Math.floor(weight / grid) * grid;
+  const out = sets.slice();
+  let from = 0;
+  for (let index = 0; index < firstWork; index++) {
+    const row = out[index];
+    const read = Number(String(row.weight).replace(',', '.'));
+    if (row.at !== null || row.manual) {
+      from = Number.isFinite(read) ? read : 0;
+      continue;
+    }
+    const next = value > from ? Math.min(value, Math.max(0, floor, snap(from + (value - from) / 2))) : value;
+    out[index] = { ...row, weight: String(next) };
+    from = next;
+  }
+  return out;
+}
+
+/**
+ * Correct one set's load or reps in the running workout. Unlike the old edit paths
+ * this never clears `at` and never touches the rest: correcting a finished set
+ * leaves it ticked and the countdown on its original deadline.
+ *
+ * A load typed on a work set is marked manual and cascades to the later work sets
+ * that are still open and still inherited. Editing the first work set also re-aims
+ * the open, not-hand-edited warm-up rungs at the new load; a warm-up edit, or one
+ * of the warm-ups themselves, only changes that row.
+ */
+export function editDraftSet(
+  draft: Draft,
+  exerciseIndex: number,
+  setIndex: number,
+  field: 'weight' | 'reps',
+  value: string,
+  profile: Profile,
+): Draft {
+  const exercise = draft.exercises[exerciseIndex];
+  const set = exercise?.sets[setIndex];
+  if (!exercise || !set) return draft;
+  if (field === 'reps') {
+    return {
+      ...draft,
+      exercises: draft.exercises.map((entry, index) => index === exerciseIndex ? {
+        ...entry,
+        sets: entry.sets.map((row, rowIndex) => rowIndex === setIndex ? { ...row, reps: value } : row),
+      } : entry),
+    };
+  }
+  const weight = Number(value.replace(',', '.'));
+  if (value.trim() === '' || !Number.isFinite(weight) || weight < 0 || weight > MAX_WEIGHT) return draft;
+  const sourceIsWarmup = set.warmup === true;
+  let sets = exercise.sets.map((row, rowIndex) => {
+    if (rowIndex === setIndex) return { ...row, weight: value, manual: true };
+    if (sourceIsWarmup || rowIndex < setIndex || row.warmup || row.at !== null || row.manual) return row;
+    return { ...row, weight: value };
+  });
+  const firstWork = sets.findIndex(row => !row.warmup);
+  if (!sourceIsWarmup && firstWork === setIndex) {
+    sets = rerampDraftWarmups(sets, { ...exercise.target, mode: 'reps' }, inDraftUnit(profile, draft.unit), weight);
+  }
+  return {
+    ...draft,
+    exercises: draft.exercises.map((entry, index) => index === exerciseIndex ? { ...entry, sets } : entry),
+  };
+}
+
 
 /**
  * Save or clear one set's effort on the draft. Clearing deletes both keys instead of
@@ -763,56 +1067,122 @@ function validSegments(set: DraftSet) {
   return validSetSegments(set);
 }
 
+const FORGOTTEN_GAP_MS = 20 * 60 * 1000;
+
+/** What one ticked row itself took: a cardio row its minutes, a hold its seconds. */
+function draftRowLengthMs(set: DraftSet, target: RoutineExercise) {
+  const amount = set.type === 'restpause' ? draftClusterTotal(set) : numberIn(set.reps);
+  if (target.mode === 'cardio') return amount * 60000;
+  if (target.mode === 'time') return amount * 1000;
+  return 0;
+}
+
+/**
+ * The persisted end of the session. A workout left open and finished hours later
+ * ends at the last tick of its unbroken run of work: a gap longer than 20 minutes
+ * means the session was already over, and later catch-up ticks stay logged without
+ * stretching the clock. This mirrors the Web's `sessionEnd`.
+ */
+export function draftSessionEnd(draft: Draft, now = Date.now()) {
+  const ticks = draft.exercises
+    .flatMap(exercise => exercise.sets
+      .filter(set => set.at !== null)
+      .map(set => ({ at: set.at as number, len: draftRowLengthMs(set, exercise.target) })))
+    .sort((a, b) => a.at - b.at);
+  if (!ticks.length) return now;
+  let reach = ticks[0].at + ticks[0].len;
+  for (const tick of ticks.slice(1)) {
+    if (tick.at - tick.len - reach > FORGOTTEN_GAP_MS) break;
+    reach = Math.max(reach, tick.at + tick.len);
+  }
+  return now - reach > FORGOTTEN_GAP_MS ? reach : now;
+}
+
+/**
+ * Save the draft as one queued workout. Every entry with at least one ticked set
+ * keeps all of its rows in order — unticked ones as `done: false` — and an entry
+ * with nothing ticked drops out, mirroring the Web's `buildCompletedWorkout`. A
+ * confirmed session with nothing ticked saves `entries: []`; a ticked row that
+ * fails validation still refuses the save so the screen can point at it.
+ */
 export function finishWorkout(draft: Draft): QueuedWorkout | null {
   const entries: WorkoutEntry[] = [];
-  for (const { target, sets } of draft.exercises) {
-    const done = sets.flatMap<LoggedSet>(set => {
-      if (set.at === null || !validSegments(set)) return [];
+  let invalid = false;
+  for (const { target, sets, rid, noProg } of draft.exercises) {
+    if (!sets.some(set => set.at !== null)) continue;
+    const rows = sets.flatMap<LoggedSet>(set => {
+      const done = set.at !== null;
       const restPause = set.type === 'restpause' && !!set.clusters?.length;
       const amount = restPause ? draftClusterTotal(set) : numberIn(set.reps);
       const effective = restPause ? { ...set, reps: String(amount) } : set;
-      if (!validSet(effective, target.mode)) return [];
+      if (done && (!validSegments(set) || !validSet(effective, target.mode))) {
+        invalid = true;
+        return [];
+      }
       const weight = numberIn(set.weight);
       const values = target.mode === 'cardio' ? { speed: weight, min: amount }
         : target.mode === 'time' ? { w: weight, sec: amount } : { w: weight, r: amount };
       // One scale only. A row saved before effort existed simply has neither key.
       // A row is the whole set, so drop/cluster groups rate as one unit too.
-      const rating = !set.warmup && set.effortScale && set.effort != null && Number.isFinite(set.effort)
+      const rating = done && !set.warmup && set.effortScale && set.effort != null && Number.isFinite(set.effort)
         ? { [set.effortScale]: Math.round(Math.min(10, Math.max(0, set.effort)) * 10) / 10 }
         : {};
       return [{
-        ...values, ...rating, done: true, at: set.at,
-        ...(set.warmup ? { phase: 'warmup' as const, warmup: true } : loggedSegments(set) ?? {}),
+        ...values,
+        ...rating,
+        ...(done ? { done: true, at: set.at as number } : { done: false }),
+        ...(set.warmup ? { phase: 'warmup' as const, warmup: true } : {}),
+        ...(loggedSegments(set) ?? {}),
       }];
     });
-    if (done.length === 0) continue;
-    const topW = Math.max(0, ...done.filter(set => !isWarmupRow(set)).map(set => set.w ?? 0)) || null;
-    entries.push({ id: target.id, sets: done, topW, target, ...(target.sg ? { sg: target.sg } : {}),
-      ...(target.noProg ? { noProg: true } : {}) });
+    if (invalid) return null;
+    const topW = Math.max(0, ...rows.filter(row => row.done && !isWarmupRow(row)).map(row => row.w ?? 0)) || null;
+    entries.push({
+      id: target.id,
+      sets: rows,
+      topW,
+      target,
+      ...(rid ? { rid } : {}),
+      ...(noProg ? { noProg: true } : {}),
+      ...(target.sg ? { sg: target.sg } : {}),
+    });
   }
-  if (entries.length === 0) return null;
 
-  if (draft.backfillDay && !validWorkoutDay(draft.backfillDay)) return null;
+  if (!validDayOrLive(draft)) return null;
+  if (draft.backfillDay && entries.length === 0) return null;
+  // An exercise left without a ticked set drops out above, and its partner is then
+  // a superset of one; clear the tag it no longer shares with a neighbour.
+  cleanupSg(entries);
+
   const savedAt = Date.now();
   const historicStart = draft.backfillDay ? new Date(`${draft.backfillDay}T12:00:00`).getTime() : draft.start;
   const start = Math.min(historicStart, savedAt);
-  const end = draft.backfillDay ? Math.min(start + 3600000, savedAt) : savedAt;
+  const end = draft.backfillDay ? Math.min(start + 3600000, savedAt) : draftSessionEnd(draft, savedAt);
   if (draft.backfillDay) {
     for (const entry of entries) for (const set of entry.sets) {
       if (set.at != null) set.at = Math.min(start + Math.max(0, set.at - draft.start), end);
     }
   }
   // Upstream semantics: drop-set drops add volume, rest-pause clusters are already inside the
-  // row's own total and never count twice. Warm-ups follow the session's stored switch.
-  const vol = workoutVolume({ entries }, { warmups: draft.volumeWarmups === true });
+  // row's own total and never count twice. The saved `vol` is the Web default (work sets only)
+  // whatever the display switch says; screens recompute with the current setting.
+  const vol = workoutVolume({ entries });
+  const routineIds = draftRoutineIds(draft);
+  const allNoProg = entries.length > 0 && entries.every(entry => entry.noProg === true);
   return {
     unit: draft.unit,
     workout: {
       id: draft.id, name: draft.name, d: localDate(start), start, end,
-      ...(draft.routineId ? { routineId: draft.routineId } : {}), routineIds: draft.routineId ? [draft.routineId] : [],
+      ...(routineIds[0] ? { routineId: routineIds[0] } : {}),
+      routineIds,
       bw: null, prs: [], entries, vol, _ts: savedAt,
+      ...(allNoProg ? { excludeFromProgression: true } : {}),
     },
   };
+}
+
+function validDayOrLive(draft: Draft) {
+  return !draft.backfillDay || validWorkoutDay(draft.backfillDay);
 }
 
 export function inProfileUnit(item: QueuedWorkout, unit: Unit): Workout {

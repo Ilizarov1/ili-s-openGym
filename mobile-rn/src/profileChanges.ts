@@ -18,6 +18,7 @@ export type ProfileChange =
   | { kind: 'effort'; effort: EffortScale }
   | { kind: 'settings'; values: Partial<Profile> }
   | { kind: 'week'; day: number; ids: string[]; onlyIfEmpty?: boolean }
+  | { kind: 'dayPlan'; day: string; id: string | null }
   | { kind: 'rotation'; key: string; ids: string[]; at: number; onlyIfEmpty?: boolean }
   // Progress & body data (P2). Each intent names the reading/day/photo it changes and is
   // replayed on the freshest profile, so it never replaces a whole synced array.
@@ -363,6 +364,16 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
         const ids = change.ids.filter(id => next.routines.some(routine => routine.id === id));
         if (ids.length) next.week[String(change.day)] = ids;
         else delete next.week[String(change.day)];
+        return next;
+      }
+      case 'dayPlan': {
+        const next = editablePlan(state);
+        if (change.id == null) delete next.dayPlan[change.day];
+        else if (change.id === 'rest' || next.routines.some(routine => routine.id === change.id)) {
+          next.dayPlan[change.day] = change.id;
+        } else {
+          delete next.dayPlan[change.day];
+        }
         return next;
       }
       case 'rotation': {

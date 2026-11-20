@@ -10,6 +10,8 @@ export type HeaderProps = {
   subtitle?: string;
   right?: ReactNode;
   onBack?: () => void;
+  /** Screen-reader label for the back button; defaults to 返回. */
+  backLabel?: string;
   compact?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -39,6 +41,7 @@ export function Header({
   subtitle,
   right,
   onBack,
+  backLabel = '返回',
   compact = false,
   style,
   testID,
@@ -56,7 +59,7 @@ export function Header({
     >
       {onBack ? (
         <IconButton
-          accessibilityLabel="返回"
+          accessibilityLabel={backLabel}
           name="chevronLeft"
           onPress={onBack}
           size="sm"

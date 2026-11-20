@@ -25,9 +25,9 @@ import {
   TextField,
   useTheme,
 } from '../design';
-import { REST_PAUSE_MAX, REST_PAUSE_MIN } from '../training';
+import { REST_PAUSE_MAX, REST_PAUSE_MIN, WORKOUT_VIEWS, WORKOUT_VIEW_LABELS, workoutViewOf } from '../training';
 import type { Connection } from '../server';
-import type { EffortScale } from '../training';
+import type { EffortScale, Profile, WorkoutView } from '../training';
 
 export type SettingsOperation = 'pair' | 'sync' | 'disconnect' | null;
 
@@ -39,6 +39,12 @@ export type SettingsScreenProps = {
   restAlerts: boolean;
   effort: EffortScale;
   restPauseSec: number;
+  /** Saved default for a new workout's layout; unknown values read as cards. */
+  workoutView?: WorkoutView;
+  /** List/compact fold finished exercises by default. */
+  foldDone?: boolean;
+  /** Cards/focus step over units whose sets are all done. */
+  skipDone?: boolean;
   onClose: () => void;
   onConnect: (address: string, code: string) => void;
   onSync: () => void;
@@ -49,6 +55,7 @@ export type SettingsScreenProps = {
   onToggleRestAlerts: () => void;
   onChangeEffort: (effort: EffortScale) => void;
   onChangeRestPauseSec: (value: number) => void;
+  onChangeSettings?: (values: Partial<Profile>) => void;
   onOpenAlarmSettings: () => void;
   onOpenGallery: () => void;
   reminderOn: boolean;
@@ -92,6 +99,9 @@ export function SettingsScreen({
   restAlerts,
   effort,
   restPauseSec,
+  workoutView,
+  foldDone = false,
+  skipDone = false,
   onClose,
   onConnect,
   onSync,
@@ -102,6 +112,7 @@ export function SettingsScreen({
   onToggleRestAlerts,
   onChangeEffort,
   onChangeRestPauseSec,
+  onChangeSettings,
   onOpenAlarmSettings,
   onOpenGallery,
   reminderOn,
@@ -291,6 +302,35 @@ export function SettingsScreen({
         <Text tone="secondary" variant="footnote">
           切换只影响之后的新评分，已有历史仍按原尺度显示。
         </Text>
+      </Card>
+
+      <SectionHeader style={{ marginTop: theme.space.sm }} title="训练布局" />
+      <Card gap={theme.space.sm}>
+        <Text variant="headline">默认布局</Text>
+        <Text tone="secondary" variant="subhead">
+          开训时写入本次训练；训练页菜单只改本场，不改这里的默认值。
+        </Text>
+        <Segmented
+          onChange={value => onChangeSettings?.({ workoutView: value })}
+          options={WORKOUT_VIEWS.map(value => ({ value, label: WORKOUT_VIEW_LABELS[value] }))}
+          testID="settings-workout-view"
+          value={workoutViewOf(workoutView)}
+        />
+      </Card>
+      <Card padded={false}>
+        <SwitchRow
+          subtitle="列表和紧凑布局把完成的单元收成一行"
+          title="折叠已完成动作"
+          value={foldDone}
+          onValueChange={value => onChangeSettings?.({ foldDone: value })}
+        />
+        <Divider inset={dividerInset} />
+        <SwitchRow
+          subtitle="卡片和专注前后切换时越过已完成的单元"
+          title="跳过已完成动作"
+          value={skipDone}
+          onValueChange={value => onChangeSettings?.({ skipDone: value })}
+        />
       </Card>
 
       <SectionHeader style={{ marginTop: theme.space.sm }} title="备份与数据" />

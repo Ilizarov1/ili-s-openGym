@@ -231,6 +231,21 @@ function Start-Routine([string]$Name) {
     Wait-Label '完成训练' | Out-Null
 }
 
+# The finish panel and summary (06): live workouts save through "结束并保存",
+# then the summary's "完成" returns Home.
+function Finish-Workout {
+    $donePrompt = (Read-Ui).SelectSingleNode("//node[@text='全部完成！']")
+    if (!$donePrompt) { Tap-Label '完成训练' -Scroll }
+    Tap-Label '结束并保存'
+    Wait-Label '训练完成' | Out-Null
+    Tap-Label '完成'
+}
+
+function Finish-ToStats {
+    Finish-Workout
+    Open-Stats
+}
+
 function Expand-Exercise([string]$Name) {
     Tap-Label "展开$Name" -Scroll
     Wait-Label "收起$Name" | Out-Null
@@ -311,7 +326,7 @@ try {
     Save-Screenshot '01-plan-editor-group'
     Set-Field '超级组名称' 'Push pair 73'
     Scroll-ToTop
-    Tap-Label '保存'
+    Tap-Label '返回'
     Wait-Label '超级组推胸 A' | Out-Null
     Open-PlanEditor '超级组推胸 A'
     Assert-PlanField '超级组名称' 'Push pair 73'
@@ -378,8 +393,7 @@ try {
     Wait-Node { $_.GetAttribute('content-desc') -eq '杠铃卧推 第 2 组完成' -and $_.GetAttribute('checked') -eq 'true' } 'Last superset set' | Out-Null
     Assert-NoRest 'The last set of the workout'
     Save-Screenshot '08-group-complete'
-    Tap-Label '完成训练' -Scroll
-    Wait-Stats
+    Finish-ToStats
     Save-Screenshot '09-stats'
 
     Write-Host 'Checking history rendering and the stored group'
@@ -408,8 +422,7 @@ try {
     }
     Tap-Label '取消休息'
     Tap-Label '杠铃全蹲 第 2 组完成'
-    Tap-Label '完成训练' -Scroll
-    Wait-Stats
+    Finish-ToStats
 
     Write-Host 'Checking plan-editor pairing, save/reopen and the new group in training'
     Open-PlanEditor '超级组新建 C'
@@ -417,7 +430,7 @@ try {
     Tap-Label '与上一动作组成超级组' -Scroll
     Scroll-ToTop
     Wait-Label '超级组名称' -Field | Out-Null
-    Tap-Label '保存'
+    Tap-Label '返回'
     Wait-Label '超级组新建 C' | Out-Null
     Open-PlanEditor '超级组新建 C'
     Wait-Label '超级组' | Out-Null

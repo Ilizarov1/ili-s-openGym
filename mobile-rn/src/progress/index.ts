@@ -50,6 +50,8 @@ export {
 } from './format';
 export { ExerciseRecordSection } from './ExerciseRecordSection';
 export type { ExerciseRecordSectionProps } from './ExerciseRecordSection';
+export { workoutSummary } from './summary';
+export type { WorkoutSummary } from './summary';
 export type {
   ExerciseCandidate,
   ExerciseChoice,
