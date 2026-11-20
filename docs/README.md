@@ -44,6 +44,7 @@ All settings live in `.env`; [`.env.example`](../.env.example) explains each one
 | [Contributing](../CONTRIBUTING.md) | Before your first pull request: setup, guidelines, what CI checks |
 | [Architecture](ARCHITECTURE.md) | You want the map: how the app, server, phones and watch fit together, with diagrams |
 | [RN and Web interaction parity](rn-web-interaction-parity/README.md) | Android workout and routine editing flows aligned with Web |
+| [RN workout set UI](rn-workout-set-ui/DESIGN.md) | Workout set rows, group menus and drop-set logging. [Execution and validation](rn-workout-set-ui/EXECUTION.md), [acceptance record](rn-workout-set-ui/ACCEPTANCE.md) |
 | [RN exercise search](rn-exercise-search/DESIGN.md) | Web search reuse, saved aliases, combined filters and zero-result suggestions. Five execution guides, the [entry baseline](rn-exercise-search/BASELINE.md) and [acceptance record](rn-exercise-search/ACCEPTANCE.md). |
 | [NestJS API migration](nestjs-migration/DESIGN.md) | [Execution plan](nestjs-migration/EXECUTION.md), [phase 4 handoff](nestjs-migration/HANDOFF.md), [per-feature documents](nestjs-migration/features/README.md), [baseline](nestjs-migration/BASELINE.md) and [acceptance record](nestjs-migration/ACCEPTANCE.md) |
 | [App stores and releases](APP_STORES.md) | You're shipping a release: the APK, Google Play and the App Store |

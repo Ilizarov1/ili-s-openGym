@@ -74,6 +74,9 @@ docs/
     03_EXISTING_ALIASES.md               已有用户别名读取、同步和工作区隔离
     04_COMBINED_FILTERS.md               目标肌群、器械和单侧组合筛选
     05_FUSE_SUGGESTIONS.md               Fuse.js 零结果候选和四入口集成验收
+  rn-workout-set-ui/
+    DESIGN.md                            训练组行、组菜单和递减组逐段记录设计
+    EXECUTION.md                         训练组行实施步骤、兼容回归和设备验收
   nestjs-migration/
     DESIGN.md                            服务端 NestJS 迁移设计
     EXECUTION.md                         迁移执行、测试、验收和回滚方案
