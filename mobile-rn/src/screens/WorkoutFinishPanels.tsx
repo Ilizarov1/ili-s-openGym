@@ -9,18 +9,29 @@ export type WorkoutFinishPanelProps = {
   visible: boolean;
   done: number;
   total: number;
+  /** Unfinished drop sets that already have some segments ticked. */
+  partial?: number;
   onSave: () => void;
   onDiscard: () => void;
   onContinue: () => void;
 };
 
-export function WorkoutFinishPanel({ visible, done, total, onSave, onDiscard, onContinue }: WorkoutFinishPanelProps) {
+export function WorkoutFinishPanel({
+  visible,
+  done,
+  total,
+  partial = 0,
+  onSave,
+  onDiscard,
+  onContinue,
+}: WorkoutFinishPanelProps) {
   const theme = useTheme();
   const remaining = Math.max(0, total - done);
   const title = done === 0 ? '尚未记组' : remaining > 0 ? '提前结束？' : '结束训练？';
   const message = done === 0
     ? '还没有勾选任何组。仍要结束并保存为空记录吗？'
-    : remaining > 0 ? `还有 ${remaining} 组未完成。现在结束并保存已完成的组吗？`
+    : remaining > 0
+      ? `还有 ${remaining} 组未完成${partial > 0 ? `，其中 ${partial} 个递减组只勾了部分分段` : ''}。现在结束并保存已完成的组吗？`
       : '全部组已完成。结束并保存这次训练吗？';
   return (
     <Sheet
@@ -37,6 +48,11 @@ export function WorkoutFinishPanel({ visible, done, total, onSave, onDiscard, on
       visible={visible}
     >
       <Text tone="secondary" variant="body">{message}</Text>
+      {partial > 0 ? (
+        <Text style={{ marginTop: theme.space.sm }} tone="secondary" variant="footnote">
+          部分勾选的递减组不会计为已完成组；分段进度只保留在草稿中。
+        </Text>
+      ) : null}
     </Sheet>
   );
 }

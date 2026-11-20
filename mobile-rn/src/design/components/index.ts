@@ -13,6 +13,7 @@ export * from './SearchField';
 export * from './TextField';
 export * from './SwitchRow';
 export * from './Stepper';
+export * from './InlineNumberField';
 export * from './Sheet';
 export * from './TabBar';
 export * from './ProgressBar';

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
-import { Alert, BackHandler, PanResponder, ScrollView, View } from 'react-native';
+import { Alert, BackHandler, PanResponder, ScrollView, useWindowDimensions, View } from 'react-native';
 import {
   ActionSheet,
   Button,
@@ -25,28 +25,34 @@ import { draftEffortOf, effortPreferenceOf, formatEffort, scaleName } from '../e
 import { SetField } from './WorkoutSetField';
 import { WorkoutFocusView, type FocusToggleOptions } from './WorkoutFocusView';
 import { WorkoutCompletePrompt, WorkoutFinishPanel } from './WorkoutFinishPanels';
+import { DropsetSheet } from './DropsetSheet';
 import {
   MAX_WORK_SETS,
   REST_PAUSE_MAX,
   REST_PAUSE_MIN,
   WORKOUT_VIEWS,
   WORKOUT_VIEW_LABELS,
-  addClusterSegment,
-  addDropSegment,
   addWorkSet,
-  backupExerciseIds,
+  applyDraftDrops,
+  convertDraftSetWarmup,
+  copyDraftSet,
   draftClusterTotal,
+  draftSegmentDone,
+  draftSetHasProgress,
+  dropSetProgress,
   editDraftSet,
   exerciseMode,
   exerciseName,
+  nextDraftSegment,
   removeClusterSegment,
-  removeDropSegment,
   removeSet,
+  revertDraftDropset,
+  seedDropSegment,
   setDraftEffort,
   setClusterSegment,
   setDropSegment,
   startDraftRest,
-  swapExercise,
+  toggleDraftSegment,
   updateSet,
   updateSetReps,
   validSet,
@@ -54,6 +60,8 @@ import {
   validWorkoutDay,
   workoutViewOf,
   type Draft,
+  type DraftDrop,
+  type DraftSet,
   type Profile,
   type QueuedWorkout,
   type RatingScale,
@@ -75,6 +83,15 @@ export type WorkoutScreenProps = {
 
 type MenuItem = NonNullable<ComponentProps<typeof ActionSheet>['items']>[number];
 type Menu = { kind: 'workout' } | { kind: 'exercise'; index: number } | null;
+type SetMenu = { exerciseIndex: number; setIndex: number; setKey?: string };
+type DropsetSheetState = {
+  exerciseIndex: number;
+  setIndex: number;
+  mode: 'create' | 'edit';
+  setKey?: string;
+  title: string;
+  drops: DraftDrop[];
+};
 type RatingSheet = {
   exerciseIndex: number;
   setIndex: number;
@@ -83,7 +100,18 @@ type RatingSheet = {
   cardio: boolean;
 };
 
-const NUMBER_COLUMN = 30;
+function setNumberAt(sets: DraftSet[], index: number) {
+  const set = sets[index];
+  return sets.slice(0, index + 1).filter(row => !!row.warmup === !!set?.warmup).length;
+}
+
+function setRowKey(exerciseIndex: number, setIndex: number, set: { key?: string }) {
+  return `${exerciseIndex}:${set.key ?? setIndex}`;
+}
+
+function dropSegmentKey(drop: DraftDrop, index: number) {
+  return typeof drop.key === 'string' && drop.key !== '' ? drop.key : `d${index}`;
+}
 
 function formatElapsed(millis: number) {
   const total = Math.max(0, Math.floor(millis / 1000));
@@ -155,14 +183,20 @@ function nextUnfinishedUnit(draft: Draft, units: number[][], fromIndex: number) 
   return ordered.find(unit => unitHasWork(draft, unit)) ?? null;
 }
 
-export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, onFinish, onDiscard, onCollapse, onPick }: WorkoutScreenProps) {
+export function WorkoutScreen({ profile, draft, e2e = false, onChange, onFinish, onDiscard, onCollapse, onPick }: WorkoutScreenProps) {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
   const list = useRef<ScrollView>(null);
   const unitTops = useRef(new Map<number, number>());
   const memberOffsets = useRef(new Map<number, number>());
   const highWater = useRef<number[]>([]);
   const setCounts = useRef<number[]>([]);
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
   const [menu, setMenu] = useState<Menu>(null);
+  const [rowMenu, setRowMenu] = useState<SetMenu | null>(null);
+  const [dropsetSheet, setDropsetSheet] = useState<DropsetSheetState | null>(null);
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(() => new Set());
   const [jump, setJump] = useState(false);
   const [rating, setRating] = useState<RatingSheet | null>(null);
   const [finishOpen, setFinishOpen] = useState(false);
@@ -172,6 +206,12 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     keys: new Set<string>(),
   }));
   const effort = effortPreferenceOf(profile);
+  // A 320dp window only fits six columns when the page and card each use 8dp.
+  const narrow = width <= 360;
+  const pagePadding = narrow ? theme.space.sm : theme.layout.pagePadding;
+  const cardPadding = narrow ? theme.space.sm : theme.layout.cardPadding;
+  const column = theme.sizes.touch;
+  const cellGap = theme.space.xxs;
 
   // The layout is this session's snapshot. A draft from before the setting existed
   // reads the saved profile default, and anything unknown reads as cards.
@@ -198,13 +238,20 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
   const unitIndex = units.findIndex(unit => unit.includes(position));
   const currentUnit = unitIndex >= 0 ? units[unitIndex] : [];
   const opened = openedState.length === draft.exercises.length ? openedState.keys : new Set<string>();
+  const sheetSet = dropsetSheet
+    ? draft.exercises[dropsetSheet.exerciseIndex]?.sets[dropsetSheet.setIndex]
+    : undefined;
+  const sheetMatches = !!sheetSet &&
+    (dropsetSheet?.setKey == null || sheetSet.key == null || sheetSet.key === dropsetSheet.setKey);
 
   // Android Back closes this screen's own sheets first; App's handler only sees the
   // next press and puts the workout aside.
   useEffect(() => {
-    if (!menu && !jump && !rating && !finishOpen && !completeOpen) return;
+    if (!menu && !rowMenu && !dropsetSheet && !jump && !rating && !finishOpen && !completeOpen) return;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (rating) setRating(null);
+      if (dropsetSheet) setDropsetSheet(null);
+      else if (rowMenu) setRowMenu(null);
+      else if (rating) setRating(null);
       else if (menu) setMenu(null);
       else if (jump) setJump(false);
       else if (completeOpen) setCompleteOpen(false);
@@ -212,7 +259,7 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
       return true;
     });
     return () => subscription.remove();
-  }, [completeOpen, finishOpen, jump, menu, rating]);
+  }, [completeOpen, dropsetSheet, finishOpen, jump, menu, rating, rowMenu]);
 
   const collapsed = new Set<string>();
   if (collapseOn) {
@@ -282,16 +329,23 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     return grouped ? '移出超级组' : index > 0 ? '与上一动作组成超级组' : '';
   }
 
+  function commit(next: Draft) {
+    const saved = onChange(next);
+    if (saved) latestDraft.current = next;
+    return saved;
+  }
+
   function exerciseMenuItems(index: number): MenuItem[] {
     const exercise = draft.exercises[index];
     if (!exercise) return [];
     const { unit } = groups[index];
     const grouped = unit.length > 1;
     const affected = grouped ? unit : [...(groups[index - 1]?.unit ?? []), index];
-    const canGroup = affected.every(row => draft.exercises[row].sets.every(set => set.at === null));
-    const completed = exercise.sets.some(set => set.at !== null);
+    // Partial dropset ticks are recorded work too: they lock replacement and grouping.
+    const canGroup = affected.every(row => draft.exercises[row].sets.every(set => !draftSetHasProgress(set)));
+    const locked = exercise.sets.some(draftSetHasProgress);
     const items: MenuItem[] = [];
-    if (!completed) {
+    if (!locked) {
       items.push({ label: '搜索替换动作', icon: 'magnifier', onPress: () => onPick(index) });
     }
     if ((grouped || index > 0) && canGroup) {
@@ -307,23 +361,150 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     return items;
   }
 
-  function toggleSet(exerciseIndex: number, setIndex: number, options?: FocusToggleOptions) {
-    const exercise = draft.exercises[exerciseIndex];
-    const set = exercise?.sets[setIndex];
-    if (!exercise || !set) return;
-    const complete = set.at !== null;
-    const at = complete ? null : Date.now();
-    let next = updateSet(draft, exerciseIndex, setIndex, { at });
-    const controlsRest = draft.rest?.exerciseIndex === exerciseIndex && draft.rest.setIndex === setIndex;
-    if (at === null) {
-      onChange(controlsRest ? { ...next, rest: null } : next);
+  function openDropsetSheet(exerciseIndex: number, setIndex: number, mode: 'create' | 'edit', expectedKey?: string) {
+    const current = latestDraft.current;
+    const set = current.exercises[exerciseIndex]?.sets[setIndex];
+    if (!set || set.at !== null || set.warmup) return;
+    if (expectedKey != null && set.key != null && set.key !== expectedKey) return;
+    if (mode === 'create') {
+      const seed = seedDropSegment(current, exerciseIndex, setIndex, profile);
+      if (!seed) {
+        Alert.alert('无法改为递减组', '这一组当前不能设置降重分段。');
+        return;
+      }
+      setDropsetSheet({
+        exerciseIndex,
+        setIndex,
+        mode,
+        setKey: set.key,
+        title: `第 ${setNumberAt(current.exercises[exerciseIndex].sets, setIndex)} 组 · 改为递减组`,
+        drops: [seed],
+      });
       return;
     }
+    setDropsetSheet({
+      exerciseIndex,
+      setIndex,
+      mode,
+      setKey: set.key,
+      title: `第 ${setNumberAt(current.exercises[exerciseIndex].sets, setIndex)} 组 · 编辑递减段`,
+      drops: (set.drops ?? []).map(drop => ({ ...drop })),
+    });
+  }
 
-    const doneCount = next.exercises[exerciseIndex].sets.filter(row => row.at !== null).length;
+  function saveDropset(drops: DraftDrop[]) {
+    if (!dropsetSheet) return;
+    const { exerciseIndex, setIndex, setKey } = dropsetSheet;
+    const current = latestDraft.current;
+    const set = current.exercises[exerciseIndex]?.sets[setIndex];
+    if (!set || (setKey != null && set.key != null && set.key !== setKey)) {
+      setDropsetSheet(null);
+      return;
+    }
+    const next = applyDraftDrops(current, exerciseIndex, setIndex, drops);
+    if (!next) {
+      Alert.alert('无法保存递减组', '这一组当前不能设置降重分段。');
+      return;
+    }
+    const savedSet = next.exercises[exerciseIndex]?.sets[setIndex];
+    if (!commit(next)) return;
+    if (savedSet) setRowOpen(setRowKey(exerciseIndex, setIndex, savedSet), true);
+    setDropsetSheet(null);
+  }
+
+  function quickAddDrop(exerciseIndex: number, setIndex: number) {
+    const current = latestDraft.current;
+    const set = current.exercises[exerciseIndex]?.sets[setIndex];
+    if (!set || set.at !== null || set.type !== 'dropset') return;
+    const seed = seedDropSegment(current, exerciseIndex, setIndex, profile);
+    if (!seed) return;
+    const next = applyDraftDrops(current, exerciseIndex, setIndex, [...(set.drops ?? []), seed]);
+    if (next) commit(next);
+  }
+
+  /** Last drop's segment id, the only segment that may be unticked after whole completion. */
+  function lastDropSegment(set: DraftSet) {
+    const drops = set.drops ?? [];
+    const last = drops[drops.length - 1];
+    return last ? dropSegmentKey(last, drops.length - 1) : null;
+  }
+
+  /** The last ticked segment in display order; only this one can be undone. */
+  function lastDoneDropSegment(set: DraftSet) {
+    const drops = set.drops ?? [];
+    for (let index = drops.length - 1; index >= 0; index--) {
+      if (drops[index].at != null) return dropSegmentKey(drops[index], index);
+    }
+    return set.mainAt != null ? 'main' : null;
+  }
+
+  function toggleDropsetSegment(
+    exerciseIndex: number,
+    setIndex: number,
+    segment: string,
+    expectedDone: boolean,
+    options?: FocusToggleOptions,
+  ) {
+    const current = latestDraft.current;
+    const exercise = current.exercises[exerciseIndex];
+    const set = exercise?.sets[setIndex];
+    if (!exercise || !set || set.type !== 'dropset') return;
+    const complete = set.at !== null;
+    if (complete) {
+      // Completed structures are locked: only the final drop can go back to work.
+      if (segment !== lastDropSegment(set)) return;
+    } else {
+      const next = nextDraftSegment(set);
+      const lastDone = lastDoneDropSegment(set);
+      if (segment !== next && segment !== lastDone) return;
+      // Undoing the last ticked segment is always allowed; completing the next
+      // segment still needs valid values and the superset turn.
+      if (!expectedDone) {
+        if (!validSet(set, exerciseMode(exercise.target, profile)) || !validSetSegments(set)) return;
+        const { unit, nextSet } = groups[exerciseIndex];
+        const grouped = unit.length > 1;
+        const turn = !grouped || (nextSet?.exerciseIndex === exerciseIndex && nextSet.setIndex === setIndex);
+        if (!turn) return;
+      }
+    }
+    const at = Date.now();
+    // The expectation comes from the pressed control's rendered state, not from the
+    // newest draft: a doubled tap then carries the same old state and is a no-op
+    // instead of undoing the completion the first tap just committed.
+    const result = toggleDraftSegment(current, exerciseIndex, setIndex, segment, expectedDone, at);
+    if (!result.changed) return;
+    if (result.completed) {
+      finishSetCompletion(result.draft, exerciseIndex, setIndex, at, options);
+      return;
+    }
+    if (result.undone) {
+      const controlsRest = current.rest?.exerciseIndex === exerciseIndex && current.rest.setIndex === setIndex;
+      commit(controlsRest ? { ...result.draft, rest: null } : result.draft);
+      return;
+    }
+    commit(result.draft);
+  }
+
+  /**
+   * The one completion path for every layout. Segment completion reaches it with
+   * the draft that already carries `at`; a plain checkbox reaches it with the same
+   * shape. Rest, superset flow, folding, focus movement and the finish prompt are
+   * never computed anywhere else.
+   */
+  function finishSetCompletion(
+    nextDraft: Draft,
+    exerciseIndex: number,
+    setIndex: number,
+    at: number,
+    options?: FocusToggleOptions,
+  ) {
+    let next = nextDraft;
+    let scrollTarget: number | null = null;
+    const exercise = next.exercises[exerciseIndex];
+    if (!exercise) return;
+    const doneCount = exercise.sets.filter(row => row.at !== null).length;
     const previous = highWater.current[exerciseIndex] ?? 0;
     const isNew = doneCount > previous;
-    highWater.current[exerciseIndex] = Math.max(previous, doneCount);
 
     const { unit, nextSet } = groups[exerciseIndex];
     const grouped = unit.length > 1;
@@ -345,7 +526,7 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
         const upcoming = nextUnfinishedUnit(next, units, position);
         if (upcoming) {
           next = { ...next, position: upcoming[0] };
-          scrollToExercise(upcoming[0]);
+          scrollTarget = upcoming[0];
         }
       }
     }
@@ -363,8 +544,10 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     }
 
     const rest = startDraftRest(exerciseIndex, setIndex, seconds, at);
-    const saved = onChange({ ...next, rest });
-    if (!saved) return;
+    const finalDraft = { ...next, rest };
+    if (!commit(finalDraft)) return;
+    highWater.current[exerciseIndex] = Math.max(previous, doneCount);
+    if (scrollTarget != null) scrollToExercise(scrollTarget);
     if (grouped && !focusMode) {
       const upcoming = nextSupersetSet(next, unit);
       if (upcoming && upcoming.exerciseIndex !== exerciseIndex) scrollToExercise(upcoming.exerciseIndex);
@@ -375,6 +558,194 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
       next.exercises.every(entry => entry.sets.every(row => row.at !== null));
     if (isNew && allDone && draft.backfillDay == null) setCompleteOpen(true);
   }
+
+  function toggleSet(exerciseIndex: number, setIndex: number, options?: FocusToggleOptions) {
+    const current = latestDraft.current;
+    const exercise = current.exercises[exerciseIndex];
+    const set = exercise?.sets[setIndex];
+    if (!exercise || !set) return;
+    // No layout may tick a whole dropset directly; focus and older callers advance
+    // one segment at a time until the final drop commits the set. A completed
+    // dropset is undone only through its last segment checkbox.
+    if (set.type === 'dropset') {
+      if (set.at === null) {
+        const segment = nextDraftSegment(set);
+        if (segment) {
+          toggleDropsetSegment(exerciseIndex, setIndex, segment, draftSegmentDone(set, segment), options);
+        }
+      }
+      return;
+    }
+    const complete = set.at !== null;
+    const at = complete ? null : Date.now();
+    const next = updateSet(current, exerciseIndex, setIndex, { at });
+    if (at === null) {
+      const controlsRest = current.rest?.exerciseIndex === exerciseIndex && current.rest.setIndex === setIndex;
+      commit(controlsRest ? { ...next, rest: null } : next);
+      return;
+    }
+    finishSetCompletion(next, exerciseIndex, setIndex, at, options);
+  }
+
+  function requestRevertDropset(exerciseIndex: number, setIndex: number, expectedKey?: string) {
+    const current = latestDraft.current;
+    const set = current.exercises[exerciseIndex]?.sets[setIndex];
+    if (!set || set.at !== null) return;
+    if (expectedKey != null && set.key != null && set.key !== expectedKey) return;
+    const key = expectedKey ?? set.key;
+    const apply = () => {
+      const latest = latestDraft.current;
+      const target = latest.exercises[exerciseIndex]?.sets[setIndex];
+      if (!target || (key != null && target.key != null && target.key !== key)) return;
+      commit(revertDraftDropset(latest, exerciseIndex, setIndex));
+    };
+    if (draftSetHasProgress(set)) {
+      Alert.alert(
+        '改为普通组？',
+        '已勾选的分段进度会被清除。主段的重量、次数和评分保留，这一组不会开始或重置休息。',
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '改为普通组', style: 'destructive', onPress: apply },
+        ],
+      );
+      return;
+    }
+    apply();
+  }
+
+  function requestDeleteSet(exerciseIndex: number, setIndex: number, expectedKey?: string) {
+    const current = latestDraft.current;
+    const set = current.exercises[exerciseIndex]?.sets[setIndex];
+    if (!set || set.at !== null) return;
+    if (expectedKey != null && set.key != null && set.key !== expectedKey) return;
+    const key = expectedKey ?? set.key;
+    const apply = () => {
+      const latest = latestDraft.current;
+      const target = latest.exercises[exerciseIndex]?.sets[setIndex];
+      if (!target || (key != null && target.key != null && target.key !== key)) return;
+      commit(removeSet(latest, exerciseIndex, setIndex));
+    };
+    if (draftSetHasProgress(set)) {
+      Alert.alert(
+        '删除有进度的组？',
+        '这一组已勾选的分段进度会丢失。',
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '删除', style: 'destructive', onPress: apply },
+        ],
+      );
+      return;
+    }
+    apply();
+  }
+
+  function setMenuItems(exerciseIndex: number, setIndex: number, expectedKey?: string): MenuItem[] {
+    const exercise = draft.exercises[exerciseIndex];
+    const set = exercise?.sets[setIndex];
+    if (!exercise || !set) return [];
+    if (expectedKey != null && set.key != null && set.key !== expectedKey) return [];
+    const mode = exerciseMode(exercise.target, profile);
+    const complete = set.at !== null;
+    const items: MenuItem[] = [];
+    const workSets = exercise.sets.filter(row => !row.warmup).length;
+    const canCopy = set.warmup || workSets < MAX_WORK_SETS;
+    const copyItem: MenuItem = {
+      label: '复制这一组',
+      icon: 'copy',
+      onPress: () => {
+        const latest = latestDraft.current;
+        const target = latest.exercises[exerciseIndex]?.sets[setIndex];
+        if (!target || (expectedKey != null && target.key != null && target.key !== expectedKey)) return;
+        commit(copyDraftSet(latest, exerciseIndex, setIndex));
+      },
+    };
+    const deleteItem: MenuItem = {
+      label: '删除这一组',
+      icon: 'trash',
+      tone: 'danger',
+      onPress: () => requestDeleteSet(exerciseIndex, setIndex, expectedKey),
+    };
+    const warmupItem = (warmup: boolean): MenuItem => ({
+      label: warmup ? '设为热身组' : '改为正式组',
+      icon: 'sun',
+      onPress: () => {
+        const latest = latestDraft.current;
+        const target = latest.exercises[exerciseIndex]?.sets[setIndex];
+        if (!target) return;
+        if (expectedKey != null && target.key != null && target.key !== expectedKey) return;
+        commit(convertDraftSetWarmup(latest, exerciseIndex, setIndex, warmup));
+      },
+    });
+
+    if (set.type === 'restpause') {
+      // Legacy rest-pause keeps copy/delete only; no conversion or add entry.
+      if (canCopy) items.push(copyItem);
+      if (!complete) items.push(deleteItem);
+      return items;
+    }
+    if (set.type === 'dropset') {
+      if (!complete) {
+        items.push(
+          { label: '编辑分段', icon: 'pencil', onPress: () => openDropsetSheet(exerciseIndex, setIndex, 'edit', expectedKey) },
+          { label: '改为普通组', icon: 'undo', onPress: () => requestRevertDropset(exerciseIndex, setIndex, expectedKey) },
+        );
+      }
+      if (canCopy) items.push(copyItem);
+      if (!complete) items.push(deleteItem);
+      return items;
+    }
+    if (set.warmup) {
+      items.push(warmupItem(false));
+      if (canCopy) items.push(copyItem);
+      if (!complete) items.push(deleteItem);
+      return items;
+    }
+    if (mode === 'reps') {
+      items.push(warmupItem(true));
+      if (!complete) {
+        items.push(
+          { label: '改为递减组', icon: 'arrowDown', onPress: () => openDropsetSheet(exerciseIndex, setIndex, 'create', expectedKey) },
+        );
+      }
+      if (canCopy) items.push(copyItem);
+      if (!complete) items.push(deleteItem);
+      return items;
+    }
+    if (canCopy) items.push(copyItem);
+    if (!complete) items.push(deleteItem);
+    return items;
+  }
+
+  function setMenuTitle(target: SetMenu | null) {
+    if (!target) return undefined;
+    const sets = draft.exercises[target.exerciseIndex]?.sets;
+    const set = sets?.[target.setIndex];
+    if (!sets || !set) return undefined;
+    if (target.setKey != null && set.key != null && set.key !== target.setKey) return undefined;
+    const label = set.warmup
+      ? `热身第 ${setNumberAt(sets, target.setIndex)} 组`
+      : `第 ${setNumberAt(sets, target.setIndex)} 组`;
+    return set.type === 'dropset' ? `${label} · 递减组` : label;
+  }
+
+  function setRowOpen(key: string, open: boolean) {
+    setExpandedRows(previous => {
+      const next = new Set(previous);
+      if (open) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  function toggleRowOpen(key: string) {
+    setExpandedRows(previous => {
+      const next = new Set(previous);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
 
   function requestFinish() {
     const invalidAt = draft.exercises.findIndex(exercise => exercise.sets.some(set =>
@@ -441,25 +812,35 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
     const groupStart = grouped && unit[0] === exerciseIndex;
     const groupName = groupStart ? supersetMeta(targets, unit).name : '';
     const affected = grouped ? unit : [...(groups[exerciseIndex - 1]?.unit ?? []), exerciseIndex];
-    const canGroup = affected.every(index => draft.exercises[index].sets.every(set => set.at === null));
-    const completed = exercise.sets.some(set => set.at !== null);
+    const canGroup = affected.every(index =>
+      draft.exercises[index].sets.every(set => !draftSetHasProgress(set)));
     const mode = exerciseMode(exercise.target, profile);
     const weightLabel = mode === 'cardio' ? '速度' : '重量';
     const amountLabel = mode === 'cardio' ? '分钟' : mode === 'time' ? '秒' : '次数';
-    const replacements = backupExerciseIds(exercise.target, profile);
     const actions = exerciseMenuItems(exerciseIndex);
     // Strength work sets follow the profile scale. Cardio always asks for RPE
     // (a run has no reps left); timed holds keep their own entry points.
     const ratingScale: RatingScale | null = effort === 'none'
       ? null
       : mode === 'cardio' ? 'rpe' : mode === 'reps' ? effort : null;
+    // A saved per-set scale outlives a later profile change, so the header reads
+    // the scales actually on the card rather than the current setting alone.
+    const cardScales = new Set<RatingScale>();
+    for (const row of exercise.sets) {
+      if (row.warmup) continue;
+      const scale = row.effortScale ?? ratingScale;
+      if (scale) cardScales.add(scale);
+    }
+    const showRating = cardScales.size > 0;
+    const showRowScale = cardScales.size > 1;
+    const ratingHeader = cardScales.size === 1 ? scaleName([...cardScales][0]) : '评分';
 
     return (
       <View
         key={exerciseIndex}
         onLayout={event => memberOffsets.current.set(exerciseIndex, event.nativeEvent.layout.y)}
       >
-        <Card gap={theme.space.sm} style={{ marginBottom: 0 }}>
+        <Card gap={theme.space.sm} style={{ marginBottom: 0, padding: cardPadding }}>
           <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: theme.space.sm }}>
             <View style={{ flex: 1, minWidth: 0 }}>
               {groupStart && !denseCard ? (
@@ -487,73 +868,129 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
             <Text tone="secondary" variant="footnote">次数填写双侧合计。</Text>
           ) : null}
 
-          {!denseCard && replacements.length > 0 ? (
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
-              {replacements.map(id => (
-                <Button
-                  disabled={completed}
-                  key={id}
-                  onPress={() => onChange(swapExercise(draft, exerciseIndex, id, profile, queue))}
-                  size="sm"
-                  variant="secondary"
-                >
-                  替换为 {exerciseName(profile, id)}
-                </Button>
-              ))}
-            </View>
-          ) : null}
-
-          <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
-            <Text style={{ width: NUMBER_COLUMN }} tone="tertiary" variant="caption">组</Text>
-            <Text style={{ flex: 1 }} tone="tertiary" variant="caption">
-              {weightLabel === '重量' ? `重量 · ${draft.unit}` : weightLabel}
+          <View style={{ alignItems: 'center', flexDirection: 'row', gap: cellGap }}>
+            <Text style={{ textAlign: 'center', width: column }} tone="tertiary" variant="caption">组</Text>
+            <Text style={{ flex: 1, minWidth: column, textAlign: 'center' }} tone="tertiary" variant="caption">
+              {weightLabel === '重量' ? `重量·${draft.unit}` : weightLabel}
             </Text>
-            <Text style={{ flex: 1 }} tone="tertiary" variant="caption">{amountLabel}</Text>
-            <View style={{ width: theme.sizes.tileSm }} />
-            <View style={{ width: theme.sizes.tileMd }} />
+            <Text style={{ flex: 1, minWidth: column, textAlign: 'center' }} tone="tertiary" variant="caption">
+              {amountLabel}
+            </Text>
+            {showRating ? (
+              <Text style={{ textAlign: 'center', width: column }} tone="tertiary" variant="caption">
+                {ratingHeader}
+              </Text>
+            ) : null}
+            <Text style={{ textAlign: 'center', width: column }} tone="tertiary" variant="caption">完成</Text>
+            <View style={{ width: column }} />
           </View>
 
           {exercise.sets.map((set, setIndex) => {
             const complete = set.at !== null;
-            const segments = set.type === 'dropset' ? set.drops ?? [] : set.type === 'restpause' ? set.clusters ?? [] : [];
+            const isDropset = set.type === 'dropset';
+            const isRestpause = set.type === 'restpause';
+            const drops = isDropset ? set.drops ?? [] : [];
+            const clusters = isRestpause ? set.clusters ?? [] : [];
+            const progress = dropSetProgress(set);
             const segmentsValid = validSetSegments(set);
             const valid = validSet(set, mode) && segmentsValid;
             const available = (complete || valid) && (!grouped || complete ||
               (nextSet?.exerciseIndex === exerciseIndex && nextSet.setIndex === setIndex));
-            const number = exercise.sets.slice(0, setIndex + 1).filter(row => !!row.warmup === !!set.warmup).length;
+            const number = setNumberAt(exercise.sets, setIndex);
             const label = set.warmup ? `热身第 ${number} 组` : `第 ${number} 组`;
             const controlLabel = grouped ? `${name} ${label}` : label;
+            const rowKey = setRowKey(exerciseIndex, setIndex, set);
+            const expanded = expandedRows.has(rowKey);
             // A row already rated in this draft keeps its own scale, exactly like
             // history: changing the setting later relabels only unrated rows.
-            const setScale = set.effortScale ?? ratingScale;
+            const setScale = set.warmup ? null : set.effortScale ?? ratingScale;
             const ratingValue = setScale ? draftEffortOf(set, setScale) : null;
             const ratingLabel = setScale
               ? ratingValue == null
                 ? `${scaleName(setScale)} 未评分`
                 : `${scaleName(setScale)} ${formatEffort(ratingValue)}`
               : '';
-            const editWeight = (weight: string) => {
-              onChange(editDraftSet(draft, exerciseIndex, setIndex, 'weight', weight, profile));
-            };
+            const lastSegment = lastDropSegment(set);
+            const nextSegment = nextDraftSegment(set);
+            const lastDoneSegment = lastDoneDropSegment(set);
+            const editWeight = (weight: string) => commit(
+              editDraftSet(latestDraft.current, exerciseIndex, setIndex, 'weight', weight, profile),
+            );
             const editReps = (reps: string) => {
               const retotaled = set.type === 'restpause'
-                ? updateSetReps(draft, exerciseIndex, setIndex, reps)
-                : draft;
-              onChange(editDraftSet(retotaled, exerciseIndex, setIndex, 'reps', reps, profile));
+                ? updateSetReps(latestDraft.current, exerciseIndex, setIndex, reps)
+                : latestDraft.current;
+              commit(editDraftSet(retotaled, exerciseIndex, setIndex, 'reps', reps, profile));
             };
+            const dropsSummary = [
+              `${set.weight} ${draft.unit} × ${set.reps}`,
+              ...drops.map(drop => `${drop.w} ${draft.unit} × ${drop.r}`),
+            ].join(' → ');
+
+            const segmentCheckbox = (segment: string, segmentLabel: string, checked: boolean, enabled: boolean, testID: string) => (
+              <PressableScale
+                accessibilityLabel={`${controlLabel}${segmentLabel}${checked ? '已完成' : '未完成'}`}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked, disabled: !enabled }}
+                disabled={!enabled}
+                onPress={() => toggleDropsetSegment(exerciseIndex, setIndex, segment, checked)}
+                scaleTo={theme.motion.pressScaleSmall}
+                style={{ alignItems: 'center', height: column, justifyContent: 'center', width: column }}
+                testID={testID}
+              >
+                <View
+                  style={{
+                    alignItems: 'center',
+                    backgroundColor: checked
+                      ? theme.colors.accent
+                      : enabled ? theme.colors.surface3 : theme.colors.surface2,
+                    borderRadius: theme.radius.sm,
+                    height: theme.sizes.tileMd,
+                    justifyContent: 'center',
+                    opacity: checked || enabled ? 1 : 0.55,
+                    width: theme.sizes.tileMd,
+                  }}
+                >
+                  <Icon
+                    color={checked
+                      ? theme.colors.onAccent
+                      : enabled ? theme.colors.label : theme.colors.label4}
+                    name="check"
+                    size={theme.sizes.buttonIcon}
+                  />
+                </View>
+              </PressableScale>
+            );
 
             return (
-              <View key={set.key ?? String(setIndex)} style={{ gap: theme.space.xs }}>
-                <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
-                  <Text
-                    numberOfLines={1}
-                    style={{ width: NUMBER_COLUMN }}
-                    tone={complete ? 'tertiary' : 'secondary'}
-                    variant="footnote"
-                  >
-                    {set.warmup ? '热身' : number}
-                  </Text>
-                  <View style={{ flex: 1 }}>
+              <View
+                key={set.key ?? String(setIndex)}
+                style={{ gap: theme.space.xs }}
+                testID={`workout-row-${exerciseIndex}-${setIndex}`}
+              >
+                <View style={{ alignItems: 'center', flexDirection: 'row', gap: cellGap }}>
+                  <View style={{ alignItems: 'center', justifyContent: 'center', minHeight: column, width: column }}>
+                    {isDropset ? (
+                      <PressableScale
+                        accessibilityLabel={`${controlLabel}递减段${expanded ? '已展开' : '已收起'}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded }}
+                        onPress={() => toggleRowOpen(rowKey)}
+                        scaleTo={theme.motion.pressScaleSmall}
+                        style={{ alignItems: 'center', height: column, justifyContent: 'center', width: column }}
+                        testID={`set-expand-${exerciseIndex}-${setIndex}`}
+                      >
+                        <Text numberOfLines={1} tone={complete ? 'tertiary' : 'secondary'} variant="footnote">
+                          {`${number} ${expanded ? '▾' : '▸'}`}
+                        </Text>
+                      </PressableScale>
+                    ) : (
+                      <Text style={{ textAlign: 'center' }} tone={complete ? 'tertiary' : 'secondary'} variant="footnote">
+                        {set.warmup ? `热身${number}` : number}
+                      </Text>
+                    )}
+                  </View>
+                  <View style={{ flex: 1, minWidth: column }}>
                     <SetField
                       accessibilityLabel={`${controlLabel}${weightLabel}`}
                       field="weight"
@@ -561,159 +998,283 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                       min={0}
                       mode={mode}
                       onChangeText={editWeight}
+                      presentation="inline"
                       step={mode === 'cardio' ? 0.5 : 2.5}
+                      testID={`set-weight-${exerciseIndex}-${setIndex}`}
                       value={set.weight}
                     />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={{ flex: 1, minWidth: column }}>
                     <SetField
-                      accessibilityLabel={`${controlLabel}${set.type === 'restpause' ? '总次数' : amountLabel}`}
+                      accessibilityLabel={`${controlLabel}${isRestpause ? '总次数' : amountLabel}`}
                       field="reps"
                       keyboardType={mode === 'cardio' ? 'decimal-pad' : 'number-pad'}
                       min={0}
                       mode={mode}
                       onChangeText={editReps}
+                      presentation="inline"
                       step={mode === 'time' ? 5 : 1}
+                      testID={`set-reps-${exerciseIndex}-${setIndex}`}
                       value={set.reps}
                     />
                   </View>
-                  <PressableScale
-                    accessibilityLabel={`${controlLabel}完成`}
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: complete, disabled: !available }}
-                    disabled={!available}
-                    hitSlop={theme.space.xs}
-                    onPress={() => toggleSet(exerciseIndex, setIndex)}
-                    scaleTo={theme.motion.pressScaleSmall}
-                    style={{
-                      alignItems: 'center',
-                      backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
-                      borderRadius: theme.radius.sm,
-                      height: theme.sizes.tileSm,
-                      justifyContent: 'center',
-                      width: theme.sizes.tileSm,
-                    }}
-                  >
-                    <Icon
-                      color={complete ? theme.colors.onAccent : theme.colors.label3}
-                      name="check"
-                      size={18}
-                    />
-                  </PressableScale>
-                  {complete ? <View style={{ width: theme.sizes.tileMd }} /> : (
-                    <IconButton
-                      accessibilityLabel={`删除${controlLabel}`}
-                      name="xmark"
-                      onPress={() => onChange(removeSet(draft, exerciseIndex, setIndex))}
-                      size="sm"
-                    />
-                  )}
-                </View>
-                {setScale != null && !set.warmup ? (
-                  <View
-                    style={{
-                      alignItems: 'center',
-                      flexDirection: 'row',
-                      gap: theme.space.sm,
-                      paddingLeft: NUMBER_COLUMN + theme.space.xs,
-                    }}
-                  >
-                    <Button
-                      accessibilityLabel={`${controlLabel}${ratingLabel}`}
-                      icon="gauge"
-                      onPress={() => setRating({
-                        exerciseIndex,
-                        setIndex,
-                        scale: setScale,
-                        value: ratingValue,
-                        cardio: mode === 'cardio',
-                      })}
-                      size="xs"
-                      testID={`set-effort-${exerciseIndex}-${setIndex}`}
-                      variant={ratingValue == null ? 'secondary' : 'tinted'}
+                  {showRating ? (
+                    setScale != null ? (
+                      <PressableScale
+                        accessibilityLabel={`${controlLabel}${ratingLabel}`}
+                        accessibilityRole="button"
+                        onPress={() => setRating({
+                          exerciseIndex,
+                          setIndex,
+                          scale: setScale,
+                          value: ratingValue,
+                          cardio: mode === 'cardio',
+                        })}
+                        scaleTo={theme.motion.pressScaleSmall}
+                        style={{ alignItems: 'center', height: column, justifyContent: 'center', width: column }}
+                        testID={`set-rating-${exerciseIndex}-${setIndex}`}
+                      >
+                        <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                          {showRowScale ? (
+                            <Text tone="tertiary" variant="caption2">
+                              {scaleName(setScale)}
+                            </Text>
+                          ) : null}
+                          <Text
+                            tone={ratingValue == null ? 'tertiary' : 'accent'}
+                            variant="footnote"
+                            weight={ratingValue == null ? undefined : '600'}
+                          >
+                            {ratingValue == null ? '—' : formatEffort(ratingValue)}
+                          </Text>
+                        </View>
+                      </PressableScale>
+                    ) : (
+                      <View
+                        accessibilityLabel={`${controlLabel}评分不可用`}
+                        accessibilityState={{ disabled: true }}
+                        accessible
+                        style={{ height: column, width: column }}
+                      />
+                    )
+                  ) : null}
+                  {isDropset ? (
+                    <PressableScale
+                      accessibilityLabel={`${controlLabel}递减组 ${progress.done}/${progress.total} 段${expanded ? '已展开' : '已收起'}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      onPress={() => toggleRowOpen(rowKey)}
+                      scaleTo={theme.motion.pressScaleSmall}
+                      style={{ alignItems: 'center', height: column, justifyContent: 'center', width: column }}
+                      testID={`set-done-${exerciseIndex}-${setIndex}`}
                     >
-                      {ratingLabel}
-                    </Button>
-                    {!denseCard && ratingValue != null ? (
-                      <Text tone="secondary" variant="footnote">可修改或清除</Text>
+                      {progress.complete ? (
+                        <View
+                          style={{
+                            alignItems: 'center',
+                            backgroundColor: theme.colors.accent,
+                            borderRadius: theme.radius.sm,
+                            height: theme.sizes.tileMd,
+                            justifyContent: 'center',
+                            width: theme.sizes.tileMd,
+                          }}
+                        >
+                          <Icon color={theme.colors.onAccent} name="check" size={theme.sizes.buttonIcon} />
+                        </View>
+                      ) : (
+                        <Text
+                          numberOfLines={1}
+                          tone={progress.done > 0 ? 'accent' : 'secondary'}
+                          variant="caption"
+                        >
+                          {`${progress.done}/${progress.total}`}
+                        </Text>
+                      )}
+                    </PressableScale>
+                  ) : (
+                    <PressableScale
+                      accessibilityLabel={`${controlLabel}完成`}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: complete, disabled: !available }}
+                      disabled={!available}
+                      onPress={() => toggleSet(exerciseIndex, setIndex)}
+                      scaleTo={theme.motion.pressScaleSmall}
+                      style={{ alignItems: 'center', height: column, justifyContent: 'center', width: column }}
+                      testID={`set-done-${exerciseIndex}-${setIndex}`}
+                    >
+                      <View
+                        style={{
+                          alignItems: 'center',
+                          backgroundColor: complete ? theme.colors.accent : theme.colors.surface2,
+                          borderRadius: theme.radius.sm,
+                          height: theme.sizes.tileMd,
+                          justifyContent: 'center',
+                          width: theme.sizes.tileMd,
+                        }}
+                      >
+                        <Icon
+                          color={complete ? theme.colors.onAccent : theme.colors.label3}
+                          name="check"
+                          size={theme.sizes.buttonIcon}
+                        />
+                      </View>
+                    </PressableScale>
+                  )}
+                  <View style={{ alignItems: 'center', justifyContent: 'center', width: column }}>
+                    <IconButton
+                      accessibilityLabel={`${controlLabel}菜单`}
+                      name="more"
+                      onPress={() => setRowMenu({ exerciseIndex, setIndex, setKey: set.key })}
+                      size="sm"
+                      testID={`set-menu-${exerciseIndex}-${setIndex}`}
+                    />
+                  </View>
+                </View>
+
+                {isDropset && !expanded ? (
+                  <Text style={{ paddingLeft: column }} tone="secondary" variant="caption">
+                    {`递减组 · ${dropsSummary}`}
+                  </Text>
+                ) : null}
+
+                {isDropset && expanded ? (
+                  <View style={{ gap: theme.space.xs }}>
+                    <View style={{ alignItems: 'center', flexDirection: 'row', gap: cellGap }}>
+                      <Text style={{ textAlign: 'center', width: column }} tone="secondary" variant="caption">
+                        主段
+                      </Text>
+                      <Text style={{ flex: 1, minWidth: column }} tone="secondary" variant="footnote">
+                        {`${set.weight} ${draft.unit} × ${set.reps} 次`}
+                      </Text>
+                      {showRating ? <View style={{ width: column }} /> : null}
+                      {segmentCheckbox(
+                        'main',
+                        '主段',
+                        draftSegmentDone(set, 'main'),
+                        complete
+                          ? false
+                          : (nextSegment === 'main' || lastDoneSegment === 'main') && available,
+                        `set-main-done-${exerciseIndex}-${setIndex}`,
+                      )}
+                      <View style={{ width: column }} />
+                    </View>
+
+                    {drops.map((drop, dropIndex) => {
+                      const segment = dropSegmentKey(drop, dropIndex);
+                      const checked = draftSegmentDone(set, segment);
+                      const enabled = complete
+                        ? segment === lastSegment
+                        : (segment === nextSegment || segment === lastDoneSegment) && available;
+                      return (
+                        <View
+                          key={drop.key ?? `d${dropIndex}`}
+                          style={{ alignItems: 'center', flexDirection: 'row', gap: cellGap }}
+                        >
+                          <Text style={{ textAlign: 'center', width: column }} tone="secondary" variant="caption">
+                            {`降重 ${dropIndex + 1}`}
+                          </Text>
+                          <View style={{ flex: 1, minWidth: column }}>
+                            <SetField
+                              accessibilityLabel={`${controlLabel}降重${dropIndex + 1}${weightLabel}`}
+                              field="weight"
+                              keyboardType="decimal-pad"
+                              min={0}
+                              mode="reps"
+                              onChangeText={weight => commit(setDropSegment(latestDraft.current, exerciseIndex, setIndex, dropIndex, { w: weight }))}
+                              presentation="inline"
+                              step={2.5}
+                              testID={`drop-weight-${exerciseIndex}-${setIndex}-${dropIndex}`}
+                              value={drop.w}
+                            />
+                          </View>
+                          <View style={{ flex: 1, minWidth: column }}>
+                            <SetField
+                              accessibilityLabel={`${controlLabel}降重${dropIndex + 1}次数`}
+                              field="reps"
+                              keyboardType="number-pad"
+                              min={1}
+                              mode="reps"
+                              onChangeText={reps => commit(setDropSegment(latestDraft.current, exerciseIndex, setIndex, dropIndex, { r: reps }))}
+                              presentation="inline"
+                              step={1}
+                              testID={`drop-reps-${exerciseIndex}-${setIndex}-${dropIndex}`}
+                              value={drop.r}
+                            />
+                          </View>
+                          {showRating ? <View style={{ width: column }} /> : null}
+                          {segmentCheckbox(
+                            segment,
+                            `降重${dropIndex + 1}`,
+                            checked,
+                            enabled,
+                            `drop-done-${exerciseIndex}-${setIndex}-${dropIndex}`,
+                          )}
+                          <View style={{ width: column }} />
+                        </View>
+                      );
+                    })}
+
+                    {!complete ? (
+                      <View style={{ flexDirection: 'row' }}>
+                        <Button
+                          icon="arrowDown"
+                          onPress={() => quickAddDrop(exerciseIndex, setIndex)}
+                          size="xs"
+                          testID={`drop-add-${exerciseIndex}-${setIndex}`}
+                          variant="ghost"
+                        >
+                          添加降重段
+                        </Button>
+                      </View>
                     ) : null}
                   </View>
                 ) : null}
 
-                {!set.warmup && mode === 'reps' ? (
-                  <>
-                    {(set.type === 'dropset' ? set.drops ?? [] : []).map((drop, dropIndex) => (
-                      <View
-                        key={drop.key ?? `d${dropIndex}`}
-                        style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
-                      >
-                        <Text
-                          numberOfLines={1}
-                          style={{ paddingLeft: theme.space.sm, width: NUMBER_COLUMN + theme.space.md }}
-                          tone="secondary"
-                          variant="caption"
-                        >
-                          递减{dropIndex + 1}
-                        </Text>
-                        <View style={{ flex: 1 }}>
-                          <Stepper
-                            accessibilityLabel={`${controlLabel}递减${dropIndex + 1}${weightLabel}`}
-                            keyboardType="decimal-pad"
-                            min={0}
-                            onChangeText={weight => onChange(setDropSegment(draft, exerciseIndex, setIndex, dropIndex, { w: weight }))}
-                            step={2.5}
-                            value={drop.w}
-                          />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Stepper
-                            accessibilityLabel={`${controlLabel}递减${dropIndex + 1}次数`}
-                            keyboardType="number-pad"
-                            min={1}
-                            onChangeText={reps => onChange(setDropSegment(draft, exerciseIndex, setIndex, dropIndex, { r: reps }))}
-                            step={1}
-                            value={drop.r}
-                          />
-                        </View>
-                        <IconButton
-                          accessibilityLabel={`删除${controlLabel}递减${dropIndex + 1}`}
-                          name="xmark"
-                          onPress={() => onChange(removeDropSegment(draft, exerciseIndex, setIndex, dropIndex))}
-                          size="sm"
-                        />
-                      </View>
-                    ))}
-
-                    {(set.type === 'restpause' ? set.clusters ?? [] : []).map((cluster, clusterIndex) => (
+                {isRestpause && !set.warmup && mode === 'reps' ? (
+                  <View style={{ gap: theme.space.xs }}>
+                    <PressableScale
+                      accessibilityLabel={`${controlLabel}休息暂停组，${clusters.length} 段，总 ${draftClusterTotal(set)} 次${expanded ? '，已展开' : '，已收起'}`}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded }}
+                      onPress={() => toggleRowOpen(rowKey)}
+                      scaleTo={theme.motion.pressScaleSmall}
+                      style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm, minHeight: column }}
+                      testID={`set-expand-${exerciseIndex}-${setIndex}`}
+                    >
+                      <Text style={{ flex: 1 }} tone="secondary" variant="footnote">
+                        {`休息暂停组 · ${clusters.length} 段 · 总 ${draftClusterTotal(set)} 次`}
+                      </Text>
+                      <Icon
+                        color={theme.colors.label3}
+                        name={expanded ? 'chevronUp' : 'chevronDown'}
+                        size={theme.sizes.buttonIcon}
+                      />
+                    </PressableScale>
+                    {expanded ? clusters.map((cluster, clusterIndex) => (
                       <View
                         key={cluster.key ?? `c${clusterIndex}`}
-                        style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
+                        style={{ alignItems: 'center', flexDirection: 'row', gap: cellGap }}
                       >
-                        <Text
-                          numberOfLines={1}
-                          style={{ paddingLeft: theme.space.sm, width: NUMBER_COLUMN + theme.space.md }}
-                          tone="secondary"
-                          variant="caption"
-                        >
-                          分段{clusterIndex + 1}
+                        <Text style={{ textAlign: 'center', width: column }} tone="secondary" variant="caption">
+                          {`分段${clusterIndex + 1}`}
                         </Text>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, minWidth: column }}>
                           <Stepper
                             accessibilityLabel={`${controlLabel}分段${clusterIndex + 1}次数`}
                             keyboardType="number-pad"
                             min={1}
-                            onChangeText={reps => onChange(setClusterSegment(draft, exerciseIndex, setIndex, clusterIndex, { r: reps }))}
+                            onChangeText={reps => commit(setClusterSegment(latestDraft.current, exerciseIndex, setIndex, clusterIndex, { r: reps }))}
                             step={1}
                             value={cluster.r}
                           />
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, minWidth: column }}>
                           <Stepper
                             accessibilityLabel={`${controlLabel}分段${clusterIndex + 1}短休秒数`}
                             keyboardType="number-pad"
                             max={REST_PAUSE_MAX}
                             min={REST_PAUSE_MIN}
-                            onChangeText={restSec => onChange(setClusterSegment(draft, exerciseIndex, setIndex, clusterIndex, { restSec }))}
+                            onChangeText={restSec => commit(setClusterSegment(latestDraft.current, exerciseIndex, setIndex, clusterIndex, { restSec }))}
                             step={5}
                             value={cluster.restSec}
                           />
@@ -721,51 +1282,20 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
                         <IconButton
                           accessibilityLabel={`删除${controlLabel}分段${clusterIndex + 1}`}
                           name="xmark"
-                          onPress={() => onChange(removeClusterSegment(draft, exerciseIndex, setIndex, clusterIndex))}
+                          onPress={() => commit(removeClusterSegment(latestDraft.current, exerciseIndex, setIndex, clusterIndex))}
                           size="sm"
                         />
                       </View>
-                    ))}
+                    )) : null}
+                  </View>
+                ) : null}
 
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
-                      {set.type !== 'restpause' ? (
-                        <Button
-                          icon="arrowDown"
-                          onPress={() => onChange(addDropSegment(draft, exerciseIndex, setIndex, profile))}
-                          size="xs"
-                          variant="ghost"
-                        >
-                          {set.type === 'dropset' ? '添加递减段' : '改为递减组'}
-                        </Button>
-                      ) : null}
-                      {set.type !== 'dropset' ? (
-                        <Button
-                          icon="bolt"
-                          onPress={() => onChange(addClusterSegment(draft, exerciseIndex, setIndex, profile))}
-                          size="xs"
-                          variant="ghost"
-                        >
-                          {set.type === 'restpause' ? '添加段' : '改为休息暂停'}
-                        </Button>
-                      ) : null}
-                    </View>
-
-                    {set.type === 'restpause' && segments.length > 0 ? (
-                      <Text tone="secondary" variant="caption">
-                        {`总 ${draftClusterTotal(set)} 次 · ${segments.length} 段 · 短休按秒计`}
-                      </Text>
-                    ) : null}
-                    {set.type === 'dropset' && segments.length > 0 ? (
-                      <Text tone="secondary" variant="caption">
-                        {`主组 ${set.reps} 次 · ${segments.length} 段递减`}
-                      </Text>
-                    ) : null}
-                    {!segmentsValid ? (
-                      <Text tone="danger" variant="caption">
-                        分段的数据无效，补全重量、次数和短休后才能完成这一组。
-                      </Text>
-                    ) : null}
-                  </>
+                {!segmentsValid && (isDropset || isRestpause) ? (
+                  <Text tone="danger" variant="caption">
+                    {isRestpause
+                      ? '分段的数据无效，补全次数和短休后才能完成这一组。'
+                      : '递减段的数据无效，补全重量和次数后才能完成这一组。'}
+                  </Text>
                 ) : null}
               </View>
             );
@@ -781,29 +1311,19 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
             添加正式组
           </Button>
 
-          {!denseCard ? (
+          {!denseCard && (grouped || exerciseIndex > 0) ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
               <Button
-                disabled={completed}
-                onPress={() => onPick(exerciseIndex)}
+                disabled={!canGroup}
+                onPress={() => {
+                  const updated = changeSuperset(targets, exerciseIndex, grouped);
+                  onChange({ ...draft, exercises: draft.exercises.map((entry, index) => ({ ...entry, target: updated[index] })) });
+                }}
                 size="sm"
                 variant="secondary"
               >
-                搜索替换动作
+                {groupActionLabel(exerciseIndex, grouped)}
               </Button>
-              {grouped || exerciseIndex > 0 ? (
-                <Button
-                  disabled={!canGroup}
-                  onPress={() => {
-                    const updated = changeSuperset(targets, exerciseIndex, grouped);
-                    onChange({ ...draft, exercises: draft.exercises.map((entry, index) => ({ ...entry, target: updated[index] })) });
-                  }}
-                  size="sm"
-                  variant="secondary"
-                >
-                  {groupActionLabel(exerciseIndex, grouped)}
-                </Button>
-              ) : null}
             </View>
           ) : null}
         </Card>
@@ -813,14 +1333,13 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
 
   return (
     <Screen edges={['top', 'left', 'right', 'bottom']} scroll={false} testID="workout-screen">
-      <View style={{ paddingHorizontal: theme.layout.pagePadding }}>
+      <View style={{ paddingHorizontal: pagePadding }}>
         <Header
           backLabel="收起"
           compact
           onBack={backfill ? undefined : onCollapse}
           right={(
             <>
-              <Elapsed start={draft.start} frozen={e2e} />
               <Button
                 disabled={Boolean(backfill && !backfillReady)}
                 onPress={requestFinish}
@@ -845,7 +1364,7 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
       <ScrollView
         contentContainerStyle={{
           gap: theme.space.md,
-          paddingHorizontal: theme.layout.pagePadding,
+          paddingHorizontal: pagePadding,
           paddingBottom: theme.space.xxxl,
         }}
         keyboardShouldPersistTaps="handled"
@@ -872,11 +1391,14 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
 
         <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm, justifyContent: 'space-between' }}>
           <Text tone="secondary" variant="footnote">已完成 {done} 组</Text>
-          {listMode && units.length > 0 ? (
-            <Button icon="list" onPress={() => setJump(true)} size="xs" variant="secondary">
-              跳转动作
-            </Button>
-          ) : null}
+          <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
+            <Elapsed start={draft.start} frozen={e2e} />
+            {listMode && units.length > 0 ? (
+              <Button icon="list" onPress={() => setJump(true)} size="xs" variant="secondary">
+                跳转动作
+              </Button>
+            ) : null}
+          </View>
         </View>
 
         {focusMode ? (
@@ -1018,6 +1540,33 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
         visible={menu?.kind === 'exercise'}
       />
       <ActionSheet
+        items={rowMenu ? setMenuItems(rowMenu.exerciseIndex, rowMenu.setIndex, rowMenu.setKey) : []}
+        onClose={() => setRowMenu(null)}
+        title={setMenuTitle(rowMenu)}
+        visible={rowMenu != null}
+      />
+      {dropsetSheet && sheetSet && sheetMatches ? (
+        <DropsetSheet
+          initialDrops={dropsetSheet.drops}
+          mainDone={sheetSet.mainAt != null}
+          mainReps={sheetSet.reps}
+          mainWeight={sheetSet.weight}
+          mode={dropsetSheet.mode}
+          onClose={() => setDropsetSheet(null)}
+          onSave={saveDropset}
+          seedDrop={base => seedDropSegment(
+            latestDraft.current,
+            dropsetSheet.exerciseIndex,
+            dropsetSheet.setIndex,
+            profile,
+            base ?? undefined,
+          )}
+          title={dropsetSheet.title}
+          unit={draft.unit}
+          visible
+        />
+      ) : null}
+      <ActionSheet
         items={units.map((unit, index) => ({
           label: `${index + 1}. ${unit.map(entry => exerciseName(profile, draft.exercises[entry].target.id)).join(' + ')}`,
           icon: unit.length > 1 ? 'link' : 'dumbbell',
@@ -1032,12 +1581,12 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
         <EffortSheet
           cardio={rating.cardio}
           onClear={() => {
-            onChange(setDraftEffort(draft, rating.exerciseIndex, rating.setIndex, null, null));
+            onChange(setDraftEffort(latestDraft.current, rating.exerciseIndex, rating.setIndex, null, null));
             setRating(null);
           }}
           onClose={() => setRating(null)}
           onSave={value => {
-            onChange(setDraftEffort(draft, rating.exerciseIndex, rating.setIndex, rating.scale, value));
+            onChange(setDraftEffort(latestDraft.current, rating.exerciseIndex, rating.setIndex, rating.scale, value));
             setRating(null);
           }}
           scale={rating.scale}
@@ -1050,6 +1599,8 @@ export function WorkoutScreen({ profile, draft, queue, e2e = false, onChange, on
         onContinue={() => setFinishOpen(false)}
         onDiscard={() => { setFinishOpen(false); onDiscard(); }}
         onSave={() => { setFinishOpen(false); onFinish(); }}
+        partial={draft.exercises.reduce((count, exercise) => count +
+          exercise.sets.filter(set => set.type === 'dropset' && set.at === null && draftSetHasProgress(set)).length, 0)}
         total={total}
         visible={finishOpen}
       />

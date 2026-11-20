@@ -13,8 +13,11 @@ import {
 import {
   REST_PAUSE_MAX,
   REST_PAUSE_MIN,
+  draftSegmentDone,
+  dropSetProgress,
   exerciseMode,
   exerciseName,
+  nextDraftSegment,
   validSet,
   validSetSegments,
   type Draft,
@@ -129,7 +132,16 @@ export function WorkoutFocusView({
   const nextSet = grouped ? nextSupersetSet(draft, unit) : undefined;
   const turn = !grouped || complete ||
     (nextSet?.exerciseIndex === selected.exerciseIndex && nextSet.setIndex === selected.setIndex);
-  const canComplete = !complete && valid && turn;
+  const dropsetProgress = set.type === 'dropset' ? dropSetProgress(set) : null;
+  const dropsetNext = set.type === 'dropset' ? nextDraftSegment(set) : null;
+  const dropsetDone = dropsetProgress?.done ?? 0;
+  const dropsetTotal = dropsetProgress?.total ?? 0;
+  const dropsetComplete = dropsetProgress?.complete ?? false;
+  const dropsetNextIsLast = dropsetProgress != null &&
+    !dropsetComplete && dropsetDone >= dropsetTotal - 1;
+  const dropsetActionLabel = dropsetNextIsLast ? '完成' : '完成下一段';
+  const dropsetMainDone = set.type === 'dropset' && draftSegmentDone(set, 'main');
+  const canComplete = !complete && valid && turn && (set.type !== 'dropset' || dropsetNext !== null);
   const sequence: FocusSet[] = Array.from(
     { length: Math.max(0, ...unit.map(index => draft.exercises[index]?.sets.length ?? 0)) },
     (_, setIndex) => unit
@@ -166,10 +178,13 @@ export function WorkoutFocusView({
   };
   const completeSet = () => {
     const upcoming = sequence[sequenceIndex + 1];
-    setPointer(upcoming ?? null);
+    // A dropset can need several presses; focus stays on it until the press that
+    // finishes the whole set, so the next segment can be ticked without navigating.
+    const finishesSet = set.type !== 'dropset' || dropsetNextIsLast;
+    if (finishesSet) setPointer(upcoming ?? null);
     onToggle(selected.exerciseIndex, selected.setIndex, {
       focus: true,
-      nextExercise: upcoming?.exerciseIndex,
+      nextExercise: finishesSet ? upcoming?.exerciseIndex : undefined,
     });
   };
 
@@ -247,38 +262,63 @@ export function WorkoutFocusView({
         </View>
       </View>
 
-      {set.type === 'dropset' && !set.warmup && mode === 'reps' ? (
+      {set.type === 'dropset' ? (
         <View style={{ gap: theme.space.xs }}>
-          {drops.map((drop, dropIndex) => (
-            <View
-              key={drop.key ?? `d${dropIndex}`}
-              style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
-            >
-              <Text tone="secondary" variant="caption">{`递减${dropIndex + 1}`}</Text>
-              <View style={{ flex: 1 }}>
-                <Stepper
-                  accessibilityLabel={`${setLabel}递减${dropIndex + 1}重量`}
-                  disabled={readOnly}
-                  keyboardType="decimal-pad"
-                  min={0}
-                  onChangeText={value => onDrop(selected.exerciseIndex, selected.setIndex, dropIndex, { w: value })}
-                  step={2.5}
-                  value={drop.w}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Stepper
-                  accessibilityLabel={`${setLabel}递减${dropIndex + 1}次数`}
-                  disabled={readOnly}
-                  keyboardType="number-pad"
-                  min={1}
-                  onChangeText={value => onDrop(selected.exerciseIndex, selected.setIndex, dropIndex, { r: value })}
-                  step={1}
-                  value={drop.r}
-                />
-              </View>
+          <Text tone="secondary" variant="footnote">
+            {`已勾 ${dropsetDone}/${dropsetTotal} 段`}
+          </Text>
+          <View style={{ gap: theme.space.xxs }}>
+            <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
+              <Icon
+                color={dropsetMainDone ? theme.colors.accentInk : theme.colors.label4}
+                name={dropsetMainDone ? 'checkCircle' : 'dot'}
+                size={theme.sizes.buttonIcon}
+              />
+              <Text tone="secondary" variant="caption">主段</Text>
+              <Text numberOfLines={1} style={{ flex: 1 }} tone="tertiary" variant="caption">
+                {`${set.weight || '—'} ${draft.unit} × ${set.reps || '—'} 次`}
+              </Text>
             </View>
-          ))}
+            {!set.warmup && mode === 'reps' ? drops.map((drop, dropIndex) => {
+              const segment = typeof drop.key === 'string' && drop.key !== '' ? drop.key : `d${dropIndex}`;
+              const done = draftSegmentDone(set, segment);
+              return (
+                <View
+                  key={segment}
+                  style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}
+                >
+                  <Icon
+                    color={done ? theme.colors.accentInk : theme.colors.label4}
+                    name={done ? 'checkCircle' : 'dot'}
+                    size={theme.sizes.buttonIcon}
+                  />
+                  <Text tone="secondary" variant="caption">{`降重 ${dropIndex + 1}`}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Stepper
+                      accessibilityLabel={`${setLabel}降重${dropIndex + 1}重量`}
+                      disabled={readOnly}
+                      keyboardType="decimal-pad"
+                      min={0}
+                      onChangeText={value => onDrop(selected.exerciseIndex, selected.setIndex, dropIndex, { w: value })}
+                      step={2.5}
+                      value={drop.w}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Stepper
+                      accessibilityLabel={`${setLabel}降重${dropIndex + 1}次数`}
+                      disabled={readOnly}
+                      keyboardType="number-pad"
+                      min={1}
+                      onChangeText={value => onDrop(selected.exerciseIndex, selected.setIndex, dropIndex, { r: value })}
+                      step={1}
+                      value={drop.r}
+                    />
+                  </View>
+                </View>
+              );
+            }) : null}
+          </View>
         </View>
       ) : null}
 
@@ -349,7 +389,7 @@ export function WorkoutFocusView({
         onPress={completeSet}
         variant="primary"
       >
-        {complete ? '已完成' : '完成'}
+        {complete ? '已完成' : set.type === 'dropset' ? dropsetActionLabel : '完成'}
       </Button>
 
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>

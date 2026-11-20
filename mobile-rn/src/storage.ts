@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import type { Connection } from './server';
 import type { PendingChange } from './profileChanges';
-import { practiceProfile, type Draft, type MediaRefLike, type Profile, type QueuedWorkout } from './training';
+import { normalizeDraft, practiceProfile, type Draft, type MediaRefLike, type Profile, type QueuedWorkout } from './training';
 
 /** A progress photo whose bytes still have to reach the paired instance. */
 export type PhotoUpload = {
@@ -50,11 +50,13 @@ function scopeOf(connection: Connection | null) {
 
 export function readLocal(connection: Connection | null): LocalState {
   const row = database().getFirstSync<{ state: string }>('SELECT state FROM workspace WHERE scope = ?', scopeOf(connection));
-  return row ? JSON.parse(row.state) as LocalState : {
+  if (!row) return {
     profile: connection ? { routines: [], workouts: [] } : practiceProfile,
     draft: null,
     queue: [],
   };
+  const parsed = JSON.parse(row.state) as LocalState;
+  return { ...parsed, draft: normalizeDraft(parsed.draft ?? null) };
 }
 
 export function saveLocal(connection: Connection | null, state: LocalState) {

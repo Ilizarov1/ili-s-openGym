@@ -13,6 +13,7 @@ import {
   Header,
   IconButton,
   IconTile,
+  InlineNumberField,
   ListRow,
   ProgressBar,
   Screen,
@@ -151,6 +152,8 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
   const [serverAddress, setServerAddress] = useState('');
   const [restAlerts, setRestAlerts] = useState(true);
   const [weight, setWeight] = useState('82.5');
+  const [inlineWeight, setInlineWeight] = useState('60');
+  const [inlineReps, setInlineReps] = useState('8');
   const [effort, setEffort] = useState('');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [lastAction, setLastAction] = useState('未选择');
@@ -543,6 +546,58 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
               precision={1}
               unit="RPE"
             />
+          </View>
+        </Card>
+      </GallerySection>
+
+      <GallerySection
+        title="行内数字输入"
+        description="组行内的紧凑数字输入：没有步进按钮，点击即可输入重量或次数，适合表格式组行。"
+        testID="gallery-inline-number-field"
+      >
+        <Card>
+          <View style={styles.stepperStack}>
+            <View style={styles.sectionRow}>
+              <View style={{ flex: 1, gap: theme.space.xs }}>
+                <Text tone="tertiary" variant="caption">
+                  重量 · kg
+                </Text>
+                <InlineNumberField
+                  accessibilityLabel="行内重量"
+                  keyboardType="decimal-pad"
+                  onChangeText={setInlineWeight}
+                  testID="gallery-inline-weight"
+                  value={inlineWeight}
+                />
+              </View>
+              <View style={{ flex: 1, gap: theme.space.xs }}>
+                <Text tone="tertiary" variant="caption">
+                  次数
+                </Text>
+                <InlineNumberField
+                  accessibilityLabel="行内次数"
+                  keyboardType="number-pad"
+                  onChangeText={setInlineReps}
+                  testID="gallery-inline-reps"
+                  value={inlineReps}
+                />
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: theme.space.sm }}>
+              <View style={{ flex: 1, gap: theme.space.xs }}>
+                <Text tone="tertiary" variant="caption">
+                  禁用
+                </Text>
+                <InlineNumberField
+                  accessibilityLabel="行内重量（禁用）"
+                  disabled
+                  onChangeText={() => {}}
+                  testID="gallery-inline-disabled"
+                  value="60"
+                />
+              </View>
+              <View style={{ flex: 1 }} />
+            </View>
           </View>
         </Card>
       </GallerySection>

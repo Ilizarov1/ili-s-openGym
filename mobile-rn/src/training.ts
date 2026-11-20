@@ -235,13 +235,15 @@ export type Profile = {
   [key: string]: unknown;
 };
 
-export type DraftDrop = { key?: string; w: string; r: string };
+export type DraftDrop = { key?: string; w: string; r: string; at?: number | null };
 export type DraftCluster = { key?: string; r: string; restSec: string };
 export type DraftSet = {
   key?: string;
   weight: string;
   reps: string;
   at: number | null;
+  /** When the drop set's main segment was ticked; the whole set's `at` stays empty until the last segment. */
+  mainAt?: number | null;
   warmup?: boolean;
   /**
    * This load was typed by hand, so an earlier set's cascade leaves it alone. Old
@@ -306,6 +308,65 @@ export const WORKOUT_VIEW_LABELS: Record<WorkoutView, string> = {
 /** Unknown and pre-setting values read as cards, exactly like the Web client. */
 export function workoutViewOf(value: unknown): WorkoutView {
   return value === 'list' || value === 'compact' || value === 'focus' ? value : 'cards';
+}
+
+/** Stable segment identity: the stored key, or the deterministic positional fallback. */
+function draftDropKey(drop: DraftDrop, index: number) {
+  return typeof drop.key === 'string' && drop.key !== '' ? drop.key : `d${index}`;
+}
+
+function normalizeDraftSet(set: DraftSet, index: number): DraftSet {
+  if (!set || typeof set !== 'object') return set;
+  const key = typeof set.key === 'string' && set.key !== '' ? set.key : String(index);
+  // `at` is required, but a row read back without one must never read as completed.
+  const at = typeof set.at === 'number' && Number.isFinite(set.at) ? set.at : null;
+  // A draft saved before per-segment times: a completed drop set means every segment
+  // was completed at that moment. An unfinished one gets no invented times.
+  const legacyAt = set.type === 'dropset' && at !== null ? at : null;
+  const drops = Array.isArray(set.drops)
+    ? set.drops.map((drop, dropIndex) => {
+      if (!drop || typeof drop !== 'object') return drop;
+      const dropAt = drop.at != null ? drop.at : legacyAt;
+      return {
+        ...drop,
+        key: draftDropKey(drop, dropIndex),
+        ...(dropAt != null ? { at: dropAt } : {}),
+      };
+    })
+    : set.drops;
+  const clusters = Array.isArray(set.clusters)
+    ? set.clusters.map((cluster, clusterIndex) => cluster && typeof cluster === 'object'
+      ? { ...cluster, key: typeof cluster.key === 'string' && cluster.key !== '' ? cluster.key : `c${clusterIndex}` }
+      : cluster)
+    : set.clusters;
+  const mainAt = legacyAt !== null && set.mainAt == null ? legacyAt : set.mainAt;
+  return {
+    ...set,
+    key,
+    at,
+    ...(mainAt != null ? { mainAt } : {}),
+    ...(drops !== set.drops ? { drops } : {}),
+    ...(clusters !== set.clusters ? { clusters } : {}),
+  };
+}
+
+/**
+ * Normalise a draft read back from storage. Set, drop and cluster keys are stable
+ * identities: an existing key is kept and a missing one falls back to its position
+ * (`0`, `d0`, `c0`), so the same stored draft reads back with the same keys every
+ * time. A legacy completed drop set, which has no per-segment times, has its
+ * whole-set `at` projected onto the main segment and every unset drop; an unfinished
+ * one gains no synthetic times.
+ */
+export function normalizeDraft(draft: Draft | null): Draft | null {
+  if (!draft || !Array.isArray(draft.exercises)) return draft;
+  return {
+    ...draft,
+    exercises: draft.exercises.map(exercise => {
+      if (!exercise || !Array.isArray(exercise.sets)) return exercise;
+      return { ...exercise, sets: exercise.sets.map((set, index) => normalizeDraftSet(set, index)) };
+    }),
+  };
 }
 
 /** A draft's source routines in merge order, with the legacy single id as the fallback. */
@@ -384,7 +445,7 @@ export function workoutKey(workout: Workout) {
   return workout.id ?? `${workout.d}|${workout.start}`;
 }
 
-const MAX_WEIGHT = 5000;
+export const MAX_WEIGHT = 5000;
 export const MAX_WORK_SETS = 50;
 const sample = (id: string, sets: number, reps: number) => ({ id, sets, reps });
 export const practiceProfile: Profile = {
@@ -694,6 +755,92 @@ export function removeSet(draft: Draft, exerciseIndex: number, setIndex: number)
   };
 }
 
+/** Re-point a rest dock to the row it belonged to after those rows were reordered. */
+function remapRestOrder(
+  rest: DraftRest | null | undefined,
+  exerciseIndex: number,
+  order: number[],
+): DraftRest | null | undefined {
+  if (!rest || rest.exerciseIndex !== exerciseIndex) return rest;
+  const next = order.indexOf(rest.setIndex);
+  return next < 0 || next === rest.setIndex ? rest : { ...rest, setIndex: next };
+}
+
+/**
+ * Copy a set directly after itself. The copy carries the load, reps, type and segment
+ * parameters, but gets fresh set/segment identities and starts unticked: no whole-set
+ * `at`, no `mainAt`, no drop ticks and no effort. A running rest stays on its own row.
+ */
+export function copyDraftSet(draft: Draft, exerciseIndex: number, setIndex: number): Draft {
+  const exercise = draft.exercises[exerciseIndex];
+  const source = exercise?.sets[setIndex];
+  if (!exercise || !source) return draft;
+  if (!source.warmup && exercise.sets.filter(set => !set.warmup).length >= MAX_WORK_SETS) return draft;
+  const copy: DraftSet = {
+    key: randomUUID(),
+    weight: source.weight,
+    reps: source.reps,
+    at: null,
+    ...(source.warmup ? { warmup: true } : {}),
+    ...(source.manual ? { manual: true } : {}),
+    ...(source.type ? { type: source.type } : {}),
+  };
+  if (source.drops?.length) {
+    copy.drops = source.drops.map(drop => ({ key: randomUUID(), w: drop.w, r: drop.r }));
+  }
+  if (source.clusters?.length) {
+    copy.clusters = source.clusters.map(cluster => ({ key: randomUUID(), r: cluster.r, restSec: cluster.restSec }));
+  }
+  const sets = exercise.sets.slice();
+  sets.splice(setIndex + 1, 0, copy);
+  const rest = draft.rest?.exerciseIndex === exerciseIndex && draft.rest.setIndex > setIndex
+    ? { ...draft.rest, setIndex: draft.rest.setIndex + 1 }
+    : draft.rest;
+  return {
+    ...draft, rest,
+    exercises: draft.exercises.map((entry, index) => index === exerciseIndex ? { ...entry, sets } : entry),
+  };
+}
+
+/**
+ * Move a plain strength set between the warm-up block and the work sets: warm-ups go
+ * to the end of the warm-up block, work sets to the first work position. Load, reps,
+ * completion time and the hand-typed mark are kept; a new warm-up loses its rating.
+ * The rest dock is remapped to the same row and its countdown is untouched.
+ */
+export function convertDraftSetWarmup(draft: Draft, exerciseIndex: number, setIndex: number, warmup: boolean): Draft {
+  const exercise = draft.exercises[exerciseIndex];
+  const set = exercise?.sets[setIndex];
+  if (!exercise || !set) return draft;
+  if (set.type === 'dropset' || set.type === 'restpause') return draft;
+  if (set.drops?.length || set.clusters?.length) return draft;
+  const target = exercise.target;
+  if ((target.mode && target.mode !== 'reps') || target.sec != null || target.min != null || target.speed != null) return draft;
+  if ((set.warmup === true) === warmup) return draft;
+
+  const updated: DraftSet = { ...set, manual: true };
+  if (warmup) {
+    updated.warmup = true;
+    delete updated.effortScale;
+    delete updated.effort;
+  } else {
+    delete updated.warmup;
+  }
+  const order = exercise.sets.map((_, index) => index);
+  order.splice(setIndex, 1);
+  // End of the remaining warm-up block and first remaining work row are the same
+  // boundary; either conversion inserts there (append when every row is a warm-up).
+  let insertAt = order.findIndex(index => !exercise.sets[index].warmup);
+  if (insertAt < 0) insertAt = order.length;
+  order.splice(insertAt, 0, setIndex);
+  const sets = order.map(index => index === setIndex ? updated : exercise.sets[index]);
+  return {
+    ...draft,
+    rest: remapRestOrder(draft.rest, exerciseIndex, order),
+    exercises: draft.exercises.map((entry, index) => index === exerciseIndex ? { ...entry, sets } : entry),
+  };
+}
+
 export function validSet(set: DraftSet, mode?: string) {
   const weight = Number(set.weight.replace(',', '.'));
   const reps = Number(set.reps);
@@ -891,6 +1038,17 @@ function replaceDraftSet(draft: Draft, exerciseIndex: number, setIndex: number, 
   return updateSet(draft, exerciseIndex, setIndex, replace(current));
 }
 
+/** Swap the whole row out, so keys the replacement drops (type, drops, clusters) are really gone. */
+function replaceDraftSetExactly(draft: Draft, exerciseIndex: number, setIndex: number, replacement: DraftSet): Draft {
+  return {
+    ...draft,
+    exercises: draft.exercises.map((exercise, index) => index === exerciseIndex ? {
+      ...exercise,
+      sets: exercise.sets.map((set, row) => row === setIndex ? replacement : set),
+    } : exercise),
+  };
+}
+
 function numberIn(value: string) {
   const parsed = Number(value.replace(',', '.'));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -956,21 +1114,219 @@ export function updateSetReps(draft: Draft, exerciseIndex: number, setIndex: num
   return updateSet(draft, exerciseIndex, setIndex, { reps: String(numberIn(reps)), clusters });
 }
 
-/** Add one weight drop, seeded from the last drop (or the main set) at the plan's percentage. */
-export function addDropSegment(draft: Draft, exerciseIndex: number, setIndex: number, profile: Profile): Draft {
+export type DraftDropProgress = { done: number; total: number; complete: boolean };
+export type SegmentToggleResult = {
+  draft: Draft;
+  changed: boolean;
+  /** whole-set `at` changed null -> number in this command */
+  completed: boolean;
+  /** whole-set `at` changed number -> null in this command */
+  undone: boolean;
+};
+
+function dropSegmentIndex(set: DraftSet, segment: string) {
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  return drops.findIndex((drop, index) => draftDropKey(drop, index) === segment);
+}
+
+/** Main segment + drop progress. `set.at !== null` always reads as all done. */
+export function dropSetProgress(set: DraftSet): DraftDropProgress {
+  const drops = set.type === 'dropset' && Array.isArray(set.drops) ? set.drops : [];
+  const total = 1 + drops.length;
+  if (set.at != null) return { done: total, total, complete: true };
+  if (set.type !== 'dropset') return { done: 0, total: 1, complete: false };
+  const done = (set.mainAt != null ? 1 : 0) + drops.filter(drop => drop.at != null).length;
+  return { done, total, complete: done >= total };
+}
+
+/** Any recorded work on this set: set.at, mainAt, or any drop.at. */
+export function draftSetHasProgress(set: DraftSet) {
+  return set.at != null || set.mainAt != null || (Array.isArray(set.drops) && set.drops.some(drop => drop.at != null));
+}
+
+/** `'main'` or a drop key. */
+export function draftSegmentDone(set: DraftSet, segment: 'main' | string) {
+  if (set.at != null) return true;
+  if (segment === 'main') return set.mainAt != null;
+  const index = dropSegmentIndex(set, segment);
+  return index >= 0 && (set.drops ?? [])[index].at != null;
+}
+
+function nextUndoneSegmentIndex(set: DraftSet): number | null {
+  if (set.at != null) return null;
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  if (set.mainAt == null) return -1;
+  for (let index = 0; index < drops.length; index++) {
+    if (drops[index].at == null) return index;
+  }
+  return null;
+}
+
+/** First undone segment in order (main then drops), or null when not a dropset / all done. */
+export function nextDraftSegment(set: DraftSet): 'main' | string | null {
+  if (set.type !== 'dropset') return null;
+  const index = nextUndoneSegmentIndex(set);
+  if (index == null) return null;
+  return index < 0 ? 'main' : draftDropKey((set.drops ?? [])[index], index);
+}
+
+function lastDoneSegmentIndex(set: DraftSet): number | null {
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  if (set.at != null) return drops.length ? drops.length - 1 : -1;
+  for (let index = drops.length - 1; index >= 0; index--) {
+    if (drops[index].at != null) return index;
+  }
+  return set.mainAt != null ? -1 : null;
+}
+
+/**
+ * Idempotent segment completion command. The rest dock, superset rotation and
+ * scrolling stay with the caller; `completed`/`undone` mark the whole-set
+ * transition they have to act on. A retry with the same expectation is a no-op.
+ */
+export function toggleDraftSegment(
+  draft: Draft,
+  exerciseIndex: number,
+  setIndex: number,
+  segment: 'main' | string,
+  expectedDone: boolean,
+  now = Date.now(),
+): SegmentToggleResult {
+  const unchanged: SegmentToggleResult = { draft, changed: false, completed: false, undone: false };
+  const set = draft.exercises[exerciseIndex]?.sets[setIndex];
+  if (!set || set.type !== 'dropset') return unchanged;
+  const index = segment === 'main' ? -1 : dropSegmentIndex(set, segment);
+  if (segment !== 'main' && index < 0) return unchanged;
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  const done = set.at != null || (index < 0 ? set.mainAt != null : drops[index].at != null);
+  if (done !== expectedDone) return unchanged;
+
+  if (!expectedDone) {
+    if (nextUndoneSegmentIndex(set) !== index) return unchanged;
+    const updated: DraftSet = index < 0
+      ? { ...set, at: null, mainAt: now }
+      : { ...set, at: null, drops: drops.map((drop, row) => row === index ? { ...drop, at: now } : drop) };
+    const complete = nextUndoneSegmentIndex(updated) == null;
+    if (complete) updated.at = now;
+    return {
+      draft: replaceDraftSetExactly(draft, exerciseIndex, setIndex, updated),
+      changed: true,
+      completed: complete,
+      undone: false,
+    };
+  }
+
+  if (lastDoneSegmentIndex(set) !== index) return unchanged;
+  // A legacy completed drop set may still be missing its segment times; seed them
+  // from the whole-set time before taking the last tick off, so the earlier
+  // segments stay completed.
+  const legacyAt = set.at != null ? set.at : null;
+  const updated: DraftSet = index < 0
+    ? {
+      ...set,
+      mainAt: null,
+      at: null,
+      drops: drops.map(drop => drop.at == null && legacyAt != null ? { ...drop, at: legacyAt } : drop),
+    }
+    : {
+      ...set,
+      mainAt: set.mainAt ?? legacyAt,
+      at: null,
+      drops: drops.map((drop, row) => row === index
+        ? { ...drop, at: null }
+        : legacyAt != null && drop.at == null ? { ...drop, at: legacyAt } : drop),
+    };
+  return {
+    draft: replaceDraftSetExactly(draft, exerciseIndex, setIndex, updated),
+    changed: true,
+    completed: false,
+    undone: set.at != null,
+  };
+}
+
+/**
+ * Seed one new drop from the last drop (or the main segment) using the plan's drop
+ * percentage and the weight grid. Reps follow the source segment. Returns null when
+ * this row cannot grow a drop: a warm-up, a non-reps exercise, a rest-pause row, or
+ * a set whose whole-set tick has already locked its structure.
+ */
+export function seedDropSegment(
+  draft: Draft,
+  exerciseIndex: number,
+  setIndex: number,
+  profile: Profile,
+  baseSegment?: { w: string; r: string },
+): DraftDrop | null {
   const exercise = draft.exercises[exerciseIndex];
   const set = exercise?.sets[setIndex];
-  if (!exercise || !set || set.warmup || exerciseMode(exercise.target, profile) !== 'reps' || set.type === 'restpause') return draft;
-  const drops = set.drops ?? [];
-  const base = drops.length ? numberIn(drops[drops.length - 1].w) : numberIn(set.weight);
+  if (!exercise || !set || set.warmup || set.at != null) return null;
+  if (exerciseMode(exercise.target, profile) !== 'reps' || set.type === 'restpause') return null;
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  const source = baseSegment ?? drops.at(-1) ?? { w: set.weight, r: set.reps };
+  const base = numberIn(source.w);
   const pct = exercise.target.intensifier?.type === 'dropset' ? exercise.target.intensifier.pct : 20;
   const weight = nextDropWeight(base, pct, dropGrid({ ...profile, unit: draft.unit }, { ...exercise.target, id: exercise.target.id }));
-  const reps = Math.max(1, Math.trunc(numberIn(set.reps))) || 8;
-  return replaceDraftSet(draft, exerciseIndex, setIndex, row => ({
-    ...row,
-    type: 'dropset',
-    drops: [...drops, { key: randomUUID(), w: String(weight), r: String(reps) }],
-  }));
+  const sourceReps = source.r;
+  return { key: randomUUID(), w: String(weight), r: numberIn(sourceReps) > 0 ? sourceReps : '8' };
+}
+
+/**
+ * Replace a drop set's candidate drop list. Drop ticks follow the stable key; drops
+ * new to the list start unticked and every drop gets a key. The whole-set tick stays
+ * empty, and a save that would leave the main segment plus every drop ticked (that
+ * is, implicitly complete the set) is refused so no rest starts behind the sheet.
+ */
+export function applyDraftDrops(
+  draft: Draft,
+  exerciseIndex: number,
+  setIndex: number,
+  drops: DraftDrop[],
+): Draft | null {
+  const set = draft.exercises[exerciseIndex]?.sets[setIndex];
+  if (!set || set.at != null) return null;
+  const rows = (Array.isArray(drops) ? drops : []).filter(drop => !!drop && typeof drop === 'object');
+  if (!rows.length) return null;
+  const previous = Array.isArray(set.drops) ? set.drops : [];
+  const used = new Set<string>();
+  const next = rows.map(drop => {
+    const incoming = typeof drop.key === 'string' && drop.key !== '' ? drop.key : '';
+    const known = incoming ? previous.find(old => old.key === incoming) : undefined;
+    const key = incoming && !used.has(incoming) ? incoming : randomUUID();
+    used.add(key);
+    return {
+      key,
+      w: drop.w,
+      r: drop.r,
+      ...(known?.at != null ? { at: known.at } : {}),
+    };
+  });
+  if (set.mainAt != null && next.every(drop => drop.at != null)) return null;
+  const { clusters: _clusters, ...row } = set;
+  const updated: DraftSet = { ...row, type: 'dropset', drops: next, at: null };
+  return replaceDraftSetExactly(draft, exerciseIndex, setIndex, updated);
+}
+
+/**
+ * Turn a drop set back into a plain set, keeping load, reps and rating. The main
+ * segment's completion time becomes the plain row's `at`; a wholly completed set is
+ * locked. The rest dock is untouched.
+ */
+export function revertDraftDropset(draft: Draft, exerciseIndex: number, setIndex: number): Draft {
+  const set = draft.exercises[exerciseIndex]?.sets[setIndex];
+  if (!set || set.type !== 'dropset' || set.at != null) return draft;
+  const { type: _type, drops: _drops, mainAt, ...plain } = set;
+  const updated: DraftSet = { ...plain, at: mainAt ?? null };
+  return replaceDraftSetExactly(draft, exerciseIndex, setIndex, updated);
+}
+
+/** Add one drop seeded by the same rules, preserving the ticks already recorded. */
+export function addDropSegment(draft: Draft, exerciseIndex: number, setIndex: number, profile: Profile): Draft {
+  const seed = seedDropSegment(draft, exerciseIndex, setIndex, profile);
+  if (!seed) return draft;
+  const set = draft.exercises[exerciseIndex]?.sets[setIndex];
+  if (!set) return draft;
+  const drops = [...(Array.isArray(set.drops) ? set.drops : []), seed];
+  return applyDraftDrops(draft, exerciseIndex, setIndex, drops) ?? draft;
 }
 
 export function setDropSegment(
@@ -983,14 +1339,19 @@ export function setDropSegment(
   }));
 }
 
-/** Remove one drop; clearing the last one turns the row back into a straight set. */
+/**
+ * Remove one drop, keeping the other ticks. Removing the last drop reverts to a
+ * plain set; a removal that would leave every remaining segment ticked next to a
+ * ticked main segment is refused by the same implicit-completion guard as a save.
+ */
 export function removeDropSegment(draft: Draft, exerciseIndex: number, setIndex: number, dropIndex: number): Draft {
-  return replaceDraftSet(draft, exerciseIndex, setIndex, row => {
-    const drops = (row.drops ?? []).filter((_, index) => index !== dropIndex);
-    if (drops.length) return { ...row, drops };
-    const { type: _type, drops: _drops, ...plain } = row;
-    return plain;
-  });
+  const set = draft.exercises[exerciseIndex]?.sets[setIndex];
+  if (!set || set.type !== 'dropset' || set.at != null) return draft;
+  const drops = Array.isArray(set.drops) ? set.drops : [];
+  if (dropIndex < 0 || dropIndex >= drops.length) return draft;
+  const remaining = drops.filter((_, index) => index !== dropIndex);
+  if (!remaining.length) return revertDraftDropset(draft, exerciseIndex, setIndex);
+  return applyDraftDrops(draft, exerciseIndex, setIndex, remaining) ?? draft;
 }
 
 /**
