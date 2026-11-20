@@ -1100,6 +1100,7 @@ export default {
   'Rest-pause always trains as one warm-up set at this rep count, then one rest-pause work set. "Sets" isn’t used here.': 'রেস্ট-পজ সবসময় এই রেপ সংখ্যায় একটি ওয়ার্ম-আপ সেট, তারপর একটি রেস্ট-পজ ওয়ার্কিং সেট হিসেবে চলে। এখানে "সেট" ব্যবহার হয় না।',
   // --- AI Coach on the phone ---
   '(saved)': '(সেভ করা)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'AI কোচ',
   'API key': 'API কী',
   'Bring my own API key': 'নিজের API কী ব্যবহার করুন',

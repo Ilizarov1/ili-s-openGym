@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [执行计划](EXECUTION.md)
 
-状态为待实施。首期用桩任务验证基础设施，业务功能另行设计。客户端范围为 Web 和 RN Android；不保留 Capacitor/iOS、watch 端或旧版客户端的兼容分支。
+状态为已实施（首期）。首期用桩任务验证基础设施，业务功能另行设计。客户端范围为 Web 和 RN Android；不保留 Capacitor/iOS、watch 端或旧版客户端的兼容分支。验收记录见 [ACCEPTANCE.md](ACCEPTANCE.md)。
 
 ## 1. 模块与代码落点
 

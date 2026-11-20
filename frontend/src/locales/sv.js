@@ -1043,6 +1043,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '(sparad)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'AI-coach',
   'API key': 'API-nyckel',
   'Bring my own API key': 'Använd min egen API-nyckel',

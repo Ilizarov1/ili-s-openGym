@@ -833,6 +833,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '(збережено)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'ШІ-тренер',
   'API key': 'API-ключ',
   'Bring my own API key': 'Використати свій API-ключ',

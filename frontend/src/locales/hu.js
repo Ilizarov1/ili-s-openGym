@@ -1104,6 +1104,7 @@ export default {
   'Rename routine to “{0}”': 'Rutin átnevezése erre: „{0}”',
   'Change what’s planned on one day': 'Egy nap tervének módosítása',
   '(saved)': '(mentve)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'MI-edző',
   'API key': 'API-kulcs',
   'Bring my own API key': 'Saját API-kulcsot használok',

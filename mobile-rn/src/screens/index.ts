@@ -19,3 +19,5 @@ export * from './HistoryImportScreen';
 export * from './PlanShareScreen';
 export * from './QrPairScreen';
 export * from './ReminderSettingsScreen';
+export * from './AgentScreen';
+export * from './AgentProfileScreen';

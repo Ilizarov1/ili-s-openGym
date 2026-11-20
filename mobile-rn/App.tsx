@@ -9,11 +9,13 @@ import {
   BodyDataScreen, DayOverrideSheet, ExerciseLibraryScreen, HistoryEditorScreen, HistoryImportScreen, HomeScreen,
   PlanEditorScreen, PlanScreen, PlanShareScreen, ProgressScreen, QrPairScreen, ReminderSettingsScreen,
   ScheduleEditorScreen, SettingsScreen, StartScreen, StatsScreen, WorkoutScreen, WorkoutSummarySheet,
+  AgentScreen, AgentProfileScreen,
 } from './src/screens';
 import { RestTimer } from './src/restTimer';
 import { workoutSummary, type WorkoutSummary } from './src/progress';
 import { useGym } from './src/useGym';
 import { readLocal } from './src/storage';
+import { recoverAgentRuns } from './src/agent';
 import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines } from './src/profileChanges';
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
@@ -50,6 +52,8 @@ type Panel =
   | { kind: 'qrPair' }
   | { kind: 'planShare'; mode?: 'export' | 'import' }
   | { kind: 'reminder' }
+  | { kind: 'agent' }
+  | { kind: 'agentProfile' }
   | { kind: 'start' }
   | { kind: 'dayOverride' }
   | { kind: 'design' };
@@ -78,6 +82,16 @@ function AppScreen() {
   const libraryClose = useRef<(() => void) | null>(null);
   const connection = workspace?.connection;
   const currentDraft = workspace?.data.draft;
+  // A foreground agent run cannot survive a process restart. Mark the previous
+  // scope's leftovers interrupted as soon as the workspace is known.
+  const recoveredScope = useRef<string | null>(null);
+  useEffect(() => {
+    if (!workspace) return;
+    const scope = workspace.connection ? `${workspace.connection.server}|${workspace.connection.user.id}` : 'practice';
+    if (recoveredScope.current === scope) return;
+    recoveredScope.current = scope;
+    try { recoverAgentRuns(workspace.connection); } catch { /* a storage failure must not block boot */ }
+  }, [workspace]);
   const restAlertError = useRestNotification(
     workspace ? workspace.data.restAlerts === true : undefined,
     currentDraft?.rest?.endsAt,
@@ -161,6 +175,8 @@ function AppScreen() {
       if (route === 'progress') { setPanel({ kind: 'progress' }); return; }
       if (route === 'body') { setPanel({ kind: 'body' }); return; }
       if (route === 'reminder') { setPanel({ kind: 'reminder' }); return; }
+      if (route === 'agent') { setPanel({ kind: 'agent' }); return; }
+      if (route === 'agent-profile') { setPanel({ kind: 'agentProfile' }); return; }
       if (route === 'history-import') { setPanel({ kind: 'historyImport' }); return; }
       if (route === 'plan-share') { setPanel({ kind: 'planShare', mode: params.mode === 'import' ? 'import' : 'export' }); return; }
       if (route === 'pair') { setPanel({ kind: 'qrPair' }); return; }
@@ -650,6 +666,7 @@ function AppScreen() {
           onOpenReminders={() => setPanel({ kind: 'reminder' })}
           onOpenHistoryImport={() => setPanel({ kind: 'historyImport' })}
           onScanPairingQr={() => setPanel({ kind: 'qrPair' })}
+          onOpenAgent={() => setPanel({ kind: 'agent' })}
           notice={gym.notice}
           restAlertError={restAlertError}
           busy={dataBusy}
@@ -698,6 +715,17 @@ function AppScreen() {
           onChange={changes => { if (gym.commit(changes)) closePanel(); }}
           onClose={closePanel}
           profile={profile}
+        />}
+        {panel.kind === 'agent' && <AgentScreen
+          connection={connection ?? null}
+          data={workspace.data}
+          onClose={closePanel}
+          onOpenProfiles={() => setPanel({ kind: 'agentProfile' })}
+        />}
+        {panel.kind === 'agentProfile' && <AgentProfileScreen
+          connection={connection ?? null}
+          data={workspace.data}
+          onClose={closePanel}
         />}
         {panel.kind === 'reminder' && <ReminderSettingsScreen
           busy={reminderSync.syncing}

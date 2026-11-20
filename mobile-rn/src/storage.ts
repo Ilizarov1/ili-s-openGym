@@ -48,6 +48,11 @@ function scopeOf(connection: Connection | null) {
   return connection ? `${connection.server}|${connection.user.id}` : 'practice';
 }
 
+/** The workspace key used by agent records and secure credentials. */
+export function workspaceScope(connection: Connection | null): string {
+  return scopeOf(connection);
+}
+
 export function readLocal(connection: Connection | null): LocalState {
   const row = database().getFirstSync<{ state: string }>('SELECT state FROM workspace WHERE scope = ?', scopeOf(connection));
   if (!row) return {

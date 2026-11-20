@@ -1024,6 +1024,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '(kaydedildi)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'Yapay Zekâ Koçu',
   'API key': 'API anahtarı',
   'Bring my own API key': 'Kendi API anahtarımı kullan',

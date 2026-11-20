@@ -10,6 +10,7 @@ import { AccountStore } from '../common/persistence/account-store.js';
 import { json } from '../common/http/reply.js';
 import { RUNTIME_CONFIG, type RuntimeConfigShape } from '../config/runtime-config.js';
 import { IntegrationsService } from '../integrations/integrations.service.js';
+import { agentPublicConfig } from '../agent/agent.flags.js';
 
 const DATA_PROBE_MS = 5000;
 
@@ -68,6 +69,7 @@ export class SystemController {
       ...(this.config.defaultLang ? { default_lang: this.config.defaultLang } : {}),
       ...(limits.enabled ? { media: mediaConfig(limits) } : {}),
       ...(signedIn ? { coach: coachConfig.publicConfig() } : {}),
+      ...(signedIn ? { agent: agentPublicConfig() } : {}),
       ...(signedIn && this.integrations.publicConfig() ? { integrations: this.integrations.publicConfig() } : {}),
     });
   }

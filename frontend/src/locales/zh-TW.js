@@ -1016,6 +1016,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '（已儲存）',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'AI 教練',
   'API key': 'API 金鑰',
   'Bring my own API key': '使用我自備的 API 金鑰',

@@ -63,6 +63,7 @@ export type SettingsScreenProps = {
   onOpenReminders: () => void;
   onOpenHistoryImport: () => void;
   onScanPairingQr: () => void;
+  onOpenAgent: () => void;
   /** 来自 `useGym` 的错误提示，例如同步失败。 */
   notice?: string;
   /** 休息通知权限或调度错误。 */
@@ -120,6 +121,7 @@ export function SettingsScreen({
   onOpenReminders,
   onOpenHistoryImport,
   onScanPairingQr,
+  onOpenAgent,
   notice,
   restAlertError,
   busy = false,
@@ -360,6 +362,15 @@ export function SettingsScreen({
           onPress={onOpenHistoryImport}
           subtitle="从 FitNotes、Strong、Hevy 等 CSV/JSON 导入"
           title="导入训练历史"
+        />
+        <Divider inset={dividerInset} />
+        <ListRow
+          chevron
+          disabled={working}
+          leading={<IconTile name="sparkles" size="sm" tone="accent" />}
+          onPress={onOpenAgent}
+          subtitle="本机或服务端执行、模型配置、会话与记忆"
+          title="Agent 运行环境"
         />
         {connection ? (
           <>

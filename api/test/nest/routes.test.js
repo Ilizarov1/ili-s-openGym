@@ -36,7 +36,7 @@ function openapiRoutes() {
 }
 
 test('nest controllers cover the OpenAPI operations', { skip: !buildReady(api) && 'run npm run build first' }, async () => {
-  const norm = list => list.map(r => r.replace(/\/:hash\b/, '/{hash}')).sort();
+  const norm = list => list.map(r => r.replace(/\/:([A-Za-z0-9_]+)\b/g, '/{$1}')).sort();
   const expected = norm(openapiRoutes());
   const actual = norm(await nestRoutes(api));
   const missing = expected.filter(r => !actual.includes(r));

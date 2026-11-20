@@ -20,6 +20,10 @@ frontend/android/    上游 Capacitor Android 工程与原生插件
 frontend/ios/        上游 iOS、Apple Watch 和小组件
 api/                 NestJS 路由、认证、设备配对、JSON 存储和同步；server.js 加载 dist
 api/coach/           AI Coach 服务与共用逻辑
+api/agent-runtime/   共享 Agent 运行核心（契约、围栏、编排、提供商）
+api/src/agent/       NestJS Agent 模块、按账号存储、配置与作业
+frontend/src/agent/  Web 服务端 Agent 客户端与 Zustand 状态
+mobile-rn/src/agent/ RN 本机执行、SQLite、SecureStore 和服务端客户端
 api/integrations/    外部集成和投递队列
 web/                 Web 镜像构建和 Nginx 配置
 catalogue/           动作原始数据、翻译和演示媒体
@@ -75,6 +79,7 @@ docs/
     REQUIREMENTS.md                      双执行环境、上下文、工具围栏、记忆与验收要求
     DESIGN.md                            RN 与 NestJS 的模块、契约和持久化设计
     EXECUTION.md                         分阶段实施、验收证据和回退步骤
+    ACCEPTANCE.md                        环境、命令、A1-A7 证据和待设备项
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/

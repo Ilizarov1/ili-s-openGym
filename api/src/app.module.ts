@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AccountsModule } from './accounts/accounts.module.js';
+import { AgentModule } from './agent/agent.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { AuthRoutesModule } from './auth/auth-routes.module.js';
 import { CoachModule } from './coach/coach.module.js';
@@ -29,6 +30,7 @@ import { WatchModule } from './watch/watch.module.js';
     WatchModule,
     IntegrationsRoutesModule,
     CoachModule,
+    AgentModule,
     WiringModule,
   ],
 })

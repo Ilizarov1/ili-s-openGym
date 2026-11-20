@@ -5,6 +5,7 @@ const config = getDefaultConfig(__dirname);
 config.watchFolders = [
   ...(config.watchFolders ?? []),
   path.resolve(__dirname, '../frontend/src'),
+  path.resolve(__dirname, '../api/agent-runtime'),
   path.resolve(__dirname, '../catalogue/media'),
 ];
 

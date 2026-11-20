@@ -1112,6 +1112,7 @@ export default {
   'Rename routine to “{0}”': 'เปลี่ยนชื่อรูทีนเป็น “{0}”',
   'Change what’s planned on one day': 'เปลี่ยนแผนของหนึ่งวัน',
   '(saved)': '(บันทึกแล้ว)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'โค้ช AI',
   'API key': 'คีย์ API',
   'Bring my own API key': 'ใช้คีย์ API ของฉันเอง',

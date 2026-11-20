@@ -575,6 +575,7 @@ export const PT_BR_OVERRIDES = {
   'Add routine “{0}”': 'Adicionar rotina “{0}”',
   'Rename routine to “{0}”': 'Renomear rotina para “{0}”',
   // --- AI Coach on the phone ---
+  'AI Agent': 'AI Agent',
   'AI Coach': 'Treinador IA',
   'Bring my own API key': 'Usar minha própria chave de API',
   'Could not reach the provider: {0}': 'Não foi possível contatar o provedor: {0}',

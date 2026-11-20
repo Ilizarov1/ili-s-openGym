@@ -28,7 +28,7 @@ function specOperations(yaml) {
     if (!inPaths) continue;
     const p = /^ {2}(\/[^:]*):/.exec(line);
     if (p) { current = p[1]; continue; }
-    const m = /^ {4}(get|post|put|delete):/.exec(line);
+    const m = /^ {4}(get|post|put|patch|delete):/.exec(line);
     if (m && current) out.push(`${m[1].toUpperCase()} ${current}`);
   }
   return out;
@@ -37,7 +37,7 @@ function specOperations(yaml) {
 test('every route the Nest app registers is in openapi.yaml, and nothing else is', { skip: !buildReady(API) && 'run npm run build first' }, async () => {
   // The listening surface comes from the compiled controllers, not from any source text: the
   // legacy route table in server.js is gone after the phase 4 switch.
-  const routes = new Set((await nestRoutes(API)).map(r => r.replace(/\/:hash\b/, '/{hash}')));
+  const routes = new Set((await nestRoutes(API)).map(r => r.replace(/\/:([A-Za-z0-9_]+)\b/g, '/{$1}')));
   const ops = new Set(specOperations(spec));
   assert.ok(routes.size > 40, `only found ${routes.size} routes — the controller scan moved`);
 
@@ -79,8 +79,10 @@ test('every error code the e-mail and password signup routes return is in their 
     [...passwords.matchAll(/^\s{2}(\w+): \{ error: '[^']*', code: '([^']+)' \}/gm)].map(m => [m[1], m[2]]),
   );
   const policyCodes = [.../POLICY_ERRORS:[\s\S]*?\n\};/.exec(passwords)[0].matchAll(/^\s{2}'([^']+)':/gm)].map(m => m[1]);
+  const escapeRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pathIndex = p => spec.search(new RegExp(`\\n  ${escapeRe(p)}:\\r?\\n`));
   const operation = (p, method) => {
-    const from = spec.indexOf(`\n  ${p}:\n`);
+    const from = pathIndex(p);
     assert.ok(from >= 0, p);
     const rest = spec.slice(from + 1);
     const block = rest.slice(0, rest.slice(1).search(/\n {2}\/|\n[a-zA-Z]/) + 1);
@@ -89,7 +91,7 @@ test('every error code the e-mail and password signup routes return is in their 
     const text = end < 0 ? op : op.slice(0, end + 1);
     // Follow the shared responses it points at.
     const refs = [...text.matchAll(/#\/components\/responses\/(\w+)/g)].map(m => {
-      const at = spec.indexOf(`\n    ${m[1]}:\n`);
+      const at = spec.search(new RegExp(`\\n    ${m[1]}:\\r?\\n`));
       const tail = spec.slice(at + 1);
       return tail.slice(0, tail.slice(1).search(/\n {4}\w+:/) + 1);
     });

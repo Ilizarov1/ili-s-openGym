@@ -102,3 +102,13 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [ ] **交互差异对齐构建与设备验收**。`npm.cmd run check` 通过；Release JS bundle 成功（6,674 模块）。worktree 路径过长触发 `expo-modules-core` CMake 对象路径限制，需在短路径检出后重跑 `assembleRelease`；七项交互的设备验收按 [执行文档](rn-web-interaction-parity/README.md) 编号进行。
 
 每完成一项就更新对应条目，附上验证结果或记录链接。只完成一部分时，写明已经实现的能力和剩余工作。代码已实现、验收仍待完成的条目标记为「已实现，待验证」。
+
+## Agent 运行环境（2026-11-20）
+
+- [x] Web 服务端执行：`/api/agent/*`，配置、运行、取消、会话、记忆和提案确认。
+- [x] RN 本机执行：`opengym-agent.db` 按工作区隔离，模型配置元数据在 SQLite、密钥在 SecureStore；服务端执行复用同一 API。
+- [x] 共享核心：`api/agent-runtime/` 提供契约、schema、工具与提案围栏、状态机和 fixture/OpenAI 提供商，Metro 已加入解析目录。
+- [x] Android 设备验收：2026-11-20 `emulator-5560`（openGymRnQaWorker，Android 16）完成本机文本运行、提案确认、记忆保存/删除、会话写入和取消后晚到结果。
+- [x] APK 构建和签名哈希：`app-release.apk`，SHA-256 `E2B0CD6368F233D93C09189A0C626D5E43E07056CFFBA988959C0D37370B2FEC`，Debug 证书验签通过。
+
+证据见 [agent-runtime/ACCEPTANCE.md](agent-runtime/ACCEPTANCE.md)。

@@ -41,6 +41,10 @@ export class Paths {
     return path.join(this.config.dataDir, 'state-' + safeUid(uid) + '.json');
   }
 
+  agentFile(uid: string): string {
+    return path.join(this.config.dataDir, 'agent-' + safeUid(uid) + '.json');
+  }
+
   watchFile(uid: string): string {
     return path.join(this.config.dataDir, 'watch-' + safeUid(uid) + '.json');
   }

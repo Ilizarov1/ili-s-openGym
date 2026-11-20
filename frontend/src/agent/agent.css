@@ -1,0 +1,35 @@
+/* Agent runtime pages: one 880px column, the same surfaces as the rest of Settings. */
+.agent-page { max-width: 880px; margin: 0 auto; padding: 8px 0 28px; }
+.agent-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 4px 0 18px; }
+.agent-head h1 { font-size: clamp(28px, 5vw, 40px); letter-spacing: -.02em; }
+.agent-head p { color: var(--label-2); margin-top: 6px; }
+.agent-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(260px, .65fr); gap: 14px; align-items: start; }
+.agent-main, .agent-side { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.agent-card { background: var(--surface); border: 1px solid var(--sep-op); border-radius: var(--r); padding: 16px 18px; }
+.agent-card h2 { font-size: 16px; margin-bottom: 10px; }
+.agent-card h3 { font-size: 14px; margin-bottom: 6px; }
+.agent-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--sep-op); }
+.agent-row:first-of-type { border-top: 0; }
+.agent-row-main { min-width: 0; }
+.agent-row-title { font-size: 14.5px; }
+.agent-row-sub { color: var(--label-3); font-size: 12.5px; margin-top: 2px; overflow-wrap: anywhere; }
+.agent-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.agent-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--surface-2); color: var(--label-2); }
+.agent-status.completed { color: var(--green); background: rgba(48, 209, 88, .16); }
+.agent-status.failed, .agent-status.cancelled { color: var(--red); background: rgba(255, 69, 58, .14); }
+.agent-status.running, .agent-status.accepted { color: var(--blue); background: rgba(10, 132, 255, .14); }
+.agent-result { white-space: pre-wrap; color: var(--label); font-size: 14px; line-height: 1.55; }
+.agent-pre { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: var(--label-2); }
+.agent-error { color: var(--red); font-size: 13px; margin-top: 8px; }
+.agent-note { color: var(--label-3); font-size: 12.5px; }
+.agent-textarea { width: 100%; min-height: 92px; resize: vertical; background: var(--surface-2); color: var(--label); border: 0; border-radius: 10px; padding: 12px 14px; font: inherit; }
+.agent-select { width: 100%; background: var(--surface-2); color: var(--label); border: 0; border-radius: 10px; padding: 10px 12px; font: inherit; }
+.agent-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.agent-field label { color: var(--label-3); font-size: 12.5px; }
+.agent-field input { background: var(--surface-2); color: var(--label); border: 0; border-radius: 10px; padding: 10px 12px; font: inherit; }
+.agent-changes { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 6px; }
+.agent-changes li { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font-size: 12.5px; color: var(--label-2); }
+@media (max-width: 760px) {
+  .agent-grid { grid-template-columns: 1fr; }
+  .agent-head { flex-direction: column; align-items: flex-start; }
+}

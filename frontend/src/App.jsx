@@ -79,6 +79,8 @@ const CoachChat = lazyView(() => import('./views/CoachChat.jsx'))
 const Measurements = lazyView(() => import('./views/Measurements.jsx'))
 const CoachIntake = lazyView(() => import('./views/CoachIntake.jsx'))
 const CoachSetup = lazyView(() => import('./views/CoachSetup.jsx'))
+const Agent = lazyView(() => import('./views/Agent.jsx'))
+const AgentSetup = lazyView(() => import('./views/AgentSetup.jsx'))
 const StructuralBalance = lazyView(() => import('./views/StructuralBalance.jsx'))
 const ProgressPhotos = lazyView(() => import('./views/ProgressPhotos.jsx'))
 // The tabs and screens past Home (Stats, History, the Library, Settings, ...) as well: a start
@@ -291,7 +293,7 @@ function Shell() {
   }, [inWorkout])
   // The chat owns the bottom of the screen as well: its composer sits where the tabs would be.
   // The first-launch card has no tabs either: they changed the route behind it.
-  const noTabs = inWorkout || loc.pathname === '/coach' || needsMobileOnboarding || permSteps
+  const noTabs = inWorkout || loc.pathname === '/coach' || loc.pathname.startsWith('/agent') || needsMobileOnboarding || permSteps
 
   const authed = user || isGuest
   // The first setup is through (sign-in or "Use on this device", and the phone's permission
@@ -357,6 +359,10 @@ function Shell() {
       {isOn(S, 'coach') && <Route path="/coach/intake" element={<CoachIntake />} />}
       {isOn(S, 'coach') && <Route path="/coach/proposal" element={<Navigate to="/coach" replace />} />}
       {isOn(S, 'coach') && <Route path="/coach/setup" element={<CoachSetup />} />}
+      {/* The agent runtime is a signed-in Web feature; the phone app and a guest profile
+          have no server execution surface here. */}
+      <Route path="/agent" element={user && !MOBILE ? <Agent /> : <Navigate to="/home" replace />} />
+      <Route path="/agent/setup" element={user && !MOBILE ? <AgentSetup /> : <Navigate to="/home" replace />} />
       <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>

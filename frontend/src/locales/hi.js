@@ -1024,6 +1024,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '(सहेजी गई)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'AI कोच',
   'API key': 'API कुंजी',
   'Bring my own API key': 'अपनी API कुंजी इस्तेमाल करें',

@@ -22,6 +22,9 @@ export const PAGES = {
   equipment: { title: 'Equipment', icon: 'kettlebell', tint: 'var(--indigo)' },
   look: { title: 'Look & Home', icon: 'palette', tint: 'var(--purple)' },
   coach: { title: 'AI Coach', icon: 'sparkles', tint: 'var(--green)', mod: 'coach' },
+  // Server-executed agent runtime (Web only, signed in). It is not a training module:
+  // the page gates itself on the account and config.agent.enabled.
+  agent: { title: 'AI Agent', icon: 'sparkles', tint: 'var(--blue)', kw: 'agent runtime server model configuration memory run execution' },
   watch: { title: 'Apple Watch', icon: 'watch', tint: 'var(--grey)', mod: 'watch' },
   // Settings → Integrations (v1.4.4): the directory of what openGym talks to (views/Integrations.jsx).
   integrations: { title: 'Integrations', icon: 'plug', tint: 'var(--indigo)', kw: 'integrations connect apps services webhook webhooks home assistant n8n ntfy node-red zapier automation garmin fitbit strava sync api mcp' },
@@ -45,7 +48,7 @@ export const PAGE_IDS = Object.keys(PAGES)
 
 // The root, top to bottom. Whether a row shows is pageVisible's call.
 // Modules first, on its own: what the app shows at all comes before how each part behaves.
-export const ROOT_GROUPS = [['modules'], ['workout', 'alerts', 'reminders'], ['plan', 'units', 'equipment'], ['look', 'coach', 'watch', 'zepp'], ['integrations', 'data', 'about']]
+export const ROOT_GROUPS = [['modules'], ['workout', 'alerts', 'reminders'], ['plan', 'units', 'equipment'], ['look', 'coach', 'agent', 'watch', 'zepp'], ['integrations', 'data', 'about']]
 
 /**
  * Whether a page exists for this device and profile. Reminders need a push server (signed in) or
@@ -57,6 +60,7 @@ export function pageVisible(page, ctx) {
   if (PAGES[page]?.mod && ctx.mod && !ctx.mod(PAGES[page].mod)) return false
   if (page === 'reminders') return !!(ctx.user || ctx.mobile)
   if (page === 'coach') return !!ctx.mobile
+  if (page === 'agent') return !!ctx.user && !ctx.mobile && !ctx.demo
   // The iPhone app only: the watch app ships inside it.
   if (page === 'watch') return !!ctx.ios
   // Signed in to a server: a Zepp OS watch reaches openGym through it (lib/watch-relay.js).
@@ -148,6 +152,8 @@ export const SEARCH = [
   { page: 'plan', title: 'Week starts on', icon: 'calendar', tint: 'var(--orange)', kw: 'monday sunday first day week', opts: ['Monday', 'Sunday'], tkw: () => t('week start') },
   { page: 'plan', title: 'Weekly sets per muscle', icon: 'slider', tint: 'var(--teal)', kw: 'volume sets per week muscle target range mev mrv hypertrophy landmarks' },
   { page: 'plan', title: 'Load starter plan', icon: 'clipboard', tint: 'var(--green)', kw: 'starter template beginner program routine' },
+  // Server agent runtime (Web, signed in): the row at the bottom of Look & Home opens the setup.
+  { page: 'agent', title: 'AI Agent', icon: 'sparkles', tint: 'var(--blue)', kw: 'agent runtime server model configuration memory run execution' },
   // Units & language
   { page: 'units', title: 'Language', icon: 'globe', tint: 'var(--blue)', kw: 'language translation idioma sprache langue lingua' },
   { page: 'units', title: 'English exercise names', icon: 'globe', tint: 'var(--purple)', kw: 'exercise names english translation', when: c => c.nameLang },

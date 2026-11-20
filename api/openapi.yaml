@@ -181,6 +181,11 @@ tags:
       Settings → Integrations: outbound webhooks now, more providers later. Off unless the
       server runs with `INTEGRATIONS` (e.g. `INTEGRATIONS=webhook`); then a profile can add
       its own connections. Secrets are sealed at rest and shown once. See docs/INTEGRATIONS.md.
+  - name: agent
+    description: >-
+      The agent runtime's server execution: runs, model configuration, sessions, confirmed
+      memories and business-write proposals. Every route answers 503 `agent_disabled` when
+      `AGENT_RUNTIME_DISABLED` is set. First version executes the `stub.v1` task.
 
 security:
   - cookieAuth: []
@@ -3822,6 +3827,321 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/agent/runs:
+    post:
+      tags: [agent]
+      operationId: postAgentRun
+      summary: Start a server-executed agent run
+      description: |
+        Persists the accepted run and the request fingerprint before calling the model.
+        Retrying the same `requestId` with the same input returns the original run;
+        reusing it with different input is a 409 `request_conflict`. The call answers 202
+        immediately and the run is queried or cancelled by id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentRunRequest' }
+            example:
+              taskId: stub.v1
+              requestId: req_01J8Y6W7V5
+              profileId: profile_2e91
+              input: { prompt: What changed since last week? }
+              sessionId: ses_01J8Y6
+              attachmentIds: [fixture:image]
+      responses:
+        '202':
+          description: Accepted, or the original run for a repeated request id.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentRunStart' }
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/AgentConflict' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/runs/{runId}:
+    get:
+      tags: [agent]
+      operationId: getAgentRun
+      summary: Read one run
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The run, including its terminal status and saved result.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentRun' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/runs/{runId}/cancel:
+    post:
+      tags: [agent]
+      operationId: postAgentRunCancel
+      summary: Cancel a run
+      description: Commits the cancelled status before the provider is aborted. A completed run is returned unchanged.
+      parameters:
+        - { name: runId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The cancelled (or already terminal) run.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentRun' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/configs:
+    get:
+      tags: [agent]
+      operationId: getAgentConfigs
+      summary: List model configurations
+      description: Includes the read-only instance default, even when unavailable, plus this account's own profiles.
+      responses:
+        '200':
+          description: Profiles.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profiles:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentProfile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+    post:
+      tags: [agent]
+      operationId: postAgentConfig
+      summary: Create an account model configuration
+      description: Providers are `fixture` (non-production) and `openai`. The key is sealed; only its last four characters come back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentProfileInput' }
+      responses:
+        '201':
+          description: Created.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentProfile' }
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/configs/{profileId}:
+    patch:
+      tags: [agent]
+      operationId: patchAgentConfig
+      summary: Update an account model configuration
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentProfileInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentProfile' }
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+    delete:
+      tags: [agent]
+      operationId: deleteAgentConfig
+      summary: Delete an account model configuration
+      parameters:
+        - { name: profileId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/sessions:
+    get:
+      tags: [agent]
+      operationId: getAgentSessions
+      summary: List conversations
+      responses:
+        '200':
+          description: Conversations, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentSessionSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/sessions/{sessionId}:
+    get:
+      tags: [agent]
+      operationId: getAgentSession
+      summary: Read one conversation
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The conversation and its messages.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '409': { $ref: '#/components/responses/AgentConflict' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+    delete:
+      tags: [agent]
+      operationId: deleteAgentSession
+      summary: Delete a conversation
+      description: Sets a tombstone and deletes derived summaries. A run that was using it cannot write it back.
+      parameters:
+        - { name: sessionId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/AgentConflict' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/memories:
+    get:
+      tags: [agent]
+      operationId: getAgentMemories
+      summary: List confirmed memories
+      responses:
+        '200':
+          description: Memories, newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  memories:
+                    type: array
+                    items: { $ref: '#/components/schemas/AgentMemory' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+    post:
+      tags: [agent]
+      operationId: postAgentMemory
+      summary: Save a confirmed memory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentMemoryInput' }
+      responses:
+        '201':
+          description: Saved.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentMemory' }
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/memories/{memoryId}:
+    patch:
+      tags: [agent]
+      operationId: patchAgentMemory
+      summary: Edit a memory
+      parameters:
+        - { name: memoryId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AgentMemoryInput' }
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentMemory' }
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+    delete:
+      tags: [agent]
+      operationId: deleteAgentMemory
+      summary: Delete a memory
+      parameters:
+        - { name: memoryId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Ok' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/proposals/{proposalId}/confirm:
+    post:
+      tags: [agent]
+      operationId: postAgentProposalConfirm
+      summary: Confirm a proposal
+      description: Only a stored proposal id is accepted. The target version is checked and the write is applied once; a repeat returns the first result.
+      parameters:
+        - { name: proposalId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The consumed proposal and the applied result.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  proposal: { $ref: '#/components/schemas/AgentProposal' }
+                  result: {}
+                  applied: { type: boolean }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '409': { $ref: '#/components/responses/AgentConflict' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
+  /api/agent/proposals/{proposalId}/reject:
+    post:
+      tags: [agent]
+      operationId: postAgentProposalReject
+      summary: Reject a proposal
+      parameters:
+        - { name: proposalId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The rejected proposal.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentProposal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/AgentNotFound' }
+        '409': { $ref: '#/components/responses/AgentConflict' }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
 components:
   securitySchemes:
     cookieAuth:
@@ -3855,6 +4175,32 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
           example: { error: "forbidden" }
+    AgentBadRequest:
+      description: The body, task, profile or attachment reference is not valid.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AgentError' }
+          example: { error: "requestId is invalid", code: invalid_request }
+    AgentNotFound:
+      description: The run, profile, conversation, memory or proposal does not exist in this account.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AgentError' }
+          example: { error: "That run does not exist.", code: run_not_found }
+    AgentConflict:
+      description: >-
+        A stable conflict: a reused request id with different input, a proposal whose target
+        changed, a deleted conversation, or a proposal that was already handled.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AgentError' }
+          example: { error: "The target changed after this proposal was made. Generate it again.", code: proposal_conflict }
+    AgentDisabled:
+      description: The agent runtime is switched off on this instance (`AGENT_RUNTIME_DISABLED`).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AgentError' }
+          example: { error: "The agent runtime is disabled on this instance.", code: agent_disabled }
     CoachOff:
       description: >-
         The Coach is not set up on this instance (switched off, or no provider connected).
@@ -4036,6 +4382,211 @@ components:
         retryAfter:
           type: integer
           description: 429 only. The same number of seconds as the Retry-After header.
+
+    AgentError:
+      type: object
+      required: [error, code]
+      properties:
+        error: { type: string, description: A displayable message. }
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - scope_denied
+            - profile_not_found
+            - profile_capability_missing
+            - context_budget_exceeded
+            - fact_missing
+            - tool_not_allowed
+            - tool_args_invalid
+            - tool_target_out_of_scope
+            - tool_budget_exceeded
+            - proposal_not_found
+            - proposal_conflict
+            - proposal_consumed
+            - run_not_found
+            - run_terminal
+            - run_cancelled
+            - request_conflict
+            - model_unavailable
+            - model_timeout
+            - model_response_too_large
+            - session_deleted
+            - memory_not_found
+            - agent_disabled
+            - agent_config_disabled
+            - agent_store_corrupt
+            - agent_media_invalid
+            - agent_media_too_large
+        details:
+          type: object
+          additionalProperties: true
+          description: Optional structured reason (a JSON path, the rejected target, the missing fact id).
+      example: { error: "The tool target is outside this task scope.", code: tool_target_out_of_scope }
+
+    AgentRunRequest:
+      type: object
+      required: [requestId, profileId, input]
+      properties:
+        taskId: { type: string, default: stub.v1, description: The registered task. v1 serves stub.v1 only. }
+        requestId:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{8,128}$'
+          description: A client-generated idempotency key. Reuse it only for the same input.
+        profileId: { type: string, description: A listed default or account profile id. }
+        input:
+          type: object
+          additionalProperties: true
+          description: Task input. `stub.v1` takes `{ prompt, fixtureCase? }`.
+        sessionId: { type: string, description: Optional conversation to append to. }
+        attachmentIds:
+          type: array
+          maxItems: 4
+          items: { type: string }
+          description: "`fixture:image` or a sha256 of an image in this account's media folder."
+
+    AgentRunStart:
+      type: object
+      required: [runId, status]
+      properties:
+        runId: { type: string }
+        status:
+          type: string
+          enum: [accepted, running, completed, failed, cancelled, interrupted]
+          description: "`accepted` for a new run; the original status for a repeated request id."
+
+    AgentRun:
+      type: object
+      required: [runId, requestId, taskId, profileId, executionLocation, status, createdAt]
+      properties:
+        runId: { type: string }
+        requestId: { type: string }
+        taskId: { type: string }
+        profileId: { type: string }
+        executionLocation: { type: string, enum: [server] }
+        status:
+          type: string
+          enum: [accepted, running, completed, failed, cancelled, interrupted]
+        createdAt: { type: integer, description: Epoch ms. }
+        startedAt: { type: integer }
+        finishedAt: { type: integer }
+        durationMs: { type: integer }
+        dataVersion: { oneOf: [{ type: string }, { type: number }] }
+        sessionId: { type: string }
+        result:
+          type: object
+          additionalProperties: true
+          description: The validated task result, evidence ids and usage.
+        proposalId: { type: string }
+        error:
+          type: object
+          properties:
+            code: { type: string }
+            message: { type: string }
+
+    AgentProfile:
+      type: object
+      required: [id, source, provider, model, capabilities, version, label, available]
+      properties:
+        id: { type: string, example: default }
+        source: { type: string, enum: [default, user] }
+        provider: { type: string, enum: [fixture, openai, none] }
+        model: { type: string }
+        capabilities:
+          type: object
+          properties:
+            text: { type: boolean }
+            image: { type: boolean }
+            tools: { type: boolean }
+        keyHint: { type: string, description: Last four characters only. }
+        version: { type: integer }
+        label: { type: string }
+        available: { type: boolean }
+        reason: { type: string, description: Why an unavailable default cannot be used. }
+
+    AgentProfileInput:
+      type: object
+      required: [provider, model]
+      properties:
+        provider: { type: string, enum: [fixture, openai] }
+        model: { type: string, maxLength: 200 }
+        apiKey:
+          type: string
+          description: Write-only. Required for openai; sealed with an account-derived key. Never returned.
+        baseUrl:
+          type: string
+          description: Refused by the server; outbound endpoints are administrator-controlled.
+
+    AgentSessionSummary:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        version: { type: integer }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        messageCount: { type: integer }
+
+    AgentSession:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        version: { type: integer }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        messages:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              role: { type: string, enum: [user, assistant] }
+              content: { type: string }
+              createdAt: { type: integer }
+              runId: { type: string }
+
+    AgentMemory:
+      type: object
+      required: [id, category, value, createdAt, updatedAt, version]
+      properties:
+        id: { type: string }
+        category: { type: string, enum: [preference, goal, constraint, note] }
+        value: {}
+        source: { type: string }
+        createdAt: { type: integer }
+        updatedAt: { type: integer }
+        version: { type: integer }
+
+    AgentMemoryInput:
+      type: object
+      required: [category, value]
+      properties:
+        category: { type: string, enum: [preference, goal, constraint, note] }
+        value: {}
+        source: { type: string, maxLength: 200 }
+
+    AgentProposal:
+      type: object
+      required: [proposalId, kind, changes, targetScope, status, createdAt]
+      properties:
+        proposalId: { type: string }
+        runId: { type: string }
+        kind: { type: string, example: stub.write }
+        changes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        targetScope:
+          type: array
+          items: { type: string }
+        targetVersion: { oneOf: [{ type: string }, { type: number }] }
+        status: { type: string, enum: [pending, consumed, rejected, expired] }
+        createdAt: { type: integer }
+        result: {}
+        consumedAt: { type: integer }
+        rejectedAt: { type: integer }
 
     Ok:
       type: object

@@ -803,6 +803,12 @@ API keys for the HTTPS providers (Anthropic, OpenAI, Gemini, a compatible endpoi
 other way round: they are in `./data/coach.json`, encrypted with `./data/secret`, so they *are*
 in this archive — and unreadable without the secret next to them, like everything else in it.
 
+The agent runtime keeps its own `data/agent-<uid>.json` per account. A server-held agent key is
+encrypted with a key derived from `data/secret`; restore the agent files and `data/secret`
+together or the key has to be entered again. The phone's local agent data is in its private
+`opengym-agent.db` and its key is in the device secure store. `AGENT_RUNTIME_DISABLED=1` is the
+rollback switch: it answers `503 agent_disabled` on `/api/agent/*` and keeps all agent data.
+
 ## 7. Notifications
 
 openGym can push two kinds of alert to your phone/desktop, even when the app isn't open:

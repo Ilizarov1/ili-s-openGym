@@ -901,6 +901,7 @@ export default {
   'Rename routine to “{0}”': 'إعادة تسمية الروتين إلى «{0}»',
   'Change what’s planned on one day': 'تغيير ما هو مخطط في أحد الأيام',
   '(saved)': '(محفوظ)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'مدرب الذكاء الاصطناعي',
   'API key': 'مفتاح API',
   'Bring my own API key': 'استخدام مفتاح API خاص بي',

@@ -1024,6 +1024,7 @@ export default {
 
   // --- AI Coach on the phone ---
   '(saved)': '(zapisany)',
+  'AI Agent': 'AI Agent',
   'AI Coach': 'Trener AI',
   'API key': 'Klucz API',
   'Bring my own API key': 'Użyj mojego klucza API',

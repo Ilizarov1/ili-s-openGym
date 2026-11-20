@@ -108,7 +108,7 @@ describe('the root', () => {
     const rows = ['Workout', 'Timer alerts', 'Plan & schedule', 'Units & language', 'Look & Home'].map(rowTitled)
     for (const r of rows) expect(r.classList.contains('sp-root-row')).toBe(true)
     // index.css: the marked rows' value may wrap, and never shrinks below its longest word
-    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8')
+    const css = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8').replace(/\r\n/g, '\n')
     const rule = css.match(/^\.lrow\.sp-root-row \.lrow-v\{([^}]*)\}/m)?.[1] || ''
     expect(rule).toMatch(/white-space:normal/)
     expect(rule).toMatch(/line-clamp:3/)
@@ -220,7 +220,9 @@ describe('the search lands on a row', () => {
     const byPage = {}
     for (const e of SEARCH) if (pageVisible(PAGES[e.page].parent || e.page, ctx) && (!e.when || e.when(ctx))) (byPage[e.page] ||= []).push(e.title)
     for (const [page, want] of Object.entries(byPage)) {
-      if (page === 'coach') continue
+      // The Coach and Agent rows leave Settings for their own routes; there is
+      // no Settings-page body to render here.
+      if (page === 'coach' || page === 'agent') continue
       mount(page)
       await act(async () => {})   // the passkey list, asked of the server on open
       const have = [...titles(), ...[...host.querySelectorAll('.btn')].map(b => b.textContent.trim())]

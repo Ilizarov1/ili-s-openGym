@@ -223,6 +223,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <a class="side-link" href="#activity"><b>Activity</b><span>Live presence</span></a>
   <a class="side-link" href="#media"><b>Media</b><span>Photos &amp; videos of your exercises &amp; workouts</span></a>
   <a class="side-link" href="#coach"><b>AI Coach</b><span>Plans, reviews, debriefs</span></a>
+  <a class="side-link" href="#agent"><b>AI Agent runtime</b><span>Server runs, model profiles, memories</span></a>
   <a class="side-link" href="#integrations"><b>Integrations</b><span>Webhooks (INTEGRATIONS)</span></a>
   <a class="side-link" href="#admin"><b>Admin</b><span>Users, invites, audit log, Coach</span></a>
   <a class="side-link" href="#schemas"><b>Schemas</b><span>The state blob, the error shape &amp; co.</span></a>
@@ -247,7 +248,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <p class="api-facts">
     <span>OpenAPI 3.1.0</span>
     <span>openGym v1.4.3</span>
-    <span>92 endpoints</span>
+    <span>108 endpoints</span>
     <span>AGPL-3.0-or-later</span>
   </p>
 
@@ -3004,6 +3005,641 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   </div>
 </section>
 
+<section class="api-sec" id="agent">
+  <h2>AI Agent runtime</h2>
+  <p class="sub">The agent runtime's server execution: runs, model configuration, sessions, confirmed memories and business-write proposals. Every route answers 503 <code>agent_disabled</code> when <code>AGENT_RUNTIME_DISABLED</code> is set. First version executes the <code>stub.v1</code> task.</p>
+  <div class="eps">
+
+<details class="ep" id="op-postAgentRun">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/runs</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Start a server-executed agent run</span>
+  </summary>
+  <div class="ep-body">
+<p>Persists the accepted run and the request fingerprint before calling the model. Retrying the same <code>requestId</code> with the same input returns the original run; reusing it with different input is a 409 <code>request_conflict</code>. The call answers 202 immediately and the run is queried or cancelled by id.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+<p class="ep-h">Request body</p><p class="p-desc"><a href="#schema-AgentRunRequest">AgentRunRequest</a></p>
+<pre><code>{
+  &quot;taskId&quot;: &quot;stub.v1&quot;,
+  &quot;requestId&quot;: &quot;req_01J8Y6W7V5&quot;,
+  &quot;profileId&quot;: &quot;profile_2e91&quot;,
+  &quot;input&quot;: {
+    &quot;prompt&quot;: &quot;What changed since last week?&quot;
+  },
+  &quot;sessionId&quot;: &quot;ses_01J8Y6&quot;,
+  &quot;attachmentIds&quot;: [
+    &quot;fixture:image&quot;
+  ]
+}</code></pre>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">202</span>
+    <span class="p-desc">Accepted, or the original run for a repeated request id.<span class="r-sig"><a href="#schema-AgentRunStart">AgentRunStart</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">409</span>
+    <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-getAgentRun">
+  <summary>
+    <span class="m get">GET</span>
+    <span class="ep-path"><code>/api/agent/runs/{runId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Read one run</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">runId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">The run, including its terminal status and saved result.<span class="r-sig"><a href="#schema-AgentRun">AgentRun</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-postAgentRunCancel">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/runs/{runId}/cancel</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Cancel a run</span>
+  </summary>
+  <div class="ep-body">
+<p>Commits the cancelled status before the provider is aborted. A completed run is returned unchanged.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">runId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">The cancelled (or already terminal) run.<span class="r-sig"><a href="#schema-AgentRun">AgentRun</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-getAgentConfigs">
+  <summary>
+    <span class="m get">GET</span>
+    <span class="ep-path"><code>/api/agent/configs</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">List model configurations</span>
+  </summary>
+  <div class="ep-body">
+<p>Includes the read-only instance default, even when unavailable, plus this account's own profiles.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Profiles.<span class="r-sig">{ profiles: <a href="#schema-AgentProfile">AgentProfile</a>[] }</span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-postAgentConfig">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/configs</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Create an account model configuration</span>
+  </summary>
+  <div class="ep-body">
+<p>Providers are <code>fixture</code> (non-production) and <code>openai</code>. The key is sealed; only its last four characters come back.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+<p class="ep-h">Request body</p><p class="p-desc"><a href="#schema-AgentProfileInput">AgentProfileInput</a></p>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">201</span>
+    <span class="p-desc">Created.<span class="r-sig"><a href="#schema-AgentProfile">AgentProfile</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-patchAgentConfig">
+  <summary>
+    <span class="m patch">PATCH</span>
+    <span class="ep-path"><code>/api/agent/configs/{profileId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Update an account model configuration</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">profileId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+<p class="ep-h">Request body</p><p class="p-desc"><a href="#schema-AgentProfileInput">AgentProfileInput</a></p>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Updated.<span class="r-sig"><a href="#schema-AgentProfile">AgentProfile</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-deleteAgentConfig">
+  <summary>
+    <span class="m delete">DELETE</span>
+    <span class="ep-path"><code>/api/agent/configs/{profileId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Delete an account model configuration</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">profileId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Deleted.<span class="r-sig"><a href="#schema-Ok">Ok</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-getAgentSessions">
+  <summary>
+    <span class="m get">GET</span>
+    <span class="ep-path"><code>/api/agent/sessions</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">List conversations</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Conversations, newest first.<span class="r-sig">{ sessions: <a href="#schema-AgentSessionSummary">AgentSessionSummary</a>[] }</span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-getAgentSession">
+  <summary>
+    <span class="m get">GET</span>
+    <span class="ep-path"><code>/api/agent/sessions/{sessionId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Read one conversation</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">sessionId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">The conversation and its messages.<span class="r-sig"><a href="#schema-AgentSession">AgentSession</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">409</span>
+    <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-deleteAgentSession">
+  <summary>
+    <span class="m delete">DELETE</span>
+    <span class="ep-path"><code>/api/agent/sessions/{sessionId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Delete a conversation</span>
+  </summary>
+  <div class="ep-body">
+<p>Sets a tombstone and deletes derived summaries. A run that was using it cannot write it back.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">sessionId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Deleted.<span class="r-sig"><a href="#schema-Ok">Ok</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">409</span>
+    <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-getAgentMemories">
+  <summary>
+    <span class="m get">GET</span>
+    <span class="ep-path"><code>/api/agent/memories</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">List confirmed memories</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Memories, newest first.<span class="r-sig">{ memories: <a href="#schema-AgentMemory">AgentMemory</a>[] }</span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-postAgentMemory">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/memories</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Save a confirmed memory</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+<p class="ep-h">Request body</p><p class="p-desc"><a href="#schema-AgentMemoryInput">AgentMemoryInput</a></p>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">201</span>
+    <span class="p-desc">Saved.<span class="r-sig"><a href="#schema-AgentMemory">AgentMemory</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-patchAgentMemory">
+  <summary>
+    <span class="m patch">PATCH</span>
+    <span class="ep-path"><code>/api/agent/memories/{memoryId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Edit a memory</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">memoryId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+<p class="ep-h">Request body</p><p class="p-desc"><a href="#schema-AgentMemoryInput">AgentMemoryInput</a></p>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Updated.<span class="r-sig"><a href="#schema-AgentMemory">AgentMemory</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-deleteAgentMemory">
+  <summary>
+    <span class="m delete">DELETE</span>
+    <span class="ep-path"><code>/api/agent/memories/{memoryId}</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Delete a memory</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">memoryId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">Deleted.<span class="r-sig"><a href="#schema-Ok">Ok</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-postAgentProposalConfirm">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/proposals/{proposalId}/confirm</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Confirm a proposal</span>
+  </summary>
+  <div class="ep-body">
+<p>Only a stored proposal id is accepted. The target version is checked and the write is applied once; a repeat returns the first result.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">proposalId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">The consumed proposal and the applied result.<span class="r-sig">{ proposal: <a href="#schema-AgentProposal">AgentProposal</a>, result: object, applied: boolean }</span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">409</span>
+    <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+
+<details class="ep" id="op-postAgentProposalReject">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/proposals/{proposalId}/reject</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Reject a proposal</span>
+  </summary>
+  <div class="ep-body">
+
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+<p class="ep-h">Query parameters</p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">proposalId <span class="p-hint">(path)</span><em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">The rejected proposal.<span class="r-sig"><a href="#schema-AgentProposal">AgentProposal</a></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">404</span>
+    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">409</span>
+    <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
+  </div>
+</section>
+
 <section class="api-sec" id="integrations">
   <h2>Integrations</h2>
   <p class="sub">Settings → Integrations: outbound webhooks now, more providers later. Off unless the server runs with <code>INTEGRATIONS</code> (e.g. <code>INTEGRATIONS=webhook</code>); then a profile can add its own connections. Secrets are sealed at rest and shown once. See docs/INTEGRATIONS.md.</p>
@@ -4261,6 +4897,564 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-name">retryAfter</span>
     <span class="p-type">integer</span>
     <span class="p-desc">429 only. The same number of seconds as the Retry-After header.</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentError">
+  <summary>
+    <span class="sch-name"><code>AgentError</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">error<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc">A displayable message.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">code<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;invalid_request&quot; | &quot;scope_denied&quot; | &quot;profile_not_found&quot; | &quot;profile_capability_missing&quot; | &quot;context_budget_exceeded&quot; | &quot;fact_missing&quot; | &quot;tool_not_allowed&quot; | &quot;tool_args_invalid&quot; | &quot;tool_target_out_of_scope&quot; | &quot;tool_budget_exceeded&quot; | &quot;proposal_not_found&quot; | &quot;proposal_conflict&quot; | &quot;proposal_consumed&quot; | &quot;run_not_found&quot; | &quot;run_terminal&quot; | &quot;run_cancelled&quot; | &quot;request_conflict&quot; | &quot;model_unavailable&quot; | &quot;model_timeout&quot; | &quot;model_response_too_large&quot; | &quot;session_deleted&quot; | &quot;memory_not_found&quot; | &quot;agent_disabled&quot; | &quot;agent_config_disabled&quot; | &quot;agent_store_corrupt&quot; | &quot;agent_media_invalid&quot; | &quot;agent_media_too_large&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">details</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Optional structured reason (a JSON path, the rejected target, the missing fact id).</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentRunRequest">
+  <summary>
+    <span class="sch-name"><code>AgentRunRequest</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">taskId</span>
+    <span class="p-type">string <span class="p-hint">(default &quot;stub.v1&quot;)</span></span>
+    <span class="p-desc">The registered task. v1 serves stub.v1 only.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">requestId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc">A client-generated idempotency key. Reuse it only for the same input.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">profileId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc">A listed default or account profile id.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">input<em class="p-req" title="required">required</em></span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Task input. <code>stub.v1</code> takes <code>{ prompt, fixtureCase? }</code>.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">sessionId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Optional conversation to append to.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">attachmentIds</span>
+    <span class="p-type">string[]</span>
+    <span class="p-desc"><code>fixture:image</code> or a sha256 of an image in this account's media folder.</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentRunStart">
+  <summary>
+    <span class="sch-name"><code>AgentRunStart</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">runId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">status<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;accepted&quot; | &quot;running&quot; | &quot;completed&quot; | &quot;failed&quot; | &quot;cancelled&quot; | &quot;interrupted&quot;</span>
+    <span class="p-desc"><code>accepted</code> for a new run; the original status for a repeated request id.</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentRun">
+  <summary>
+    <span class="sch-name"><code>AgentRun</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">runId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">requestId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">taskId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">profileId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">executionLocation<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;server&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">status<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;accepted&quot; | &quot;running&quot; | &quot;completed&quot; | &quot;failed&quot; | &quot;cancelled&quot; | &quot;interrupted&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">createdAt<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc">Epoch ms.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">startedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">finishedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">durationMs</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">dataVersion</span>
+    <span class="p-type">string | number</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">sessionId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">result</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">The validated task result, evidence ids and usage.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">proposalId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">error</span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">error.code</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">error.message</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentProfile">
+  <summary>
+    <span class="sch-name"><code>AgentProfile</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">id<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">source<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;default&quot; | &quot;user&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">provider<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot; | &quot;none&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">model<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities<em class="p-req" title="required">required</em></span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities.text</span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities.image</span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities.tools</span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">keyHint</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Last four characters only.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">version<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">label<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">available<em class="p-req" title="required">required</em></span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">reason</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Why an unavailable default cannot be used.</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentProfileInput">
+  <summary>
+    <span class="sch-name"><code>AgentProfileInput</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">provider<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">model<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string <span class="p-hint">(&le; 200 chars)</span></span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">apiKey</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Write-only. Required for openai; sealed with an account-derived key. Never returned.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">baseUrl</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Refused by the server; outbound endpoints are administrator-controlled.</span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentSessionSummary">
+  <summary>
+    <span class="sch-name"><code>AgentSessionSummary</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">id</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">title</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">version</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">createdAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">updatedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messageCount</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentSession">
+  <summary>
+    <span class="sch-name"><code>AgentSession</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">id</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">title</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">version</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">createdAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">updatedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages</span>
+    <span class="p-type">object[]</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].id</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].role</span>
+    <span class="p-type">&quot;user&quot; | &quot;assistant&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].content</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].createdAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].runId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentMemory">
+  <summary>
+    <span class="sch-name"><code>AgentMemory</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">id<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">category<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;preference&quot; | &quot;goal&quot; | &quot;constraint&quot; | &quot;note&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">value<em class="p-req" title="required">required</em></span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">source</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">createdAt<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">updatedAt<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">version<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentMemoryInput">
+  <summary>
+    <span class="sch-name"><code>AgentMemoryInput</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">category<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;preference&quot; | &quot;goal&quot; | &quot;constraint&quot; | &quot;note&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">value<em class="p-req" title="required">required</em></span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">source</span>
+    <span class="p-type">string <span class="p-hint">(&le; 200 chars)</span></span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
+<details class="ep sch" id="schema-AgentProposal">
+  <summary>
+    <span class="sch-name"><code>AgentProposal</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum"></span>
+  </summary>
+  <div class="ep-body">
+
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">proposalId<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">runId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">kind<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">changes<em class="p-req" title="required">required</em></span>
+    <span class="p-type">object[]</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">targetScope<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string[]</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">targetVersion</span>
+    <span class="p-type">string | number</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">status<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;pending&quot; | &quot;consumed&quot; | &quot;rejected&quot; | &quot;expired&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">createdAt<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">result</span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">consumedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">rejectedAt</span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
   </div>
 </div>
   </div>

@@ -51,7 +51,7 @@ for (const name of rootFiles) {
   if (!fs.existsSync(to)) copyFile(path.join(api, name), to);
 }
 
-for (const dir of ['coach', 'integrations']) {
+for (const dir of ['coach', 'integrations', 'agent-runtime']) {
   copyDir(path.join(api, dir), path.join(dist, dir));
 }
 
@@ -63,6 +63,8 @@ const required = [
   'admin-socket.js',
   'coach/fixture-cli.mjs',
   'integrations/index.js',
+  'agent-runtime/index.js',
+  'agent-runtime/contracts.d.ts',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));
