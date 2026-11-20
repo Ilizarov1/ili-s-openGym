@@ -159,7 +159,7 @@ npm run build
 | 项 | 状态 | 依据 / 卡点 |
 | --- | --- | --- |
 | Docker 镜像 `default` / `coach` / published | **通过** | 本地构建并启动；ID 与检查见 §9.1。未推送，因此没有仓库 digest。 |
-| `docker compose` / Nginx 链路 | **通过（本地 HTTP）** | `WEB_PORT=18080` 起 api + web，经 Nginx 访问 `/api/health`、`/api/config` 和 SPA 根路径均正常。TLS、子路径、LAN 和真实 Passkey 仍需人工分项。 |
+| `docker compose` / Nginx 链路 | **通过（HTTP / HTTPS / 子路径 / LAN）** | `WEB_PORT=18080` 与 A5 两套独立项目均通过；A5 覆盖 `https://localhost:18443/gym/` 的 TLS、`/gym` 308、`/gym/assets/` 与 `/gym/api/`、`__Host-gymsid`，以及 `http://192.168.5.223:18085` 的手机配对、计划拉取和训练回读；LAN 经 Windows portproxy（见 A5 记录 §4）。真实 Passkey 仍待人工。 |
 | Nix `opengym-api` | **本轮不纳入（暂缓）** | `contrib/nix/api.nix` 已更新为安装 `dist` + 薄入口，但未完成构建；NixOS 用户升级前需单独补验。 |
 | RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
 | 恢复 CLI（Linux / 容器） | **通过** | `default` 与 `coach` 容器内 `node recover.js Owner` 均返回一次性恢复码；Linux 回归 `server-recovery` 通过。 |
@@ -192,7 +192,7 @@ docker build -t opengym-handoff-api:legacy .
 
 基础镜像 `node:24-alpine`、`node:22.23.4-alpine`、`nginxinc/nginx-unprivileged:1.30.6-alpine` 先从 `docker.m.daocloud.io` 拉取并本地打回原名；Docker Hub 直连在本机超时。`NPM_REGISTRY` / `APK_MIRROR` 是 Dockerfile 的可选构建参数，默认仍用上游源。
 
-Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md](features/19_DELIVERY_AND_ROLLBACK.md) 在有浏览器和 TLS 环境时补验。
+Nginx / 子路径 / HTTPS / LAN 的 A5 分项已于 2026-11-20 在有浏览器和 TLS 环境的 Windows 主机补验，见 §11 A5；真实 Passkey 仍待人工。
 
 ## 10. A7 回滚演练（文件级 + 容器级）
 
@@ -232,7 +232,7 @@ Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md
 | A2 冲突与离线 | **通过（自动化 + RN）** | `409`、`baseWid`、离线补传语义通过；RN 模拟器完成离线练习、重连和去重 |
 | A3 数据与缓存 | **通过** | 并发条件写入、同大小快速写入、损坏档案 `503`、`.bak` 回退 |
 | A4 媒体 | **通过（自动化部分）** | 上传/下载/去重/跨账号/断流/清理；容器 A7 跨镜像读取媒体通过；真实 RN 照片上传待补 |
-| A5 部署链路 | **部分通过** | 本地 Compose + Nginx 的 `/api` 代理、健康检查和 SPA 通过；TLS、子路径、LAN、真实 Passkey 待人工 |
+| A5 部署链路 | **通过（HTTPS / 子路径 / LAN）** | A5.1 证书链与 `/gym/api/health` 200；A5.2 `/gym`→308、`/api/health`→404、密码建号/退出/登录/刷新、训练写入回读、assets 与 api 均走 `/gym/`、Cookie `__Host-gymsid` Secure Path=/；A5.3 手机 V2227A + RN 0.1.6 经 `http://192.168.5.223:18085` 配对、拉取 Leg Day、保存 1 组并双向同步无重复。真实 Passkey 与浏览器证书面板待人工。 |
 | A6 扩展 | **通过（自动化部分）** | Push、提醒、手表、集成、Coach、MCP、Linux/容器恢复 CLI；真实 Push/Webhook/Zepp 待现场 |
 | A7 重启与回滚 | **通过** | 文件级与容器级两次演练；旧版读回 Nest 训练与媒体并继续写入 |
 | A8 在线训练态 | **通过** | 70 秒 / 45 秒窗口、hidden 恢复、清理 |
@@ -244,7 +244,7 @@ Nginx / 子路径 / HTTPS / LAN 的 A5 分项仍按 [19_DELIVERY_AND_ROLLBACK.md
 
 1. **Nix/NixOS**：本轮不纳入范围。`contrib/nix/api.nix` 已更新但未构建；恢复时需要的输入是已安装 Nix 的 Linux 环境和 `nix build ./contrib/nix#opengym-api`。
 2. **RN 媒体补验**：如需覆盖真实照片上传，在专用模拟器上执行进度照片流程。
-3. **A5 人工分项**：有效 TLS 证书 / 域名、子路径代理、LAN 客户端和真实浏览器 Passkey。
+3. **A5 余项**：真实浏览器 Passkey、HTTPS 下证书面板截图；LAN 直连受 WSL mirrored 限制，本机以 Windows portproxy 代替。
 4. **远端 CI**：授权推送候选分支后，用 Node 24 runner 记录 API/MCP 作业。
 5. **正式切换**：目标实例当前镜像 digest、数据卷路径与维护窗口；本轮不涉及推送、发布和正式切换。
 
