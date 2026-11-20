@@ -82,7 +82,7 @@ volumes:
 
 ## 3. A5.1 HTTPS 与 A5.2 子路径
 
-外部 URL 为 https://localhost:18443/gym/。外层 Nginx 保留 /gym 前缀，内层 Web 按 BASE_PATH 路由。ORIGIN 包含外部端口，RP_ID 只填写主机名。保持应用的 Cookie 属性。[子路径部署说明](../SELF_HOSTING.md#serving-opengym-under-a-subpath)
+外部 URL 为 https://localhost:18443/gym/。外层 Nginx 保留 /gym 前缀，内层 Web 按 BASE_PATH 路由。ORIGIN 包含外部端口，RP_ID 只填写主机名。保持应用的 Cookie 属性。[子路径部署说明](../../docs/SELF_HOSTING.md#serving-opengym-under-a-subpath)
 
 **tls.env**
 

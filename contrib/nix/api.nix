@@ -9,7 +9,7 @@
 
 # NOTE (2026-11-19): updated for the compiled Nest entry (installs dist/ and
 # runs the thin server.js). The phase 4 migration does not build or verify this
-# package; see docs/NIX.md and docs/nestjs-migration/ACCEPTANCE.md. When it is
+# package; see docs/NIX.md and archive/nestjs-migration/ACCEPTANCE.md. When it is
 # resumed, align nodejs_24, install recover.js/admin-socket.js at the package
 # root and run the HANDOFF section 3 build/smoke test.
 buildNpmPackage rec {

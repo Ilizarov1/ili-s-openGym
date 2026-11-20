@@ -1,4 +1,4 @@
-/* Differential fixture for the NestJS migration (docs/nestjs-migration/EXECUTION.md 0.3).
+/* Differential fixture for the NestJS migration (archive/nestjs-migration/EXECUTION.md 0.3).
  *
  * The harness was written to give the legacy entry and the Nest entry the same DATA_DIR
  * contents, drive both over real HTTP and compare what came back and what was left on disk.

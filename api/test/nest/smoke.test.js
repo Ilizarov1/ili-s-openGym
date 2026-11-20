@@ -1,4 +1,4 @@
-/* Smoke test for the parity harness itself (docs/nestjs-migration/EXECUTION.md 0.3).
+/* Smoke test for the parity harness itself (archive/nestjs-migration/EXECUTION.md 0.3).
  *
  * Before the harness was trusted it had to agree with itself: the same fixture started twice
  * from the selected entry must produce the same status, keys, headers and disk result, and

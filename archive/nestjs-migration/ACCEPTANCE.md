@@ -161,7 +161,7 @@ npm run build
 | Docker 镜像 `default` / `coach` / published | **通过** | 本地构建并启动；ID 与检查见 §9.1。未推送，因此没有仓库 digest。 |
 | `docker compose` / Nginx 链路 | **通过（HTTP / HTTPS / 子路径 / LAN）** | `WEB_PORT=18080` 与 A5 两套独立项目均通过；A5 覆盖 `https://localhost:18443/gym/` 的 TLS、`/gym` 308、`/gym/assets/` 与 `/gym/api/`、`__Host-gymsid`，以及 `http://192.168.5.223:18085` 的手机配对、计划拉取和训练回读；LAN 经 Windows portproxy（见 A5 记录 §4）。真实 Passkey 仍待人工。 |
 | Nix `opengym-api` | **本轮不纳入（暂缓）** | `contrib/nix/api.nix` 已更新为安装 `dist` + 薄入口，但未完成构建；NixOS 用户升级前需单独补验。 |
-| RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
+| RN 配对 / 同步 / 离线补传 | **通过** | 专用模拟器 `emulator-5554`（`openGymRnQa`，`ro.kernel.qemu=1`，1080x2400）上运行候选 Windows 导出：`PASS: offline practice, draft and history after restart, pairing, offline queue, reconnect and duplicate prevention.` 工具链位于 `%LOCALAPPDATA%\RnToolchain`（JDK 17、AVD、platform 36、build-tools 36.0.0）。 |
 | 恢复 CLI（Linux / 容器） | **通过** | `default` 与 `coach` 容器内 `node recover.js Owner` 均返回一次性恢复码；Linux 回归 `server-recovery` 通过。 |
 | MCP | **通过** | 138/138，端到端用例实际启动编译后的 Nest 入口。 |
 

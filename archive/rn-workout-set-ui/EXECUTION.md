@@ -5,7 +5,7 @@
 ## 1. 开始前
 
 1. 在 `D:\dev\open-gym` 用 PowerShell 7 执行 `git status --short` 和 `git rev-parse --short HEAD`。核对新提交是否修改了训练、休息或同步入口。发现既有改动先保留并定位冲突，记录实际实施基线。本轮实际基线为 `42411be33` 之上的工作区改动；工作区同时存在独立的动作检索改动，训练相关文件由本轮维护。
-2. 阅读 [项目地图](../../AGENTS.md)、[openGym 开发技能](../../.agents/skills/opengym-development/SKILL.md)、[训练设计系统](../RN_UI_DESIGN_SYSTEM.md)、[页面迁移](../RN_UI_SCREEN_MIGRATION.md)和 [视觉验收](../RN_UI_VISUAL_TESTING.md)。核对训练的 [RN 迁移清单](../RN_MIGRATION_STATUS.md) 与 [递减组既有用例](../rn-p2-training-library/02_DROP_SETS.md)。
+2. 阅读 [项目地图](../../AGENTS.md)、[openGym 开发技能](../../.agents/skills/opengym-development/SKILL.md)、[训练设计系统](../../docs/RN_UI_DESIGN_SYSTEM.md)、[页面迁移](../../docs/RN_UI_SCREEN_MIGRATION.md)和 [视觉验收](../../docs/RN_UI_VISUAL_TESTING.md)。核对训练的 [RN 迁移清单](../../docs/RN_MIGRATION_STATUS.md) 与 [递减组既有用例](../rn-p2-training-library/02_DROP_SETS.md)。
 3. 与需求方确认设计 §4 中已完成后的结构编辑、取消完成和休息规则。T1–T2、T3 的未完成分段路径可先推进。暂定规则未确认前，将完成后的结构编辑保持关闭，把 V09 的后半部和最终交付列为待确认。变更决定时先同步修改设计、计划和用例。
 4. 为专项与集成使用单独 AVD、串口、产物目录和测试数据。下文示例集成设备为 `emulator-5556`，实际执行用 `adb devices -l` 核对。fixture 会改写该设备的应用数据，仅应用于专用 Debug 模拟器。同步用独立 API 和测试账户。
 
@@ -16,7 +16,7 @@
 | T1 组行和动作菜单 | 有可运行的当前 RN 工作区 | 在 [WorkoutScreen](../../mobile-rn/src/screens/WorkoutScreen.tsx#L436) 对齐表头与组行。为 [WorkoutSetField](../../mobile-rn/src/screens/WorkoutSetField.tsx) 增加直接输入呈现，复用原校验。把评分移进列，移除重复搜索。新增视觉模式先加 [设计画廊](../../mobile-rn/src/design/gallery/DesignGallery.tsx)，使用设计系统现成组件和 token | V01–V03，三种共用布局无重叠。有氧和计时字段语义仍正确 |
 | T2 菜单、模型操作和分段编辑 | T1 的行和菜单入口可用 | 在 [training.ts](../../mobile-rn/src/training.ts) 集中实现按身份的复制、转换、还原和分段增删。沿用 `editDraftSet`、`addDropSegment` 的重量规则、合法值范围及现有字段。维护移动和插删后的休息引用。组菜单与编辑表单使用同一底部弹层，表单保存前只改候选值。区分新增入口和已有休息暂停数据的兼容入口 | V04–V06、V11。保存和取消可区分，重复点击或保存失败不留下重复行或半转换 |
 | T3 逐段勾选和草稿生命周期 | T2 已把组和分段的身份处理接通。完成后结构边界按 §1 确认 | 扩展草稿分段状态，接入 `WorkoutScreen.toggleSet` 和 [WorkoutFocusView](../../mobile-rn/src/screens/WorkoutFocusView.tsx#L73)。通过同一个整组完成分支算休息、超级组和下一动作。把最后一段、整组完成时间和休息以及位置一次提交。失败不推进 UI 或完成计数。查看 [App.openWorkout](../../mobile-rn/App.tsx#L222) 与 [useGym.change](../../mobile-rn/src/useGym.ts#L40) 的同步提交行为。确保所有布局的递减组不能绕开分段完成直接标整组完成 | V07–V10。中途恢复、重复点按、超级组轮转、撤销和最终历史均可观察 |
-| T4 视觉、集成和交付 | T1–T3 都满足结束条件。已确认的设计已反映到用例 | 核对静态检查，再执行专项与可见集成。用同一代码版本构建候选 APK、验签、记录 SHA-256 和复验步骤。更新 [迁移清单](../RN_MIGRATION_STATUS.md) | V01–V11 均有明确结果、实际设备和证据。任何未完成或未验收项标记待验证 |
+| T4 视觉、集成和交付 | T1–T3 都满足结束条件。已确认的设计已反映到用例 | 核对静态检查，再执行专项与可见集成。用同一代码版本构建候选 APK、验签、记录 SHA-256 和复验步骤。更新 [迁移清单](../../docs/RN_MIGRATION_STATUS.md) | V01–V11 均有明确结果、实际设备和证据。任何未完成或未验收项标记待验证 |
 
 T2 和 T3 应共用稳定身份与进度提交逻辑。T3 才接通分段完成，阶段中间产物用于开发验证。交付前从普通组开始重跑一次连续路径，避免仅以编辑面板和孤立的转换调用代替完整训练。
 
@@ -35,7 +35,7 @@ npm.cmd --prefix .\mobile-rn run lint
 
 ```powershell
 Set-Location -LiteralPath 'D:\dev\open-gym\mobile-rn'
-$adb = Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain\android-sdk\platform-tools\adb.exe'
+$adb = Join-Path $env:LOCALAPPDATA 'RnToolchain\android-sdk\platform-tools\adb.exe'
 $serial = 'emulator-5556'
 & $adb devices -l
 & $adb -s $serial reverse tcp:8081 tcp:8081

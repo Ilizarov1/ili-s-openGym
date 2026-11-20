@@ -9,7 +9,7 @@
 | 迁移起点 | Windows 仓库 `D:\dev\open-gym` 的本地分支 `handoff/nestjs-phase4`。源快照为 `a1023c4caa935bcec74d8235065fb0b6ce98aba7`，分支顶端包含本交接单和文档入口。 |
 | 旧镜像来源 | `94777b4ada915c622baf5813af673646c123ebb9` 的 `api/Dockerfile`。用该提交构建本地旧镜像，记录镜像 ID。对目标部署做兼容演练时，另按该实例实际 digest 选择旧镜像。 |
 | Linux | WSL 2 的 `Ubuntu`，现有普通用户 `zjzjn`。已确认 Linux Git、curl 可用。Linux Node、Docker、Nix 待配，当前 PATH 里的 Windows `npm` 不能作为 Linux 工具链。 |
-| RN | Windows 上使用专用 Android 模拟器。APK 为 `D:\dev\open-gym\mobile-rn\dist\openGym-RN-0.1.6-five-tab.apk`，SHA-256 为 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`。SDK 位于 `%LOCALAPPDATA%\OpenGymRnToolchain\android-sdk`。 |
+| RN | Windows 上使用专用 Android 模拟器。APK 为 `D:\dev\open-gym\mobile-rn\dist\openGym-RN-0.1.6-five-tab.apk`，SHA-256 为 `A03A936B6C4197CD3BC308AEE89D3A45BC0588C3A28F7F61A124BE9F3F341DEF`。SDK 位于 `%LOCALAPPDATA%\RnToolchain\android-sdk`。 |
 | 已有证据 | Windows 双入口对照、91 路由和显式停机有记录。Linux 双入口、`SIGTERM` / `SIGINT` 和候选镜像结果待验证。[验收记录 §1–2](ACCEPTANCE.md) |
 
 先阅读仓库 [AGENTS.md](../../AGENTS.md)、[执行方案](EXECUTION.md)、[契约测试](features/18_CONTRACT_TESTS.md) 和 [交付与回滚](features/19_DELIVERY_AND_ROLLBACK.md)。以下命令从 PowerShell 执行。Linux 检出、临时数据和日志保存在 Ubuntu 自己的文件系统内。
@@ -97,14 +97,14 @@ CI=1 API_ENTRY=dist/src/main.js npm test | tee "$report/mcp.txt"
 > **范围调整（2026-11-19）**：Nix/NixOS 本轮不纳入。`contrib/nix/api.nix` 已随入口切换更新，但不做构建验收；恢复时按本节原来的 Nix 步骤补验。Docker 与客户端验收不受影响。
 
 - 在候选提交运行 `docker info`、`docker compose version` 确认工具链，构建 `default`、`coach` 和无 target 三个镜像，分别使用本地标签 `opengym-handoff-api:nest-default`、`opengym-handoff-api:nest-coach`、`opengym-handoff-api:nest-published`，另构建 `opengym-handoff-web:test`。用 `docker image inspect` 记录镜像 ID 和可用的仓库 digest。依照镜像 CI 验证健康、Nginx 代理、可选 Coach 依赖和两个 target 的 `node recover.js <测试账号>`。
-- ~~在候选提交运行 `nix --extra-experimental-features 'nix-command flakes' build ./contrib/nix#opengym-api`。~~（本轮不纳入；恢复时用独立测试 `DATA_DIR` 启动 `result/bin/opengym-api`，核对 Node 主版本、恢复命令与健康检查。）[Nix 构建说明](../NIX.md)
+- ~~在候选提交运行 `nix --extra-experimental-features 'nix-command flakes' build ./contrib/nix#opengym-api`。~~（本轮不纳入；恢复时用独立测试 `DATA_DIR` 启动 `result/bin/opengym-api`，核对 Node 主版本、恢复命令与健康检查。）[Nix 构建说明](../../docs/NIX.md)
 - 用 WSL 检出的 `git archive <候选 SHA>` 导出到 Windows 新目录，在其中构建 `api/dist`，再用以下脚本验证配对、同步和离线补传。脚本会启动 Windows 上的 Nest loopback，第 4 项另用同一个测试客户端连接 Linux Compose。脚本会安装 APK，指定专用模拟器。需要重置时只清理专用测试设备上的 openGym 数据。[Android 工具与验收](../RN_ANDROID_EXECUTION.md)
 
 ```powershell
 # 在 Windows 的候选代码目录中执行。
 npm.cmd --prefix .\api ci --omit=optional
 npm.cmd --prefix .\api run build
-$adb = Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain/android-sdk/platform-tools/adb.exe'
+$adb = Join-Path $env:LOCALAPPDATA 'RnToolchain/android-sdk/platform-tools/adb.exe'
 $apk = 'D:\dev\open-gym\mobile-rn\dist\openGym-RN-0.1.6-five-tab.apk'
 & $adb devices -l
 # 将 <测试模拟器序列号> 替换为实际专用设备，例如 emulator-5564。
@@ -115,7 +115,7 @@ $apk = 'D:\dev\open-gym\mobile-rn\dist\openGym-RN-0.1.6-five-tab.apk'
 
 1. 在 WSL 工作仓库用 `git worktree add --detach "$HOME/open-gym-stage4-legacy" 94777b4ada915c622baf5813af673646c123ebb9` 创建旧版检出。运行 `docker build -t opengym-handoff-api:legacy "$HOME/open-gym-stage4-legacy/api"`。固定旧镜像和候选镜像 ID，整个演练复用同一个 Web 镜像、Origin、RP ID 和配置。
 2. 在 Ubuntu 创建独立演练目录。复制候选 `docker-compose.yml` 和 `.env.example` 分别作为该目录的 `docker-compose.yml` 和 `.env`，在其中创建 `data`、`coach-auth`。设置 `WEB_PORT=18080`、`ORIGIN=http://localhost:18080`、`RP_ID=localhost`、`MEDIA_UPLOADS=1` 和 `COACH_DISABLED=1`。用下面的覆盖配置选定本地镜像。这个入口供 A7 使用，A5 的 HTTPS、子路径和 LAN 分项验证并保留代理及客户端证据。[部署验收](features/19_DELIVERY_AND_ROLLBACK.md#32-nginx--compose)
-3. 首次用旧镜像启动。通过测试浏览器注册合成账号，用 [WebAuthn 虚拟认证器](https://developer.chrome.com/docs/devtools/webauthn/) 创建可登录的 Passkey，保留该会话和认证器。在 Windows 确认 `http://localhost:18080/api/health` 可访问，然后用 `adb -s <测试模拟器序列号> reverse tcp:18080 tcp:18080` 把专用 RN 模拟器接到 `http://127.0.0.1:18080`，兑换测试配对码。生成一笔训练和一张合成图片，确认训练引用和媒体都可读。[进度照片流程](../rn-p2/progress/07_PROGRESS_PHOTOS.md) · [媒体测试样本](../../api/test/media-samples.mjs)
+3. 首次用旧镜像启动。通过测试浏览器注册合成账号，用 [WebAuthn 虚拟认证器](https://developer.chrome.com/docs/devtools/webauthn/) 创建可登录的 Passkey，保留该会话和认证器。在 Windows 确认 `http://localhost:18080/api/health` 可访问，然后用 `adb -s <测试模拟器序列号> reverse tcp:18080 tcp:18080` 把专用 RN 模拟器接到 `http://127.0.0.1:18080`，兑换测试配对码。生成一笔训练和一张合成图片，确认训练引用和媒体都可读。[进度照片流程](../../docs/rn-p2/progress/07_PROGRESS_PHOTOS.md) · [媒体测试样本](../../api/test/media-samples.mjs)
 4. 停止旧 API，备份该测试卷和配置，再让 Nest 镜像接管同一个卷。验证旧 Cookie、已配对 Bearer、Passkey 和媒体仍可用。在 Nest 上保存另一笔带媒体引用的训练。留存训练 ID、媒体文件 SHA-256 和请求结果，凭据留在测试环境。
 5. 通过容器正常停机让旧镜像重新接管这份当前卷。旧服务应读到 Nest 新增的训练并取回相同媒体，再成功写入一笔测试数据。任何失败先保存日志和当前测试卷，从备份副本重新演练。一次只启动一个写入该卷的 API。
 

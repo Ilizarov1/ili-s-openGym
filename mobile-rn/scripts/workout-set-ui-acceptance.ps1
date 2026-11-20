@@ -39,14 +39,14 @@ if (!$SkipInstall -and (![IO.File]::Exists($apkPath) -or [IO.Path]::GetExtension
 if (!$Adb) {
     $candidates = @()
     if ($env:ANDROID_HOME) { $candidates += Join-Path $env:ANDROID_HOME 'platform-tools\adb.exe' }
-    if ($env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain\android-sdk\platform-tools\adb.exe' }
+    if ($env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'RnToolchain\android-sdk\platform-tools\adb.exe' }
     $found = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     if (!$found) { $found = (Get-Command adb.exe).Source }
     $Adb = $found
 }
 $Adb = (Resolve-Path -LiteralPath $Adb).Path
 $sdk = Split-Path (Split-Path $Adb)
-$toolchainJdk = Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain\jdk-17.0.21+9'
+$toolchainJdk = Join-Path $env:LOCALAPPDATA 'RnToolchain\jdk-17.0.21+9'
 if (!$env:JAVA_HOME -and (Test-Path (Join-Path $toolchainJdk 'bin\javac.exe'))) {
     $env:JAVA_HOME = $toolchainJdk
 }

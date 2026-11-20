@@ -18,7 +18,7 @@ npm.cmd ci
 npm.cmd run android
 ```
 
-若未配置本机 SDK/JDK，或需要单独构建 APK，按 [RN 视觉验收的 Debug APK 准备步骤](../RN_UI_VISUAL_TESTING.md#21-准备-debug-apk) 配置。Metro 从 `mobile-rn` 启动。若设备未连接或安装失败，先恢复设备或修正构建环境，再开始记录验收；确认模拟器运行的是本次构建。
+若未配置本机 SDK/JDK，或需要单独构建 APK，按 [RN 视觉验收的 Debug APK 准备步骤](../../docs/RN_UI_VISUAL_TESTING.md#21-准备-debug-apk) 配置。Metro 从 `mobile-rn` 启动。若设备未连接或安装失败，先恢复设备或修正构建环境，再开始记录验收；确认模拟器运行的是本次构建。
 
 | 编号 | 模拟器操作 | 通过条件 |
 | --- | --- | --- |

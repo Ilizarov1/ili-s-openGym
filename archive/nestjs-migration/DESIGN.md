@@ -6,10 +6,10 @@
 
 ## 1. 迁移范围
 
-把 `api/server.js` 中的路由、请求处理、业务编排和后台任务接入 NestJS。第一版兼容现有 RN、Web、Capacitor 及仓库内的手表和 MCP 调用方。以当前 `/api` 契约、部署入口及 `DATA_DIR` 文件格式作为兼容基线，覆盖配置关闭和开启时的接口行为。服务端按领域在开发分支逐步迁移，自托管实例在完成兼容性验收后按整个 API 服务切换。 [现有架构](../ARCHITECTURE.md) · [OpenAPI](../../api/openapi.yaml) · [RN 迁移清单](../RN_MIGRATION_STATUS.md)
+把 `api/server.js` 中的路由、请求处理、业务编排和后台任务接入 NestJS。第一版兼容现有 RN、Web、Capacitor 及仓库内的手表和 MCP 调用方。以当前 `/api` 契约、部署入口及 `DATA_DIR` 文件格式作为兼容基线，覆盖配置关闭和开启时的接口行为。服务端按领域在开发分支逐步迁移，自托管实例在完成兼容性验收后按整个 API 服务切换。 [现有架构](../../docs/ARCHITECTURE.md) · [OpenAPI](../../api/openapi.yaml) · [RN 迁移清单](../../docs/RN_MIGRATION_STATUS.md)
 
 - **框架与工具链**。采用 NestJS 12、官方 `@nestjs/platform-node` 的 `NodeAdapter`、TypeScript 和 ESM。`@nestjs/*` 运行时包按同一版本锁定，以 12.5.1 作为设计基线。使用仓库 CI 和镜像已有的 Node.js 22。NodeAdapter 基于 `node:http`，其请求和响应对象可直接接入现有的请求体读取、上传和下载逻辑。12.5.1 的包可用性和 `NodeAdapter.setOnRequestHook` 的实际行为在阶段 0/1 先验证；不可用或行为不同则回到本文修订，不静默换版本。 [NestJS HTTP 适配器](https://docs.nestjs.com/techniques/performance#node-adapter) · [平台包版本](https://www.npmjs.com/package/@nestjs/platform-node/v/12.5.1) · [当前 CI](../../.github/workflows/test.yml#L29) · [API 镜像](../../api/Dockerfile)
-- **存储与部署**。使用现有 JSON 文件和媒体目录，每个数据卷由一个 API 进程写入。Compose 与 Nginx 是首个切换场景。沿用对外地址、路径前缀、TLS 终止和数据卷挂载方式，以已配对客户端和现有浏览器账户完成升级演练。 [Compose](../../docker-compose.yml) · [Nginx 配置](../../web/nginx.conf.template) · [自托管说明](../SELF_HOSTING.md)
+- **存储与部署**。使用现有 JSON 文件和媒体目录，每个数据卷由一个 API 进程写入。Compose 与 Nginx 是首个切换场景。沿用对外地址、路径前缀、TLS 终止和数据卷挂载方式，以已配对客户端和现有浏览器账户完成升级演练。 [Compose](../../docker-compose.yml) · [Nginx 配置](../../web/nginx.conf.template) · [自托管说明](../../docs/SELF_HOSTING.md)
 
 ## 2. 模块与依赖
 
@@ -101,14 +101,14 @@ RN 的重复发送继续按训练 ID 去重，冲突时重新拉取并应用本�
 | `uploads/`、`integrations/`、Coach 数据 | 保留各账号目录、媒体引用及清理标记、集成密文与 outbox、Coach 配置和任务文件。保留凭据文件权限，使用现有实例密钥读取加密配置。 |
 | `/coach-auth` | 使用 Coach 镜像时单独挂载提供方登录缓存，沿用容器中 `coach` 用户的权限与运行方式。 |
 
-MCP 直接读取 `db.json` 和 `state-<uid>.json`，并观察文件更新。管理员恢复 CLI 通过 Unix socket 请求运行中的服务写入账户库。两者均纳入升级演练。 [备份与恢复](../SELF_HOSTING.md#6-backups) · [MCP 文件读取](../../mcp/src/state.js) · [恢复 CLI](../../api/recover.js) · [账户库初始化](../../api/server.js#L121)
+MCP 直接读取 `db.json` 和 `state-<uid>.json`，并观察文件更新。管理员恢复 CLI 通过 Unix socket 请求运行中的服务写入账户库。两者均纳入升级演练。 [备份与恢复](../../docs/SELF_HOSTING.md#6-backups) · [MCP 文件读取](../../mcp/src/state.js) · [恢复 CLI](../../api/recover.js) · [账户库初始化](../../api/server.js#L121)
 
 ## 5. 私有媒体与后台任务
 
 - **上传与下载**。`PUT /api/media/{hash}` 通过会话和限流后把原始请求流交给 `media.js`，以流式校验哈希、文件类型和大小，并先落临时文件。`GET` 继续按账号目录进行授权与流式响应，JSON 状态保存 `MediaRef`。保留上传空闲超时、断流清理、相同哈希的重复上传行为、`missing` 接口及 Nginx 对媒体代理的缓冲设置。 [媒体存储](../../api/media.js) · [RN 照片同步](../../mobile-rn/src/body/photos.ts) · [Web 媒体同步](../../frontend/src/lib/media-sync.js) · [媒体代理](../../web/nginx.conf.template#L95)
 - **清理**。RN 先上传照片字节，再同步带引用的状态。保留两步之间的清理宽限期。状态提交后登记引用，清理任务只处理满足原有条件的未引用文件，遇到无法读取的状态或清理标记时跳过该账号的清理。账号删除沿用该账号的媒体清理路径。 [RN 上传顺序](../../mobile-rn/src/useGym.ts#L82) · [媒体引用与清理](../../api/media.js#L493) · [账号清理](../../api/server.js#L1338)
 - **启动**。初始化时加载配置、数据卷和密钥，完成 Coach 任务恢复和媒体临时文件处理。复用模块仍在导入时读取环境变量，入口需在加载这些模块前准备好进程环境。`AppModule` 的生命周期协调器连接 Coach 提案通知等回调，在 `await app.listen(...)` 成功后统一启动提醒、队列、Coach 调度、媒体清理、在线态和审计维护计时器；`onApplicationBootstrap` 在监听前执行，只用于初始化。启动失败时关闭已经取得的资源。 [旧启动流程](../../api/server.js#L2989) · [Coach 配置](../../api/coach/config.js) · [NestJS 生命周期](https://docs.nestjs.com/fundamentals/lifecycle-events)
-- **重启后的任务状态**。Webhook 从持久队列继续投递，入队、重试和去重沿用现有语义。Coach 中断的生成任务按 `recoverOnBoot` 结束并恢复可用状态，已有提案可继续查看。推送、训练提醒、手表事件和媒体清理按原规则读取账号与状态。实例启用的扩展在切换演练中走各自的对外入口。 [Webhook 队列](../../api/integrations/outbox.js) · [Coach 恢复](../../api/coach/jobs.js#L524) · [手表协议](../ZEPP_OS.md)
+- **重启后的任务状态**。Webhook 从持久队列继续投递，入队、重试和去重沿用现有语义。Coach 中断的生成任务按 `recoverOnBoot` 结束并恢复可用状态，已有提案可继续查看。推送、训练提醒、手表事件和媒体清理按原规则读取账号与状态。实例启用的扩展在切换演练中走各自的对外入口。 [Webhook 队列](../../api/integrations/outbox.js) · [Coach 恢复](../../api/coach/jobs.js#L524) · [手表协议](../../docs/ZEPP_OS.md)
 
 ### 停机协议
 
@@ -160,7 +160,7 @@ API 集成回归继续用仓库的 `node:test` 和独立数据目录。协议对
 
 ## 8. 自托管切换与回滚
 
-1. **记录部署输入**。实施前核对目标实例当前镜像 tag / digest、Compose 项目和数据卷路径、`ORIGIN`、`RP_ID`、`BASE_PATH`、代理设置、启用的功能及 `/coach-auth` 挂载。记录配置摘要。仓库 Compose 是设计基线，实际实例参数以现场核对为准。 [配置模板](../../.env.example) · [自托管说明](../SELF_HOSTING.md)
+1. **记录部署输入**。实施前核对目标实例当前镜像 tag / digest、Compose 项目和数据卷路径、`ORIGIN`、`RP_ID`、`BASE_PATH`、代理设置、启用的功能及 `/coach-auth` 挂载。记录配置摘要。仓库 Compose 是设计基线，实际实例参数以现场核对为准。 [配置模板](../../.env.example) · [自托管说明](../../docs/SELF_HOSTING.md)
 2. **演练**。使用数据卷副本启动与目标架构一致的镜像，验证现有凭据、账号、档案和媒体。演练环境的外部投递连接到受控的测试接收端。演练通过后锁定将要部署的镜像 digest。
-3. **切换**。在维护窗口让旧 API 完成在途写入并退出，备份完整 `DATA_DIR` 与部署配置，再把同一个数据卷交给 Nest 镜像。通过原域名和路径检查健康、配置、Web 登录、已配对 RN 拉取及一次测试账号写入。确认反代解析到新容器后恢复正常流量。 [Nginx 上游配置](../../web/nginx.conf.template#L44) · [备份](../SELF_HOSTING.md#6-backups)
+3. **切换**。在维护窗口让旧 API 完成在途写入并退出，备份完整 `DATA_DIR` 与部署配置，再把同一个数据卷交给 Nest 镜像。通过原域名和路径检查健康、配置、Web 登录、已配对 RN 拉取及一次测试账号写入。确认反代解析到新容器后恢复正常流量。 [Nginx 上游配置](../../web/nginx.conf.template#L44) · [备份](../../docs/SELF_HOSTING.md#6-backups)
 4. **回滚**。出现旧客户端鉴权或同步异常、写入失败、媒体异常等阻断问题时，停止 Nest API，用记录的旧镜像和配置接管当前数据卷。优先验证并保留切换后已经提交的写入。若数据卷本身损坏，先保全当前卷，核对切换后写入，再依据备份恢复和补录。回滚验收重复第 7 节 A7 的读取与写入检查。

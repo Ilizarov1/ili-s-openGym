@@ -1,8 +1,8 @@
 # openGym RN 设计系统执行方案
 
-本文是 [RN_UI_DESIGN_SYSTEM.md](RN_UI_DESIGN_SYSTEM.md) 的执行清单。按顺序执行；任务 1、2、3 可并行，任务 4 之后由主 Agent 完成。每个任务都写明了文件、接口、约束和验收命令。
+本文是 [RN_UI_DESIGN_SYSTEM.md](../docs/RN_UI_DESIGN_SYSTEM.md) 的执行清单。按顺序执行；任务 1、2、3 可并行，任务 4 之后由主 Agent 完成。每个任务都写明了文件、接口、约束和验收命令。
 
-页面重构（五 Tab、首页、计划、统计、动作库、设置）见 [RN_UI_SCREEN_MIGRATION.md](RN_UI_SCREEN_MIGRATION.md)。五 Tab 冒烟脚本为 `mobile-rn/scripts/five-tab-smoke.ps1`。
+页面重构（五 Tab、首页、计划、统计、动作库、设置）见 [RN_UI_SCREEN_MIGRATION.md](../docs/RN_UI_SCREEN_MIGRATION.md)。五 Tab 冒烟脚本为 `mobile-rn/scripts/five-tab-smoke.ps1`。
 
 ## 0. 前置条件
 
@@ -12,9 +12,9 @@
 - 已安装 Expo SDK 55、RN 0.83、TypeScript。
 - Android 模拟器 `emulator-5556` 已启动，分辨率 1080×2400，密度 420（逻辑约 412×915）。
 - 工具链：
-  - JDK：`C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\jdk-17.0.21+9`
-  - Android SDK：`C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\android-sdk`
-  - ADB：`C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\android-sdk\platform-tools\adb.exe`
+  - JDK：`C:\Users\zjzjn\AppData\Local\RnToolchain\jdk-17.0.21+9`
+  - Android SDK：`C:\Users\zjzjn\AppData\Local\RnToolchain\android-sdk`
+  - ADB：`C:\Users\zjzjn\AppData\Local\RnToolchain\android-sdk\platform-tools\adb.exe`
 
 ## 1. 文件所有权
 
@@ -26,7 +26,7 @@
 | 任务 2 | `mobile-rn/src/design/components/PressableScale.tsx`、`Button.tsx`、`IconButton.tsx`、`Card.tsx`、`Screen.tsx`、`Header.tsx`、`ListRow.tsx`、`IconTile.tsx`、`Chip.tsx`、`Segmented.tsx`、`SearchField.tsx`、`Sheet.tsx`、`TabBar.tsx`、`ProgressBar.tsx`、`StatTile.tsx`、`EmptyState.tsx`、`Divider.tsx`、`SectionHeader.tsx`、`Badge.tsx`、`components/index.ts` |
 | 任务 3 | `mobile-rn/src/design/patterns/BodyMap.tsx`、`MiniBodyMap.tsx`、`MediaThumb.tsx`、`patterns/index.ts`、`gallery/DesignGallery.tsx` |
 | 任务 4 | `mobile-rn/src/design/index.ts`、`mobile-rn/App.tsx`、`mobile-rn/src/ui.tsx`、`mobile-rn/package.json`、`mobile-rn/scripts/check-design-system.mjs`、`AGENTS.md`、`docs/RN_MIGRATION_STATUS.md` |
-| 任务 5 | `docs/RN_UI_EXECUTION.md` 的验收记录 |
+| 任务 5 | `archive/RN_UI_EXECUTION.md` 的验收记录 |
 
 禁止：
 
@@ -560,7 +560,7 @@ export * from './patterns';
 
 - `AGENTS.md` 文档列表加入：
   - `docs/RN_UI_DESIGN_SYSTEM.md`
-  - `docs/RN_UI_EXECUTION.md`
+  - `archive/RN_UI_EXECUTION.md`
 - `AGENTS.md` 代码地图在 `mobile-rn/src/` 后补充 `mobile-rn/src/design/` 的职责。
 - `docs/RN_MIGRATION_STATUS.md` 的“工程验收”增加：
   - `[x] 设计系统基础。tokens、主题、图标、基础组件、身体图、动作缩略图、开发画廊和图标检查脚本。`
@@ -571,11 +571,11 @@ export * from './patterns';
 ### 6.1 环境
 
 ```powershell
-$env:JAVA_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\jdk-17.0.21+9'
-$env:ANDROID_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\android-sdk'
+$env:JAVA_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\jdk-17.0.21+9'
+$env:ANDROID_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\android-sdk'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-$env:GRADLE_USER_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\gradle'
-$adb = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\android-sdk\platform-tools\adb.exe'
+$env:GRADLE_USER_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\gradle'
+$adb = 'C:\Users\zjzjn\AppData\Local\RnToolchain\android-sdk\platform-tools\adb.exe'
 & $adb devices
 ```
 
@@ -602,10 +602,10 @@ cd android
 如果 Gradle wrapper 下载超时，使用工具链自带的 Gradle 9.0.0 并复用工具链缓存：
 
 ```powershell
-& 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\gradle-9.0.0\bin\gradle.bat' :app:assembleDebug --console=plain
+& 'C:\Users\zjzjn\AppData\Local\RnToolchain\gradle-9.0.0\bin\gradle.bat' :app:assembleDebug --console=plain
 ```
 
-本机已验证 `GRADLE_USER_HOME=C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\gradle` 可以复用此前的 Android/React Native 依赖。
+本机已验证 `GRADLE_USER_HOME=C:\Users\zjzjn\AppData\Local\RnToolchain\gradle` 可以复用此前的 Android/React Native 依赖。
 
 如果 `android/` 已被修改过，prebuild 会覆盖；确认没有本地需要保留的原生改动（当前 `android/` 被 gitignore，属于生成物）。
 

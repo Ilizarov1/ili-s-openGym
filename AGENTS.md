@@ -58,11 +58,8 @@ docs/
   API.md                                 HTTP 接口使用说明
   MOBILE.md                              Capacitor 客户端与配对
   APP_STORES.md                          上游移动端构建和发布
-  RN_ANDROID_DESIGN.md                   RN Android 首版设计
-  RN_ANDROID_EXECUTION.md                RN Android 实施和验收
   RN_MIGRATION_STATUS.md                 RN 已完成、待迁移和验收清单
   RN_UI_DESIGN_SYSTEM.md                 RN 设计系统架构、token、组件和治理
-  RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
   RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
   rn-exercise-search/
@@ -74,17 +71,10 @@ docs/
     03_EXISTING_ALIASES.md               已有用户别名读取、同步和工作区隔离
     04_COMBINED_FILTERS.md               目标肌群、器械和单侧组合筛选
     05_FUSE_SUGGESTIONS.md               Fuse.js 零结果候选和四入口集成验收
-  rn-workout-set-ui/
-    DESIGN.md                            训练组行、组菜单和递减组逐段记录设计
-    EXECUTION.md                         训练组行实施步骤、兼容回归和设备验收
-  nestjs-migration/
-    DESIGN.md                            服务端 NestJS 迁移设计
-    EXECUTION.md                         迁移执行、测试、验收和回滚方案
-    HANDOFF.md                           阶段 4 的本机执行交接、固定版本与演练输入
-    A5_HTTPS_SUBPATH_LAN.md               本机 HTTPS、子路径与局域网验收步骤
-    BASELINE.md                          代码、配置与 91 路由基线
-    ACCEPTANCE.md                        阶段 0–4 回归、部署和回滚验收证据
-    features/README.md                   功能点拆分索引和各功能执行文档
+  agent-runtime/
+    REQUIREMENTS.md                      双执行环境、上下文、工具围栏、记忆与验收要求
+    DESIGN.md                            RN 与 NestJS 的模块、契约和持久化设计
+    EXECUTION.md                         分阶段实施、验收证据和回退步骤
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/
@@ -101,15 +91,6 @@ docs/
       03_QR_PAIRING.md                   移动端配对二维码、确认和账户隔离
     platform/
       01_TRAINING_REMINDERS.md           Android 训练日提醒、权限和时钟验收
-  rn-p2-training-library/
-    README.md                            P2 高级训练与动作库的功能导航和验收顺序
-    01_SUPERSETS.md                       超级组需求、设计及新版回归步骤
-    02_DROP_SETS.md                       递减组的计划、分段记录和训练量
-    03_REST_PAUSE.md                      休息暂停组的计划、短休和总次数
-    04_RPE.md                             组评分入口、RPE 录入和历史更正
-    05_RIR.md                             RIR 录入、尺度换算和旧数据兼容
-    06_EXERCISE_FAVORITES.md              动作收藏、筛选和同步
-    07_EXERCISE_DEMOS.md                  内置演示、自定义媒体和异常回退
   SELF_HOSTING.md                        Docker 自托管指南
   SELF_HOSTING_HTTPS.md                  局域网 HTTPS
   SELF_HOSTING_KUBERNETES.md             Kubernetes 部署
@@ -127,6 +108,15 @@ docs/
   dev/FATIGUE_SETS_MODEL.md              肌群疲劳计算模型
   dev/LIST_VIEW.md                       训练界面的布局模式
   dev/SET_TYPES.md                       递减组和休息暂停组
+
+archive/                                 已完成需求的实现、验收与证据归档
+  README.md                              归档索引、完成状态和替代文档
+  RN_ANDROID_EXECUTION.md                RN Android 0.1.x 实施与验收记录
+  RN_UI_EXECUTION.md                     RN 设计系统实施与模拟器验收
+  nestjs-migration/                      NestJS API 迁移设计、执行和验收
+  rn-workout-set-ui/                     训练组行、组菜单和递减组实现与验收
+  rn-replacement-picker/                 替换动作选择器实现与验收
+  rn-p2-training-library/                P2 高级训练与动作库需求、设计和验收目标
 
 api/openapi.yaml                         HTTP 接口契约
 api/coach/prompts/

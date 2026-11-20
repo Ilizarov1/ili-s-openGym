@@ -2,7 +2,7 @@
 
 Web 行为以 `a00970b68` 的 `frontend/` 为基准，本文的两端入口和数据链路已对照 `94777b4ad` 工作区源码复核。范围是开始训练、训练布局、收起与恢复、更正已完成组、调节休息、结束训练、编辑计划这七项。给定相同的计划、历史和相关设置，RN 对齐 Web 的入口、分流、可用操作和结果。范围外的交互包括训练前称重、摘要附加区块、补录与历史编辑的保存流程。组初始化和计时动作沿用 RN 支持的数据与动作类型，下文单独列出需要对齐的规则。
 
-实施从仓库根目录开始，使用 PowerShell 和 [RN Android 工具链](../RN_ANDROID_EXECUTION.md#windows-构建)。界面按 [RN 设计系统](../RN_UI_DESIGN_SYSTEM.md)、[页面迁移约束](../RN_UI_SCREEN_MIGRATION.md)和[视觉验收流程](../RN_UI_VISUAL_TESTING.md)实施。
+实施从仓库根目录开始，使用 PowerShell 和 [RN Android 工具链](../../archive/RN_ANDROID_EXECUTION.md#windows-构建)。界面按 [RN 设计系统](../RN_UI_DESIGN_SYSTEM.md)、[页面迁移约束](../RN_UI_SCREEN_MIGRATION.md)和[视觉验收流程](../RN_UI_VISUAL_TESTING.md)实施。
 
 ## 执行顺序
 
@@ -152,5 +152,5 @@ Web 行为以 `a00970b68` 的 `frontend/` 为基准，本文的两端入口和�
 ## 实现后的联合验收
 
 1. 用独立 openGym 实例和测试账户。用 Web 录入计划、排程和历史，再把 RN 配对到同一账户，以此验收读写。Web 与 RN 的行为对照分别从同一份初始历史和设置起跑，避免先保存的一端影响另一端的 PR 和轮换。对照数据准备单套、多套、只有空计划、休息日、轮换、重复动作及含超级组的长计划。[实例启动](../SELF_HOSTING.md) · [配对规则](../MOBILE.md)
-2. 每批实施后在仓库根目录运行 `npm.cmd --prefix .\mobile-rn run check`。用开发版做逐项交互和截图，计时与通知验收使用实际时钟，关闭深链的 `e2e=1` 冻结模式。现有 smoke/regression 用于复验训练、历史和 Tab 的已有路径，新增交互按本文编号在设备上操作并记录结果。[RN 视觉验收](../RN_UI_VISUAL_TESTING.md) · [核心回归脚本入口](../RN_ANDROID_EXECUTION.md#本轮开发)
+2. 每批实施后在仓库根目录运行 `npm.cmd --prefix .\mobile-rn run check`。用开发版做逐项交互和截图，计时与通知验收使用实际时钟，关闭深链的 `e2e=1` 冻结模式。现有 smoke/regression 用于复验训练、历史和 Tab 的已有路径，新增交互按本文编号在设备上操作并记录结果。[RN 视觉验收](../RN_UI_VISUAL_TESTING.md) · [核心回归脚本入口](../../archive/RN_ANDROID_EXECUTION.md#本轮开发)
 3. 在 Android 真机走一遍「合并开训 → 记组并更正 → 调节休息 → 收起并恢复 → 结束看摘要 → Web 查记录」。通知开启时覆盖切后台和锁屏。断网场景先完成配对并同步初始数据，然后断开 RN 到实例的连接，确认统计显示「待同步」，重连后从 RN 设置点「立即同步」并在 Web 刷新。记录训练 ID、计划来源、组完成标记、下一次推荐以及计划最终顺序。

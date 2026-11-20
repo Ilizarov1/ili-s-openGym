@@ -186,7 +186,7 @@ api/
 #### 0.1 记录部署与代码基线
 
 - [ ] 在仓库根目录记录 `git rev-parse HEAD`、当前分支、Node / npm 版本和 `api/package-lock.json` 的 hash。
-- [ ] 记录目标自托管实例的镜像 tag / digest、Compose 项目名、`DATA_DIR` 路径、`ORIGIN`、`RP_ID`、`BASE_PATH`、`TRUST_PROXY`、`INTEGRATIONS`、`COACH_DISABLED`、`MEDIA_UPLOADS`、`PASSWORD_LOGIN`、`AUDIT_*` 和 `/coach-auth` 挂载情况；写入 `docs/nestjs-migration/BASELINE.md`，不要把真实密钥写入仓库。
+- [ ] 记录目标自托管实例的镜像 tag / digest、Compose 项目名、`DATA_DIR` 路径、`ORIGIN`、`RP_ID`、`BASE_PATH`、`TRUST_PROXY`、`INTEGRATIONS`、`COACH_DISABLED`、`MEDIA_UPLOADS`、`PASSWORD_LOGIN`、`AUDIT_*` 和 `/coach-auth` 挂载情况；写入 `archive/nestjs-migration/BASELINE.md`，不要把真实密钥写入仓库。
 - [ ] 备份一份脱敏后的数据卷结构用于演练：`db.json`、`db.json.bak`、`secret`、`vapid.json`、`state-<uid>.json`、`watch-<uid>.json`、`audit.log`、`uploads/`、`integrations/`、Coach 文件。真实用户数据只放在本机临时目录。
 - [ ] 记录当前 `api/` 的测试数量、通过率和耗时：`Set-Location api; npm.cmd ci --omit=optional; npm.cmd test`。
 - [ ] 记录 91 个路由的 `METHOD /api/path` 清单，作为后续路由矩阵测试的初始快照。
@@ -905,7 +905,7 @@ curl.exe -fsS http://localhost:8080/api/config
 
 ### 6.4 证据和记录
 
-在 `docs/nestjs-migration/ACCEPTANCE.md` 记录每轮验收：
+在 `archive/nestjs-migration/ACCEPTANCE.md` 记录每轮验收：
 
 ```text
 日期：
@@ -973,7 +973,7 @@ Node / npm：
 - 迁移后的 `api/test/`、`api/test/nest/`、源码断言和路由契约测试。
 - `.github/workflows/test.yml`、`api/Dockerfile`、`api/scripts/build-api.mjs` 的改造。
 - Compose / Helm / Kubernetes / Nix 的停机宽限和打包改造。
-- `docs/nestjs-migration/EXECUTION.md`、`BASELINE.md`、`ACCEPTANCE.md`。
+- `archive/nestjs-migration/EXECUTION.md`、`BASELINE.md`、`ACCEPTANCE.md`。
 - `default` / `coach` 镜像及 digest、升级 / 回滚演练报告。
 - 更新后的 `docs/ARCHITECTURE.md`、`docs/API.md`、`docs/SELF_HOSTING.md`、`docs/README.md`、`AGENTS.md`。
 

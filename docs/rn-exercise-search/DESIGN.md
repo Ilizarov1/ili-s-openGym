@@ -51,4 +51,4 @@ Web 现有页面继续按自己的调用顺序应用筛选和个性化分组。R
 4. [目标肌群、器械与单侧组合筛选](04_COMBINED_FILTERS.md)。
 5. [Fuse.js 候选兜底与最终集成验收](05_FUSE_SUGGESTIONS.md)。
 
-界面遵循 [RN 设计系统](../RN_UI_DESIGN_SYSTEM.md)、[页面迁移规格](../RN_UI_SCREEN_MIGRATION.md) 和 [视觉验收流程](../RN_UI_VISUAL_TESTING.md)。训练替换行或详情确认交互见 [训练替换选择器](../rn-replacement-picker/DESIGN.md)，合流时从同一个搜索结果提交当前入口的选择回调。
+界面遵循 [RN 设计系统](../RN_UI_DESIGN_SYSTEM.md)、[页面迁移规格](../RN_UI_SCREEN_MIGRATION.md) 和 [视觉验收流程](../RN_UI_VISUAL_TESTING.md)。训练替换行或详情确认交互见 [训练替换选择器](../../archive/rn-replacement-picker/DESIGN.md)，合流时从同一个搜索结果提交当前入口的选择回调。

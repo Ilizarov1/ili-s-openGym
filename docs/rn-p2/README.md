@@ -4,7 +4,7 @@
 
 ## 高级训练与动作库
 
-保留原 [高级训练与动作库目录](../rn-p2-training-library/README.md)。超级组、递减组、休息暂停组、RPE、RIR、动作收藏、动作演示均有独立验收表。
+原 [高级训练与动作库目录](../../archive/rn-p2-training-library/README.md) 已归档。超级组、递减组、休息暂停组、RPE、RIR、动作收藏、动作演示均有独立验收表。
 
 ## 进度与身体数据
 

@@ -10,7 +10,7 @@
 
 ## 实现设计
 
-- 计划使用 `intensifier: { type: 'dropset', count, pct }`，记录使用 `type: 'dropset'` 和 `drops: [{ w, r }]`。主组次数只代表主组，降重段另计。规则来自 [上游组结构](../dev/SET_TYPES.md) 和 [workout-model.js](../../frontend/src/lib/workout-model.js)。
+- 计划使用 `intensifier: { type: 'dropset', count, pct }`，记录使用 `type: 'dropset'` 和 `drops: [{ w, r }]`。主组次数只代表主组，降重段另计。规则来自 [上游组结构](../../docs/dev/SET_TYPES.md) 和 [workout-model.js](../../frontend/src/lib/workout-model.js)。
 - 在 [training.ts](../../mobile-rn/src/training.ts) 适配 [上游 `applyIntensifierPlan`](../../frontend/src/lib/history.js)，在最终工作重量确定后生成。复用 `dropGrid`、`nextDropWeight`、`addDrop`、`setDropAt`、`removeDropAt`；验证段数、重量、降幅和次数，输入无效时显示对应字段提示。
 - `PlanEditorScreen` 用 `Stepper` 配计划，`WorkoutScreen` 用组菜单追加、行下编辑，历史与单动作详情复用同一个摘要读法。历史可编辑 RN 合计行，保留 Web 已有的逐侧数据。训练结束和历史更正复用上游训练量计算。单位转换覆盖 `drops[].w`、有逐侧记录时的各侧负重及附加段，不换算次数或百分比。
 

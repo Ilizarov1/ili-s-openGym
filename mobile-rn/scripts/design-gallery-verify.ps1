@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$adb = Join-Path $env:LOCALAPPDATA 'OpenGymRnToolchain\android-sdk\platform-tools\adb.exe'
+$adb = Join-Path $env:LOCALAPPDATA 'RnToolchain\android-sdk\platform-tools\adb.exe'
 if (-not (Test-Path $adb)) { throw "adb not found: $adb" }
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $xmlPath = Join-Path $OutDir 'window.xml'

@@ -26,10 +26,10 @@
 fixture 使用 `run-as` 写入 Debug 应用的 SQLite，因此需要 Debug APK：
 
 ```powershell
-$env:JAVA_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\jdk-17.0.21+9'
-$env:ANDROID_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\android-sdk'
+$env:JAVA_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\jdk-17.0.21+9'
+$env:ANDROID_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\android-sdk'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-$env:GRADLE_USER_HOME = 'C:\Users\zjzjn\AppData\Local\OpenGymRnToolchain\gradle'
+$env:GRADLE_USER_HOME = 'C:\Users\zjzjn\AppData\Local\RnToolchain\gradle'
 
 cd mobile-rn
 npx.cmd expo prebuild --platform android --no-install

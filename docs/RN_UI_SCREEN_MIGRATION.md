@@ -1,6 +1,6 @@
 # RN 已有页面设计系统重构方案
 
-本文是 `mobile-rn` 现有页面按五 Tab 信息架构重构的方案。设计系统本体见 [RN_UI_DESIGN_SYSTEM.md](RN_UI_DESIGN_SYSTEM.md)，设计系统实施记录见 [RN_UI_EXECUTION.md](RN_UI_EXECUTION.md)。
+本文是 `mobile-rn` 现有页面按五 Tab 信息架构重构的方案。设计系统本体见 [RN_UI_DESIGN_SYSTEM.md](RN_UI_DESIGN_SYSTEM.md)，设计系统实施记录见 [RN_UI_EXECUTION.md](../archive/RN_UI_EXECUTION.md)（归档）。
 
 ## 1. 已确认决策
 
@@ -497,7 +497,7 @@ type WorkoutScreenProps = {
 
 - 删除 `ui.tsx`、旧 `PlanEditor.tsx`、`HistoryEditor.tsx`、`ExercisePicker.tsx` 中不再使用的文件。
 - 全量 typecheck、design:check、Gallery、android-regression。
-- 更新 `docs/RN_MIGRATION_STATUS.md` 和 `docs/RN_UI_EXECUTION.md`。
+- 更新 `docs/RN_MIGRATION_STATUS.md` 和 `archive/RN_UI_EXECUTION.md`。
 
 ## 9. 验收目标
 

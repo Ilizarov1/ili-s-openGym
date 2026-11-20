@@ -6,7 +6,7 @@
 
 ## Windows 构建
 
-本次使用 Expo SDK 55、JDK 17 和 Android SDK 36，APK 包含 ARM64 与 x86_64。本机工具链位于 `%LOCALAPPDATA%\OpenGymRnToolchain`。配置 `JAVA_HOME` 和 `ANDROID_HOME` 后，在 `mobile-rn/` 执行：
+本次使用 Expo SDK 55、JDK 17 和 Android SDK 36，APK 包含 ARM64 与 x86_64。本机工具链位于 `%LOCALAPPDATA%\RnToolchain`。配置 `JAVA_HOME` 和 `ANDROID_HOME` 后，在 `mobile-rn/` 执行：
 
 ```powershell
 npm.cmd ci
