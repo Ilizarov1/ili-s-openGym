@@ -1,7 +1,7 @@
 /**
  * openGym icon set, ported from `frontend/src/components/Icon.jsx` (the `P` object).
  *
- * Source: frontend/src/components/Icon.jsx — 126 icons, one 24×24 grid, one weight.
+ * Source: frontend/src/components/Icon.jsx — 127 icons, one 24×24 grid, one weight.
  * Path data, names and fill/stroke semantics are copied verbatim; only the SVG
  * primitives are react-native-svg's (Path, Circle, Rect) and `grip`'s runtime
  * array map is expanded into its six dots, so nothing is built at render time.
@@ -186,6 +186,8 @@ const paths = {
   watch: <><Rect x="6.6" y="6.4" width="10.8" height="11.2" rx="3" /><Path d="M9 6.4l.6-3h4.8l.6 3M9 17.6l.6 3h4.8l.6-3M12 9.6V12l1.6 1" /></>,
   // exercise settings: two sliders
   slider: <><Path d="M4.4 7.4h9.2M17.8 7.4h1.8M4.4 16.6h1.8M10.4 16.6h9.2" /><Circle cx="15.7" cy="7.4" r="2.1" /><Circle cx="8.3" cy="16.6" r="2.1" /></>,
+  // filter funnel: a wide mouth tapering into a narrow spout
+  funnel: <Path d="M3.5 4.5h17l-6.5 8v6.5l-4 2v-8.5Z" />,
 
   /* ---- v1.3.11 icon sweep: the meanings shuffle, pause and friends used to share ---- */
   // the Compact layout: four tight rows, where `list` has three with bullets

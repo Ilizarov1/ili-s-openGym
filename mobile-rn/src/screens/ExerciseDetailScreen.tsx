@@ -27,6 +27,7 @@ export type ExerciseDetailScreenProps = {
   custom: boolean;
   onBack: () => void;
   onPick: () => void;
+  pickLabel?: string;
   onFavorite: (id: string, favourite: boolean) => void;
 };
 
@@ -53,6 +54,7 @@ export function ExerciseDetailScreen({
   custom,
   onBack,
   onPick,
+  pickLabel = '选择这个动作',
   onFavorite,
 }: ExerciseDetailScreenProps) {
   const theme = useTheme();
@@ -213,7 +215,7 @@ export function ExerciseDetailScreen({
         testID="exercise-detail-pick"
         variant="primary"
       >
-        选择这个动作
+        {pickLabel}
       </Button>
     </Screen>
   );

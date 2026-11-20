@@ -157,6 +157,8 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
   const [effort, setEffort] = useState('');
   const [actionSheetOpen, setActionSheetOpen] = useState(false);
   const [lastAction, setLastAction] = useState('未选择');
+  const [listBodyPresses, setListBodyPresses] = useState(0);
+  const [listRowFavourite, setListRowFavourite] = useState(false);
 
   const styles = useMemo(
     () =>
@@ -622,9 +624,34 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
 
       <GallerySection
         title="卡片与列表"
-        description="Card、ListRow、Divider、Badge、SectionHeader 的标准组合。"
+        description="Card、ListRow、Divider、Badge、SectionHeader 的标准组合；onPressBody 将左侧详情与右侧星标拆成独立点击区。"
         testID="gallery-card"
       >
+        <Card padded={false}>
+          <ListRow
+            accessibilityLabel="查看 保加利亚分腿蹲 详情"
+            leading={<IconTile name="dumbbell" tone="soft" />}
+            onPressBody={() => setListBodyPresses(value => value + 1)}
+            subtitle="大腿 · 哑铃"
+            testID="gallery-list-row-body"
+            title="保加利亚分腿蹲"
+            trailing={
+              <IconButton
+                accessibilityLabel={
+                  listRowFavourite ? '取消收藏 保加利亚分腿蹲' : '收藏 保加利亚分腿蹲'
+                }
+                name={listRowFavourite ? 'starFill' : 'star'}
+                onPress={() => setListRowFavourite(value => !value)}
+                size="sm"
+                testID="gallery-list-row-body-star"
+                tone={listRowFavourite ? 'accent' : 'neutral'}
+              />
+            }
+          />
+        </Card>
+        <Text style={styles.searchResults} tone="secondary" variant="footnote">
+          {`点击左侧 ${listBodyPresses} 次；星标${listRowFavourite ? '已收藏' : '未收藏'}。`}
+        </Text>
         <Card>
           <Text variant="headline">今日训练</Text>
           <Text variant="footnote" tone="secondary">

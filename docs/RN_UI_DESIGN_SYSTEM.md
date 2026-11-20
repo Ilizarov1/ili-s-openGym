@@ -38,7 +38,7 @@
 | 上游文件 | RN 对应 | 用途 |
 | --- | --- | --- |
 | `frontend/src/index.css` `:root` | `design/tokens.ts`、`design/themes.ts` | 颜色、字号、圆角、间距、阴影、动效 |
-| `frontend/src/components/Icon.jsx` | `design/icons/icon-paths.tsx`、`Icon.tsx` | 126 个 24×24 描边图标 |
+| `frontend/src/components/Icon.jsx` | `design/icons/icon-paths.tsx`、`Icon.tsx` | 127 个 24×24 描边图标 |
 | `frontend/src/components/BodyMap.jsx` | `design/patterns/BodyMap.tsx` | 正反面肌群图 |
 | `frontend/src/components/MiniBodyMap.jsx` | `design/patterns/MiniBodyMap.tsx` | 计划行和首页卡片的缩略肌群图 |
 | `frontend/src/lib/body-paths.js` | 直接复用 | 身体路径数据 |
@@ -830,7 +830,7 @@ type MediaThumbProps = {
 
 ### 9.1 图标
 
-- 从 `frontend/src/components/Icon.jsx` 的 `P` 对象完整移植 126 个图标。
+- 从 `frontend/src/components/Icon.jsx` 的 `P` 对象完整移植 127 个图标。
 - 保留原名；`ICON_NAMES` 由对象键生成。
 - 移植时保留 `fill="currentColor"` 的图标（`starFill`、`dot`、`more`、`grip`、`info` 的小圆点等）。
 - `grip` 的数组 map 展开为 6 个 `Circle`，不要保留运行时数组。

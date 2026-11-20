@@ -75,6 +75,7 @@ function AppScreen() {
   const savingRef = useRef(false);
   const savedDraftId = useRef<string | null>(null);
   const planClose = useRef<(() => void) | null>(null);
+  const libraryClose = useRef<(() => void) | null>(null);
   const connection = workspace?.connection;
   const currentDraft = workspace?.data.draft;
   const restAlertError = useRestNotification(
@@ -117,6 +118,10 @@ function AppScreen() {
       planClose.current();
       return;
     }
+    if (panel?.kind === 'library' && libraryClose.current) {
+      libraryClose.current();
+      return;
+    }
     closePanel();
   }, [closePanel, panel?.kind]);
 
@@ -125,6 +130,10 @@ function AppScreen() {
     return () => {
       if (planClose.current === close) planClose.current = null;
     };
+  }, []);
+
+  const registerLibraryClose = useCallback((close: (() => void) | null) => {
+    libraryClose.current = close;
   }, []);
 
   const onMissingPlan = useCallback(() => {
@@ -653,6 +662,8 @@ function AppScreen() {
           onFavorite={onFavorite}
           onBack={closePanel}
           onPick={target => { pickForWorkout(target, panel.replaceIndex); closePanel(); }}
+          registerClose={registerLibraryClose}
+          replacing={panel.replaceIndex != null}
         />}
         {panel.kind === 'design' && <DesignGallery onClose={closePanel} />}
         {panel.kind === 'body' && <BodyDataScreen

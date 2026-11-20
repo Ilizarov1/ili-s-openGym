@@ -13,6 +13,8 @@ export type ListRowProps = {
   subtitle?: string;
   trailing?: ReactNode;
   onPress?: () => void;
+  /** When set, only the leading + text body is pressable; trailing stays a sibling. */
+  onPressBody?: () => void;
   chevron?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -22,6 +24,17 @@ export type ListRowProps = {
 
 const styles = StyleSheet.create({
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  splitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  body: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -39,6 +52,7 @@ export function ListRow({
   subtitle,
   trailing,
   onPress,
+  onPressBody,
   chevron = false,
   disabled = false,
   style,
@@ -46,6 +60,65 @@ export function ListRow({
   accessibilityLabel,
 }: ListRowProps) {
   const theme = useTheme();
+
+  const body = (
+    <>
+      {leading}
+      <View style={styles.textColumn}>
+        <Text tone={titleTone} variant="body">{title}</Text>
+        {subtitle ? (
+          <Text style={{ marginTop: theme.space.xxs }} tone="secondary" variant="footnote">
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+    </>
+  );
+
+  if (onPressBody) {
+    return (
+      <View
+        style={[
+          styles.splitRow,
+          {
+            minHeight: theme.layout.listRowMinHeight,
+            paddingRight: trailing != null || chevron ? theme.layout.listRowPaddingX : 0,
+          },
+          style,
+        ]}
+      >
+        <Pressable
+          accessibilityLabel={accessibilityLabel}
+          accessibilityRole="button"
+          accessibilityState={disabled ? { disabled: true } : undefined}
+          disabled={disabled}
+          onPress={onPressBody}
+          style={({ pressed }) => [
+            styles.body,
+            {
+              alignSelf: 'stretch',
+              paddingVertical: theme.layout.listRowPaddingY,
+              paddingHorizontal: theme.layout.listRowPaddingX,
+              backgroundColor: pressed && !disabled ? theme.colors.surface2 : 'transparent',
+              opacity: disabled ? 0.45 : 1,
+            },
+          ]}
+          testID={testID}
+        >
+          {body}
+        </Pressable>
+        {trailing}
+        {chevron ? (
+          <Icon
+            color={theme.colors.label3}
+            name="chevronRight"
+            size={18}
+            style={{ marginLeft: trailing != null ? theme.space.md : 0 }}
+          />
+        ) : null}
+      </View>
+    );
+  }
 
   return (
     <Pressable
@@ -67,15 +140,7 @@ export function ListRow({
       ]}
       testID={testID}
     >
-      {leading}
-      <View style={styles.textColumn}>
-        <Text tone={titleTone} variant="body">{title}</Text>
-        {subtitle ? (
-          <Text style={{ marginTop: theme.space.xxs }} tone="secondary" variant="footnote">
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
+      {body}
       {trailing}
       {chevron ? <Icon color={theme.colors.label3} name="chevronRight" size={18} /> : null}
     </Pressable>

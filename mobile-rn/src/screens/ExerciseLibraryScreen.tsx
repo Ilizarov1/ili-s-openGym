@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { FlatList, ScrollView, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, ScrollView, StyleSheet, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import { isFav } from '../../../frontend/src/lib/favourites.js';
 import {
@@ -46,6 +46,10 @@ export type ExerciseLibraryScreenProps = {
   onFavorite: (id: string, favourite: boolean) => void;
   /** Shown as a back button when the library is used as a full-screen picker. */
   onBack?: () => void;
+  /** Rows open details and only the plus or detail button replaces the workout exercise. */
+  replacing?: boolean;
+  /** Lets the host close the detail layer before the picker itself. */
+  registerClose?: (close: (() => void) | null) => void;
 };
 
 type CatalogueExercise = {
@@ -95,8 +99,11 @@ export function ExerciseLibraryScreen({
   onCustom,
   onFavorite,
   onBack,
+  replacing = false,
+  registerClose,
 }: ExerciseLibraryScreenProps) {
   const theme = useTheme();
+  const submittedRef = useRef(false);
   const [query, setQuery] = useState('');
   const [bodyPart, setBodyPart] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<string | null>(null);
@@ -132,6 +139,14 @@ export function ExerciseLibraryScreen({
     setOneLimb(false);
     setFavouritesOnly(false);
   }, [workspaceKey]);
+
+  // The picker sits in an app-level Modal, whose back handling must close the
+  // detail layer first instead of dismissing the whole picker.
+  useEffect(() => {
+    if (!registerClose || !replacing || !detail) return;
+    registerClose(() => setDetail(null));
+    return () => registerClose(null);
+  }, [detail, registerClose, replacing]);
 
   const librarySearch = useMemo(
     () => createLibrarySearch(profile, createFuseSuggestionIndex),
@@ -191,6 +206,17 @@ export function ExerciseLibraryScreen({
     onPick({ id: exercise.id, mode: exercise.bp === 'cardio' ? 'cardio' : 'reps' });
   };
 
+  // The row plus and the detail button share one submission per picker session.
+  const submitPick = (id: string, custom: boolean) => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
+    const customExercise = custom
+      ? (profile.customEx ?? []).find(exercise => exercise?.id === id)
+      : undefined;
+    const cardio = custom ? customExercise?.bp === 'cardio' : catalogueExercise(id)?.bp === 'cardio';
+    onPick({ id, mode: cardio ? 'cardio' : 'reps' });
+  };
+
   const startEdit = (exercise?: CustomExercise) => {
     setEditing(exercise ?? { id: '', bp: 'full body', eq: 'other' });
     setCustomNameValue(exercise ? customName(exercise) : '');
@@ -223,27 +249,38 @@ export function ExerciseLibraryScreen({
           testID={`library-fav-${exercise.id}`}
           tone={favourite ? 'accent' : 'neutral'}
         />
-        <IconButton
-          accessibilityLabel={`查看详情 ${name}`}
-          name="info"
-          onPress={() => setDetail({ id: exercise.id, custom: item.kind === 'custom' })}
-          size="sm"
-          testID={`library-detail-${exercise.id}`}
-        />
-        {item.kind === 'custom' ? (
+        {replacing ? (
           <IconButton
-            accessibilityLabel={`编辑 ${name}`}
-            name="pencil"
-            onPress={() => startEdit(item.exercise)}
+            accessibilityLabel={`选择替换动作 ${name}`}
+            name="plus"
+            onPress={() => submitPick(exercise.id, item.kind === 'custom')}
             size="sm"
           />
         ) : (
-          <IconButton
-            accessibilityLabel={`选择 ${name}`}
-            name="plus"
-            onPress={() => pickCatalogue(item.exercise)}
-            size="sm"
-          />
+          <>
+            <IconButton
+              accessibilityLabel={`查看详情 ${name}`}
+              name="info"
+              onPress={() => setDetail({ id: exercise.id, custom: item.kind === 'custom' })}
+              size="sm"
+              testID={`library-detail-${exercise.id}`}
+            />
+            {item.kind === 'custom' ? (
+              <IconButton
+                accessibilityLabel={`编辑 ${name}`}
+                name="pencil"
+                onPress={() => startEdit(item.exercise)}
+                size="sm"
+              />
+            ) : (
+              <IconButton
+                accessibilityLabel={`选择 ${name}`}
+                name="plus"
+                onPress={() => pickCatalogue(item.exercise)}
+                size="sm"
+              />
+            )}
+          </>
         )}
       </View>
     );
@@ -253,9 +290,16 @@ export function ExerciseLibraryScreen({
       return (
         <Card padded={false}>
           <ListRow
-            accessibilityLabel={`选择 ${name}`}
+            {...(replacing
+              ? {
+                accessibilityLabel: `查看详情 ${name}`,
+                onPressBody: () => setDetail({ id: custom.id, custom: true }),
+              }
+              : {
+                accessibilityLabel: `选择 ${name}`,
+                onPress: () => pickCustom(custom),
+              })}
             leading={<MediaThumb exerciseId={custom.id} server={null} size={44} radius={theme.radius.lg} />}
-            onPress={() => pickCustom(custom)}
             subtitle={subtitleOf(custom.bp, custom.eq)}
             testID={`library-ex-${custom.id}`}
             title={name}
@@ -269,9 +313,16 @@ export function ExerciseLibraryScreen({
     return (
       <Card padded={false}>
         <ListRow
-          accessibilityLabel={`选择 ${name}`}
+          {...(replacing
+            ? {
+              accessibilityLabel: `查看详情 ${name}`,
+              onPressBody: () => setDetail({ id: builtin.id, custom: false }),
+            }
+            : {
+              accessibilityLabel: `选择 ${name}`,
+              onPress: () => pickCatalogue(builtin),
+            })}
           leading={<MediaThumb exerciseId={builtin.id} server={server} size={44} radius={theme.radius.lg} />}
-          onPress={() => pickCatalogue(builtin)}
           subtitle={subtitleOf(builtin.bodyPart, builtin.equipment)}
           testID={`library-ex-${builtin.id}`}
           title={name}
@@ -290,7 +341,7 @@ export function ExerciseLibraryScreen({
         right={(
           <IconButton
             accessibilityLabel={activeFilters > 0 ? `筛选（已选 ${activeFilters} 项）` : '筛选'}
-            name="slider"
+            name="funnel"
             onPress={() => setFiltersOpen(true)}
             tone={activeFilters > 0 ? 'accent' : 'neutral'}
           />
@@ -380,7 +431,7 @@ export function ExerciseLibraryScreen({
     </View>
   );
 
-  if (detail) {
+  if (detail && !replacing) {
     const customExercise = detail.custom
       ? (profile.customEx ?? []).find(exercise => exercise?.id === detail.id)
       : undefined;
@@ -405,7 +456,7 @@ export function ExerciseLibraryScreen({
     );
   }
 
-  return (
+  const library = (
     <Screen scroll={false} testID="library-screen">
       <FlatList
         contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: theme.layout.listBottomPadding }}
@@ -627,5 +678,39 @@ export function ExerciseLibraryScreen({
         <View style={{ height: theme.space.md }} />
       </Sheet>
     </Screen>
+  );
+
+  if (!replacing) return library;
+
+  return (
+    <View style={{ flex: 1 }}>
+      <View
+        accessibilityElementsHidden={detail !== null}
+        importantForAccessibility={detail ? 'no-hide-descendants' : 'auto'}
+        pointerEvents={detail ? 'none' : 'auto'}
+        style={{ flex: 1 }}
+      >
+        {library}
+      </View>
+      {detail ? (
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.colors.bg }]}>
+          <ExerciseDetailScreen
+            key={`${detail.custom ? 'custom' : 'catalogue'}-${detail.id}`}
+            connection={connection}
+            custom={detail.custom}
+            exerciseId={detail.id}
+            onBack={() => setDetail(null)}
+            onFavorite={onFavorite}
+            onPick={() => {
+              submitPick(detail.id, detail.custom);
+              setDetail(null);
+            }}
+            pickLabel="选择此动作替换"
+            profile={profile}
+            server={server}
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }

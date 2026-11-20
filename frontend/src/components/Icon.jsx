@@ -174,6 +174,8 @@ const P = {
   watch: <><rect x="6.6" y="6.4" width="10.8" height="11.2" rx="3" /><path d="M9 6.4l.6-3h4.8l.6 3M9 17.6l.6 3h4.8l.6-3M12 9.6V12l1.6 1" /></>,
   // exercise settings: two sliders
   slider: <><path d="M4.4 7.4h9.2M17.8 7.4h1.8M4.4 16.6h1.8M10.4 16.6h9.2" /><circle cx="15.7" cy="7.4" r="2.1" /><circle cx="8.3" cy="16.6" r="2.1" /></>,
+  // filter funnel: a wide mouth tapering into a narrow spout
+  funnel: <path d="M3.5 4.5h17l-6.5 8v6.5l-4 2v-8.5Z" />,
 
   /* ---- v1.3.11 icon sweep: the meanings shuffle, pause and friends used to share ---- */
   // the Compact layout: four tight rows, where `list` has three with bullets
