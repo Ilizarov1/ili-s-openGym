@@ -69,8 +69,9 @@ docs/
     DESIGN.md                            服务端 NestJS 迁移设计
     EXECUTION.md                         迁移执行、测试、验收和回滚方案
     HANDOFF.md                           阶段 4 的本机执行交接、固定版本与演练输入
+    A5_HTTPS_SUBPATH_LAN.md               本机 HTTPS、子路径与局域网验收步骤
     BASELINE.md                          代码、配置与 91 路由基线
-    ACCEPTANCE.md                        阶段 0–3 回归证据与阶段 4 待办
+    ACCEPTANCE.md                        阶段 0–4 回归、部署和回滚验收证据
     features/README.md                   功能点拆分索引和各功能执行文档
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程

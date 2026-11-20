@@ -3,7 +3,7 @@
 - 依据：[NestJS 迁移设计](./DESIGN.md)（2026-11-19 修订，设计基线 `a00970b68`）
 - 当前工作区基线：`94777b4ad`，执行开始时以实际 `git rev-parse HEAD` 重新记录
 - 适用代码：`api/`、`api/test/`、`.github/workflows/test.yml`、`api/Dockerfile`、Compose / Helm / Kubernetes / Nix 部署文件
-- 状态：阶段 0–3 的评审修订已落地，Linux 双入口回归和 A10 信号验收待验证。阶段 4 的入口切换、镜像与升级演练以这些证据为前置。见 [ACCEPTANCE.md](./ACCEPTANCE.md)。
+- 状态：Linux 双入口回归、A10 信号、默认入口、镜像、回滚及本机 A5 HTTPS、子路径、局域网已验证。现场和发布余项见 [验收记录](./ACCEPTANCE.md)。
 - 阶段 4 运行时：Nest API 的交付和发布验收统一使用 Linux / Node.js 24 LTS，取代原设计中的 Node.js 22 目标。当前配置和历史结果见 [BASELINE.md](./BASELINE.md) 与 [ACCEPTANCE.md](./ACCEPTANCE.md)。
 
 本文把设计稿拆成可以独立提交、独立测试、独立回退的阶段。每个阶段结束时必须通过该阶段的退出条件，未通过不得进入下一阶段；生产实例只在阶段 4 完成后整体切换。

@@ -1,10 +1,10 @@
 # NestJS 迁移验收记录
 
-- 记录时间：2026-11-19
+- 记录时间：2026-11-19 至 2026-11-20
 - 代码版本：阶段 0–3 基线 `94777b4ada915c622baf5813af673646c123ebb9`；阶段 4 候选见 §6。
 - 本机环境：Windows 11 + WSL 2 Ubuntu，Node v24.18.0，npm 11.16.0。
 - 测试数据：独立临时数据目录和合成账号。
-- 结论：阶段 0–3、Linux 双入口基线、默认入口切换、Docker 镜像、Compose/Nginx、RN 回归和容器级回滚演练均通过；Nix/NixOS 本轮不纳入；A5 的 TLS / LAN / 真实 Passkey 分项待人工。
+- 结论：Linux 双入口基线、默认入口切换、Docker 镜像、Compose/Nginx、RN 回归和容器级回滚演练均通过。A5 已覆盖本机 HTTPS、子路径及局域网手机同步。真实 Passkey 和浏览器证书面板截图仍待补验。Nix/NixOS 本轮暂缓。
 
 ## 1. 本机验收
 
@@ -192,7 +192,7 @@ docker build -t opengym-handoff-api:legacy .
 
 基础镜像 `node:24-alpine`、`node:22.23.4-alpine`、`nginxinc/nginx-unprivileged:1.30.6-alpine` 先从 `docker.m.daocloud.io` 拉取并本地打回原名；Docker Hub 直连在本机超时。`NPM_REGISTRY` / `APK_MIRROR` 是 Dockerfile 的可选构建参数，默认仍用上游源。
 
-Nginx / 子路径 / HTTPS / LAN 的 A5 分项已于 2026-11-20 在有浏览器和 TLS 环境的 Windows 主机补验，见 §11 A5；真实 Passkey 仍待人工。
+2026-11-20 按 [A5 执行单](A5_HTTPS_SUBPATH_LAN.md) 补验，证据保存在 Windows 本机的 `%LOCALAPPDATA%\openGym-a5-90b271ba\evidence\A5_REPORT.md`。子路径训练通过同源 API 写入，再在 History 中回读。局域网使用 Windows portproxy 转发到 WSL Docker 发布的端口，手机实际走 Wi-Fi。结果见 §11 A5。
 
 ## 10. A7 回滚演练（文件级 + 容器级）
 

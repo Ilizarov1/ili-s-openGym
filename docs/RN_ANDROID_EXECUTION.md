@@ -97,6 +97,15 @@ Android 36 可见模拟器使用 `0.1.3` 联跑 `-FeatureChecks -P1Checks`，P0 
 - **导入分享与提醒**：验证设置页入口、计划导出到系统分享面板（`opengym-plan-2026-11-18-*.json`）、相机权限与取景页、提醒的权限/时刻/预览和 3 条 `RTC_WAKEUP` 调度；Release 包同时验证了进度、身体、提醒、历史导入、计划分享和扫码深链。
 - **待复验**：独立 API 同步和 `409`、二维码实际兑换、真实导入文件、提醒锁屏到达与点击、真机相机/媒体解码。
 - **安装包**：`mobile-rn/dist/openGym-RN-0.1.5-five-tab.apk`，versionCode 6，包含 arm64-v8a 和 x86_64，约 258 MB，Debug 证书签名；SHA-256 为 `57137505F40A8925F421AD0BB6A6FE54CCFC3645CFEEEA15D8504D3FC50A8252`。
+
+### 0.1.5 训练提醒锁屏复验
+
+- 2026-11-18 在 vivo X90 Pro+（Android 15）安装 `0.1.5`，已授权通知和精确闹钟。openGym 退到后台，手机从 23:20:18 保持锁屏至 23:22 到点后一分多钟。系统在 23:20:24 以 `frozen` 移除该应用的闹钟，该轮到点未发布通知。
+- Android 36 模拟器对照使用 `0.1.6`，提醒和导航代码与该 `0.1.5` 基线一致。App 在后台且屏幕熄灭，系统在计划时刻约 1 秒后发布一条训练提醒。点按通知打开已配对测试账号的计划页，并读到 `QA P2 mixed`。
+- 2026-11-19 真机复验通过。用户关闭锁屏密码、允许 openGym 后台耗电并锁定后台卡片，安装版本仍为 `0.1.5`。App 从 12:42:23 退到后台并熄屏，12:43:56 的系统状态仍为 `Asleep`。精确闹钟在队列中保留至 12:44 到点，系统于 12:44:00.094 发布一条 `training-reminders` 通知，首次轮询确认在 12:44:01。从通知中心实际点按后打开计划页，显示测试账号的 `QA physical training`。测试结束关闭提醒，确认未来排程为零。
+- 本轮证据为 [送达日志](../mobile-rn/dist/acceptance-015-a00970b68/phone-background-allowed-20261119.log)、[系统入队记录](../mobile-rn/dist/acceptance-015-a00970b68/phone-background-allowed-20261119-enqueue.log)、[点按与跳转日志](../mobile-rn/dist/acceptance-015-a00970b68/phone-background-allowed-20261119-open.log) 和 [计划页截图](../mobile-rn/dist/acceptance-015-a00970b68/phone-background-allowed-20261119-plan.png)。
+- 本机证据在 `mobile-rn/dist/acceptance-015-a00970b68/`，包括真机锁屏与冻结日志、模拟器送达日志和计划页截图。
+
 ### 0.1.6 验收结果（中文步骤补全）
 
 - **范围**：为缺失中文步骤的 4,308 个动作补全 22,999 条步骤；去重后实际翻译 16,093 条唯一英文句子。原有 1,324 组翻译逐字未改。
