@@ -43,7 +43,7 @@ All settings live in `.env`; [`.env.example`](../.env.example) explains each one
 |---|---|
 | [Contributing](../CONTRIBUTING.md) | Before your first pull request: setup, guidelines, what CI checks |
 | [Architecture](ARCHITECTURE.md) | You want the map: how the app, server, phones and watch fit together, with diagrams |
-| [Agent runtime](agent-runtime/REQUIREMENTS.md) | Requirements, [technical design](agent-runtime/DESIGN.md) and [execution plan](agent-runtime/EXECUTION.md) for RN and NestJS |
+| [Agent runtime](agent-runtime/REQUIREMENTS.md) | Requirements, [technical design](agent-runtime/DESIGN.md) and [execution plan](agent-runtime/EXECUTION.md) for Web and RN |
 | [RN and Web interaction parity](rn-web-interaction-parity/README.md) | Android workout and routine editing flows aligned with Web |
 | [RN exercise search](rn-exercise-search/DESIGN.md) | Web search reuse, saved aliases, combined filters and zero-result suggestions. Five execution guides, the [entry baseline](rn-exercise-search/BASELINE.md) and [acceptance record](rn-exercise-search/ACCEPTANCE.md). |
 | [Archive](../archive/README.md) | Completed requirements: implementation plans, acceptance records and evidence status |
