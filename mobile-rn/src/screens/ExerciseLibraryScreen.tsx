@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FlatList, ScrollView, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
-import { favIds, isFav, sortFavouritesFirst } from '../../../frontend/src/lib/favourites.js';
+import { isFav } from '../../../frontend/src/lib/favourites.js';
 import {
   Button,
   Card,
@@ -24,12 +24,15 @@ import {
   CATALOGUE_COUNT,
   EQUIPMENT,
   SEARCH_LIMIT,
+  TARGET_MUSCLES,
   bodyPartName,
   catalogueExercise,
-  countCatalogue,
   equipmentName,
-  searchCatalogue,
+  targetMuscleName,
 } from '../catalogue';
+import { createFuseSuggestionIndex } from '../fuseSuggestionIndex';
+import { createLibrarySearch } from '../librarySearch';
+import type { LibraryExercise } from '../librarySearch';
 import type { Connection } from '../server';
 import type { CustomExercise, Profile, RoutineExercise } from '../training';
 import { ExerciseDetailScreen } from './ExerciseDetailScreen';
@@ -57,6 +60,22 @@ type Row =
   | { kind: 'custom'; exercise: CustomExercise }
   | { kind: 'catalogue'; exercise: CatalogueExercise };
 
+function rowOf(item: LibraryExercise): Row | null {
+  if (item.custom) {
+    return item.customExercise ? { kind: 'custom', exercise: item.customExercise } : null;
+  }
+  return {
+    kind: 'catalogue',
+    exercise: {
+      id: item.id,
+      name: item.name,
+      bodyPart: item.bodyPart,
+      equipment: item.equipment,
+      cardio: item.cardio,
+    },
+  };
+}
+
 function subtitleOf(bodyPart?: string, equipment?: string) {
   const parts: string[] = [];
   if (bodyPart) parts.push(bodyPartName(bodyPart));
@@ -81,6 +100,8 @@ export function ExerciseLibraryScreen({
   const [query, setQuery] = useState('');
   const [bodyPart, setBodyPart] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<string | null>(null);
+  const [targetMuscle, setTargetMuscle] = useState<string | null>(null);
+  const [oneLimb, setOneLimb] = useState(false);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const [limit, setLimit] = useState(SEARCH_LIMIT);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -88,9 +109,8 @@ export function ExerciseLibraryScreen({
   const [customNameValue, setCustomNameValue] = useState('');
   const [detail, setDetail] = useState<{ id: string; custom: boolean } | null>(null);
 
-  const term = query.trim().toLowerCase();
-  const favouriteIds = useMemo(() => favIds(profile) as string[], [profile]);
-  const favouriteSet = useMemo(() => new Set(favouriteIds), [favouriteIds]);
+  const term = query.trim();
+  const favouriteCount = Array.isArray(profile.favEx) ? profile.favEx.length : 0;
   const workspaceKey = connection ? `${connection.server}|${connection.user.id}` : 'practice';
 
   // A new search, filter or workspace starts the visible selection fresh; media
@@ -98,7 +118,7 @@ export function ExerciseLibraryScreen({
   useEffect(() => {
     setLimit(SEARCH_LIMIT);
     setDetail(null);
-  }, [query, bodyPart, equipment, favouritesOnly]);
+  }, [query, bodyPart, equipment, targetMuscle, oneLimb, favouritesOnly]);
 
   useEffect(() => {
     setDetail(null);
@@ -108,64 +128,49 @@ export function ExerciseLibraryScreen({
     setQuery('');
     setBodyPart(null);
     setEquipment(null);
+    setTargetMuscle(null);
+    setOneLimb(false);
     setFavouritesOnly(false);
   }, [workspaceKey]);
 
-  const catalogue = useMemo(
-    () => searchCatalogue(query, bodyPart ?? undefined, equipment ?? undefined, limit, {
-      favourites: favouriteIds,
+  const librarySearch = useMemo(
+    () => createLibrarySearch(profile, createFuseSuggestionIndex),
+    [profile],
+  );
+  const result = useMemo(
+    () => librarySearch.search(query, {
+      bodyPart,
+      equipment,
+      targetMuscle,
+      oneLimb,
       favouritesOnly,
-    }) as CatalogueExercise[],
-    [query, bodyPart, equipment, limit, favouriteIds, favouritesOnly],
+    }, limit),
+    [librarySearch, query, bodyPart, equipment, targetMuscle, oneLimb, favouritesOnly, limit],
   );
 
-  const totalCatalogue = useMemo(
-    () => countCatalogue(query, bodyPart ?? undefined, equipment ?? undefined, {
-      favourites: favouriteIds,
-      favouritesOnly,
-    }) as number,
-    [query, bodyPart, equipment, favouriteIds, favouritesOnly],
+  const rows = useMemo<Row[]>(
+    () => result.items.map(rowOf).filter((row): row is Row => row !== null),
+    [result.items],
+  );
+  const suggestionRows = useMemo<Row[]>(
+    () => result.suggestions.map(rowOf).filter((row): row is Row => row !== null),
+    [result.suggestions],
   );
 
-  const customRows = useMemo(
-    () => sortFavouritesFirst(
-      (profile.customEx ?? [])
-        .filter((exercise): exercise is CustomExercise => !!exercise && typeof exercise.id === 'string')
-        .filter(exercise => {
-          if (favouritesOnly && !favouriteSet.has(exercise.id)) return false;
-          if (bodyPart && exercise.bp !== bodyPart) return false;
-          if (equipment && exercise.eq !== equipment) return false;
-          if (!term) return true;
-          const name = customName(exercise).toLowerCase();
-          return name.includes(term) || exercise.id.toLowerCase().includes(term);
-        }),
-      profile,
-    ) as CustomExercise[],
-    [profile, favouriteSet, bodyPart, equipment, term, favouritesOnly],
-  );
-
-  const rows = useMemo<Row[]>(() => {
-    const list: Row[] = [
-      ...customRows.map(exercise => ({ kind: 'custom' as const, exercise })),
-      ...catalogue.map(exercise => ({ kind: 'catalogue' as const, exercise })),
-    ];
-    if (!favouriteIds.length) return list;
-    return [
-      ...list.filter(row => favouriteSet.has(row.exercise.id)),
-      ...list.filter(row => !favouriteSet.has(row.exercise.id)),
-    ];
-  }, [catalogue, customRows, favouriteIds, favouriteSet]);
-
-  const narrowed = term !== '' || bodyPart !== null || equipment !== null || favouritesOnly;
-  const activeFilters = (bodyPart ? 1 : 0) + (equipment ? 1 : 0) + (favouritesOnly ? 1 : 0);
-  const total = totalCatalogue + customRows.length;
+  const narrowed = term !== '' || bodyPart !== null || equipment !== null
+    || targetMuscle !== null || oneLimb || favouritesOnly;
+  const activeFilters = (bodyPart ? 1 : 0) + (equipment ? 1 : 0)
+    + (targetMuscle ? 1 : 0) + (oneLimb ? 1 : 0) + (favouritesOnly ? 1 : 0);
+  const total = result.total;
   const subtitle = `${CATALOGUE_COUNT} 个动画动作 + ${(profile.customEx ?? []).filter(Boolean).length} 个自建`;
-  const noFavourites = favouritesOnly && favouriteIds.length === 0;
+  const noFavourites = favouritesOnly && favouriteCount === 0;
 
   const clearFilters = () => {
     setQuery('');
     setBodyPart(null);
     setEquipment(null);
+    setTargetMuscle(null);
+    setOneLimb(false);
     setFavouritesOnly(false);
   };
 
@@ -173,6 +178,8 @@ export function ExerciseLibraryScreen({
   const clearFilterChips = () => {
     setBodyPart(null);
     setEquipment(null);
+    setTargetMuscle(null);
+    setOneLimb(false);
     setFavouritesOnly(false);
   };
 
@@ -336,6 +343,28 @@ export function ExerciseLibraryScreen({
             {equipmentName(equipment)}
           </Chip>
         ) : null}
+        {targetMuscle ? (
+          <Chip
+            icon="xmark"
+            onPress={() => setTargetMuscle(null)}
+            selected
+            testID="library-target-active"
+            tone="neutral"
+          >
+            {targetMuscleName(targetMuscle)}
+          </Chip>
+        ) : null}
+        {oneLimb ? (
+          <Chip
+            icon="xmark"
+            onPress={() => setOneLimb(false)}
+            selected
+            testID="library-one-limb-active"
+            tone="neutral"
+          >
+            仅单侧
+          </Chip>
+        ) : null}
       </ScrollView>
 
       <Card padded={false}>
@@ -386,21 +415,31 @@ export function ExerciseLibraryScreen({
         keyboardShouldPersistTaps="handled"
         keyExtractor={item => `${item.kind}-${item.exercise.id}`}
         ListEmptyComponent={(
-          <EmptyState
-            icon={noFavourites ? 'star' : 'magnifier'}
-            text={noFavourites
-              ? '点动作右侧的星标收藏动作，之后可以在这里快速找到。'
-              : '换个关键词，或者清除筛选后再试。'}
-            title={noFavourites ? '还没有收藏的动作' : '没有匹配的动作'}
-          >
-            {narrowed ? (
-              <Button onPress={clearFilters} variant="secondary">
-                清除筛选
-              </Button>
+          <View>
+            <EmptyState
+              icon={noFavourites ? 'star' : 'magnifier'}
+              text={noFavourites
+                ? '点动作右侧的星标收藏动作，之后可以在这里快速找到。'
+                : '换个关键词，或者清除筛选后再试。'}
+              title={noFavourites ? '还没有收藏的动作' : '没有匹配的动作'}
+            >
+              {narrowed ? (
+                <Button onPress={clearFilters} variant="secondary">
+                  清除筛选
+                </Button>
+              ) : null}
+            </EmptyState>
+            {suggestionRows.length > 0 ? (
+              <View style={{ gap: theme.space.sm, marginTop: theme.space.lg }}>
+                <SectionHeader title="你可能在找" />
+                {suggestionRows.map(row => (
+                  <View key={`${row.kind}-${row.exercise.id}`}>{rowView(row)}</View>
+                ))}
+              </View>
             ) : null}
-          </EmptyState>
+          </View>
         )}
-        ListFooterComponent={catalogue.length < totalCatalogue ? (
+        ListFooterComponent={result.items.length < result.total ? (
           <Button
             onPress={() => setLimit(value => value + SEARCH_LIMIT)}
             variant="secondary"
@@ -473,6 +512,56 @@ export function ExerciseLibraryScreen({
                   {bodyPartName(part)}
                 </Chip>
               ))}
+            </View>
+          </View>
+
+          <View>
+            <SectionHeader
+              action={targetMuscle ? (
+                <Button onPress={() => setTargetMuscle(null)} size="xs" variant="ghost">
+                  清除
+                </Button>
+              ) : undefined}
+              title="目标肌群"
+            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              <Chip onPress={() => setTargetMuscle(null)} selected={targetMuscle === null} size="sm" tone="neutral">
+                全部
+              </Chip>
+              {TARGET_MUSCLES.map(value => (
+                <Chip
+                  key={value}
+                  onPress={() => setTargetMuscle(targetMuscle === value ? null : value)}
+                  selected={targetMuscle === value}
+                  size="sm"
+                  testID={`library-filters-target-${value}`}
+                  tone="neutral"
+                >
+                  {targetMuscleName(value)}
+                </Chip>
+              ))}
+            </View>
+          </View>
+
+          <View>
+            <SectionHeader
+              action={oneLimb ? (
+                <Button onPress={() => setOneLimb(false)} size="xs" variant="ghost">
+                  清除
+                </Button>
+              ) : undefined}
+              title="单侧"
+            />
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              <Chip
+                onPress={() => setOneLimb(value => !value)}
+                selected={oneLimb}
+                size="sm"
+                testID="library-filters-one-limb"
+                tone="neutral"
+              >
+                仅单侧
+              </Chip>
             </View>
           </View>
 

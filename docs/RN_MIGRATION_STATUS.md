@@ -51,6 +51,7 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 
 - [ ] **动作收藏**。已实现，待验证收藏筛选、离线同步和账户隔离。2026-11-17 模拟器已验证 fixture 收藏星标、仅收藏筛选、取消收藏和详情页星标；配对同步和账户隔离待复验。[验收目标](rn-p2-training-library/06_EXERCISE_FAVORITES.md#验收目标)
 - [x] **动作演示**。已内置 5,632 个 180 px 静图和动画，并为每个动作生成中文介绍、目标肌群和中文步骤；详情页可播放/暂停，练习模式也能离线显示。2026-11-18 已补全全部 5,632 个动作的中文步骤（30,709 条），原有 1,324 组翻译保持不变；自定义媒体下载及真机解码待复验。[验收目标](rn-p2-training-library/07_EXERCISE_DEMOS.md#验收目标)
+- [ ] **常规动作检索**。已实现，设备部分验收通过，计划添加、账号别名和断网耗时待补。2026-11-20 已接入 Web 共享检索规则、已有别名、目标肌群/器械/单侧组合筛选和 Fuse.js 候选；`npm.cmd --prefix .\mobile-rn run check`、162 项前端回归和 Metro Android 导出通过。`openGymRnQa` / `emulator-5554`（Android 16）用 `agent-device` 验证中英文查询、`dumbell` 错字、背阔肌/绳索/单侧 8 条结果、`高位下啦` 3 条候选、训练添加和索引 `0` 替换；计划编辑、收藏分页、账号别名和断网待补。截图在 `mobile-rn/dist/ui/search-*.png`。[设计与执行](rn-exercise-search/DESIGN.md) · [验收记录](rn-exercise-search/ACCEPTANCE.md#模拟器验收2026-11-20)
 
 #### 进度与身体数据
 

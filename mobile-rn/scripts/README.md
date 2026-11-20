@@ -11,6 +11,15 @@ Prerequisites:
 - For `android-regression.ps1`, JDK 17 and Android SDK platform/build-tools 36, plus API
   dependencies installed with `npm.cmd ci` in `api/`.
 
+## fuse-suggestion-check.mjs
+
+```powershell
+node --no-warnings .\mobile-rn\scripts\fuse-suggestion-check.mjs
+```
+
+Calibrates the zero-result Fuse.js index against the catalogue without an emulator, Metro or a
+Debug APK. It checks the Chinese typo sample, the equipment-filtered pool and an unrelated query.
+
 ## Five-tab navigation map
 
 The current shell is 首页 / 计划 / 统计 / 动作库 plus the centre 开始 button. Settings moved to the

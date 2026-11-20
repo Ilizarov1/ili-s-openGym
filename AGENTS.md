@@ -65,6 +65,15 @@ docs/
   RN_UI_EXECUTION.md                     RN 设计系统实施、构建和模拟器验收
   RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
   RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
+  rn-exercise-search/
+    DESIGN.md                            RN 常规动作检索的范围、共享规则与验收契约
+    BASELINE.md                          入口、选择行为、分页基线和设备待验表
+    ACCEPTANCE.md                        自动化验收证据、构建结果和待设备项
+    01_ENTRY_BASELINE.md                 RN 搜索入口、选择行为和分页基线
+    02_REUSE_WEB_SEARCH.md               Web 基础检索复用、双端对齐和回归
+    03_EXISTING_ALIASES.md               已有用户别名读取、同步和工作区隔离
+    04_COMBINED_FILTERS.md               目标肌群、器械和单侧组合筛选
+    05_FUSE_SUGGESTIONS.md               Fuse.js 零结果候选和四入口集成验收
   nestjs-migration/
     DESIGN.md                            服务端 NestJS 迁移设计
     EXECUTION.md                         迁移执行、测试、验收和回滚方案

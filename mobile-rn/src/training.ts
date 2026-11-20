@@ -63,6 +63,12 @@ export type CustomExercise = {
   name?: string;
   bp?: string;
   eq?: string;
+  /** Target muscle slug; old records may not have one. */
+  tg?: string;
+  /** Exercise category, when the record carries one. */
+  cat?: string;
+  /** Extra searchable names, synchronized with Web. */
+  aliases?: string[];
   note?: string;
   desc?: string;
   /** A MediaRef synced from Web/capacitor (lib/media-refs.js): never the bytes themselves. */
@@ -197,6 +203,8 @@ export type Profile = {
   routines?: Routine[];
   workouts?: Workout[];
   customEx?: CustomExercise[];
+  /** Per-exercise text aliases edited in Web, keyed by exercise id. */
+  exAliases?: Record<string, unknown>;
   /** Favourite exercise ids (built-in or custom), shared with the Web client. */
   favEx?: string[];
   /** Estimate used by the 1RM card; unknown values fall back to Epley in Web and RN. */
