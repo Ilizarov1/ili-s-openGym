@@ -1,6 +1,6 @@
 # AI 动作检索（多模态）需求
 
-[Agent 运行环境](../agent-runtime/REQUIREMENTS.md) 的第一个业务消费者。状态为需求、交互与技术设计已修订，执行计划待写。
+[Agent 运行环境](../agent-runtime/REQUIREMENTS.md) 的第一个业务消费者。状态为需求、交互与技术设计已修订，[执行计划](EXECUTION.md) 已成文待执行。
 
 Web 与 RN Android 同批交付。本文记录交互契约、需求边界和编号验收条件；技术设计见 [DESIGN](DESIGN.md)。实施前置为 agent-runtime 基础设施按其[执行计划](../agent-runtime/EXECUTION.md)先行验收。
 
