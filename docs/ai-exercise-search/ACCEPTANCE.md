@@ -41,9 +41,9 @@
 | 5 Web | `npm.cmd test -- src/components/ExerciseAiSearch.test.jsx src/views/Library.test.jsx src/views/AgentSetup.test.jsx` | 62 pass / 0 fail | 2026-11-21 |
 | 5 Web 构建 | `npm.cmd run build` | 478 modules，Library/AgentSetup 独立 chunk | 2026-11-21 |
 | 6 RN 静态 | `npm.cmd run check` | lint 仅 2 条既有 warning；typecheck/design:check 通过 | 2026-11-21 |
-| 6 Metro | `npx.cmd expo export --platform android --output-dir .expo-ai-search-export` | `index-02513567f73b6640e54d766faffdeb24.hbc`，SHA-256 `664A717019610D333E1C7973BDBFC38FE39B13BD5B4AA0CAA1D1354B5579BDD2` | 2026-11-21 |
+| 6 Metro | `npx.cmd expo export --platform android --output-dir .expo-ai-search-export` | `index-b53c00c555e9c8bd0e57d3835fd33b11.hbc`，SHA-256 `C4FBCAE0C90105199A8538D545417D23726B0F8D89809D516930701C8BBAC746` | 2026-11-21 |
 | 6 RN 设备 | `emulator-5556`（openGymRnQa，Android 16） | A1 本机/服务端、A2、A3、A6、A8、A15 通过；截图见下 | 2026-11-21 |
-| 6 APK | `app-release.apk`；`apksigner verify`；`Get-FileHash` | v2 签名通过；SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001` | 2026-11-21 |
+| 6 APK | `app-release.apk`；`apksigner verify`；`Get-FileHash` | v2 签名通过；SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9` | 2026-11-21 |
 | 7 真实视觉 smoke | `test_pic/` 5 张；`smoke-go-2026-11-21.json` | 5/5 `completed`，9–15 秒，类别与期望一致；Go 端点 + `x-opencode-session` | 2026-11-21 |
 
 ## 验收对照
@@ -85,7 +85,7 @@ fixture 离线项与设备项分开标注。
 ## 设备记录
 
 - 设备：`emulator-5556` / `openGymRnQa`（Android 16，x86_64），`agent-device` 冷启动并声明。
-- APK：`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`，SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`；`apksigner verify` v2 通过；`dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`。
+- APK：`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`，SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9`；`apksigner verify` v2 通过；`dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`。
 - 本机 workspace：fixture 配置，A1 文字/纯图、A2、A3、A6、A8、A15 通过；证据 `evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`。
 - 服务端 workspace：临时 fixture API（`http://10.0.2.2:3000`）配对后 A1 文字 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端；证据 `device-pair-filled3.png`、`device-paired.png`、`device-ai-server.png`。
 - 设备验收后已 `agent-device close` 释放声明；模拟器保留。

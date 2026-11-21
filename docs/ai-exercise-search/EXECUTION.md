@@ -365,21 +365,21 @@
   - 文件：无源码新增。
   - 动作：`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check`；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export`。
   - 判据：全部通过；bundle 含共享任务与词表 JSON；无 Node 内建报错。
-  - 记录：2026-11-21 完成。`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check` 全部通过（lint 仅保留既有 `PlanScreen.tsx:205`、`StatsScreen.tsx:276` 的 array-index warnings，0 errors）；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export` 成功。bundle：`mobile-rn/.expo-ai-search-export/_expo/static/js/android/index-02513567f73b6640e54d766faffdeb24.hbc`（10,543,113 bytes），SHA-256 `664A717019610D333E1C7973BDBFC38FE39B13BD5B4AA0CAA1D1354B5579BDD2`；bundle 内已核对 `exercise-search.v1`、`agent_ai_images`、共享任务提示词与词表 slug（`stepmill machine`），无 Node 内建解析报错。
+  - 记录：2026-11-21 完成。`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check` 全部通过（lint 仅保留既有 `PlanScreen.tsx:205`、`StatsScreen.tsx:276` 的 array-index warnings，0 errors）；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export` 成功。bundle：`mobile-rn/.expo-ai-search-export/_expo/static/js/android/index-b53c00c555e9c8bd0e57d3835fd33b11.hbc`（10,543,112 bytes），SHA-256 `C4FBCAE0C90105199A8538D545417D23726B0F8D89809D516930701C8BBAC746`；bundle 内已核对 `exercise-search.v1`、`agent_ai_images`、共享任务提示词与词表 slug（`stepmill machine`），无 Node 内建解析报错。
 
 - [x] **6.13 设备验收**
   - 范围：模拟器上的双路径验收。
   - 文件：无源码新增。
   - 动作：按 [RN Android 工具与验收](../../.agents/skills/opengym-development/references/rn-android.md) 申请设备；安装 APK；fixture 配置下执行 A1（本机 + 服务端）、A2、A3、A6、A8、A14、A15；另验 A11（服务端禁用时本机入口仍在）。
   - 判据：设备记录含模拟器序列号、APK 哈希、截图与实际结果；A1/A6/A8/A15 全过。
-  - 记录：2026-11-21，`emulator-5556` / `openGymRnQa`（Android 16，x86_64），APK SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`。本机路径：A1 文字与纯图（相册照片）`completed`、A2 独占识别态与关键词清空、A3 候选/详情往返保持、A6 追问替换候选且轮次 5→4、A8 点 x 恢复快照并退出、A15 训练替换选择器选中候选后第一槽位由“杠铃卧推”变为“哑铃坐姿肩部推举”且 4 组保留。服务端路径：通过 `http://10.0.2.2:3000` 配对临时 fixture 实例后，A1 文字运行 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端且未回退本机。截图：`evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`、`device-ai-server.png`、`device-pair-filled3.png`、`device-paired.png`。A14 识别态重开与 A11 服务端禁用隐藏未做设备复验（Web 单测/API 用例覆盖），列为待验。
+  - 记录：2026-11-21，`emulator-5556` / `openGymRnQa`（Android 16，x86_64），APK SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9`。本机路径：A1 文字与纯图（相册照片）`completed`、A2 独占识别态与关键词清空、A3 候选/详情往返保持、A6 追问替换候选且轮次 5→4、A8 点 x 恢复快照并退出、A15 训练替换选择器选中候选后第一槽位由“杠铃卧推”变为“哑铃坐姿肩部推举”且 4 组保留。服务端路径：通过 `http://10.0.2.2:3000` 配对临时 fixture 实例后，A1 文字运行 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端且未回退本机。截图：`evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`、`device-ai-server.png`、`device-pair-filled3.png`、`device-paired.png`。A14 识别态重开与 A11 服务端禁用隐藏未做设备复验（Web 单测/API 用例覆盖），列为待验。
 
 - [x] **6.14 构建并验证 APK**
   - 范围：发布产物。
   - 文件：无源码新增。
   - 动作：`npx.cmd expo prebuild --platform android --no-install`；`.\android\gradlew.bat :app:assembleRelease`；`apksigner verify`；`Get-FileHash -Algorithm SHA256`。
   - 判据：签名通过；哈希写入验收记录。
-  - 记录：2026-11-21，`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`；`apksigner verify` 通过（APK Signature Scheme v2），包名 `dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`；SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`。
+  - 记录：2026-11-21，`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`；`apksigner verify` 通过（APK Signature Scheme v2），包名 `dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`；SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9`。
 
 ## 阶段 7 双端验收与交接
 
@@ -420,7 +420,7 @@
   - 文件：无。
   - 动作：按下表跑完整命令矩阵；记录 API 镜像、Web 构建、RN APK 的哈希。
   - 判据：全部通过或明确待验。
-  - 记录：2026-11-21：API 共享 51 pass、API 集成 13 pass、OpenAPI 5 pass、Web 匹配/识别态 76 pass、Web 选择器回归 59 pass、Web 构建成功、RN `npm.cmd run check` 与 `expo export` 成功、final APK v2 验签通过（SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`）。真实视觉模型 smoke 5/5 通过；RN 配对服务端隐藏设备项待验。
+  - 记录：2026-11-21：API 共享 51 pass、API 集成 13 pass、OpenAPI 5 pass、Web 匹配/识别态 76 pass、Web 选择器回归 59 pass、Web 构建成功、RN `npm.cmd run check` 与 `expo export` 成功、final APK v2 验签通过（SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9`）。真实视觉模型 smoke 5/5 通过；RN 配对服务端隐藏设备项待验。
 
 - [ ] **7.5 演练回退**
   - 范围：运行开关与数据保留。
