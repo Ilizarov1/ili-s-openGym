@@ -53,12 +53,12 @@
 
 - **运行记录**保存状态、执行位置、时间、耗时、配置和数据版本、校验后的结果或提案，以及错误码。完整 prompt、工具原始输出和临时媒体读取数据保持在运行内，终态后释放。运行记录保留至显式删除或未来定义的清理策略。
 - **会话**按作用域与会话 ID 保存用户可见消息。首期按消息顺序取最近记录并遵守任务预算。摘要如启用，作为可删除的会话派生记录；删除会话时一起删除摘要。运行开始时取得会话版本，删除会话后，仍在执行的任务不得把结果写回已删除的会话。
-- **长期记忆**保存 `id`、类别、值、来源、更新时间与版本。模型输出 `kind: 'memory'` 的提案，用户确认后写入；拒绝、过期或目标已变化时丢弃，确认只应用一次。按任务声明的类别筛选，优先取最近更新内容。编辑与删除影响下一次组装，已发送的请求保留其当时使用的版本。业务事实由原训练数据层提供。
+- **长期记忆**保存 `id`、类别、值、来源、更新时间与版本。模型输出 `kind: 'memory.save'` 的提案，用户确认后写入；拒绝、过期或目标已变化时丢弃，确认只应用一次。首期 `memory.save` 表示新建一条记录，因此没有业务目标版本；编辑/删除提案需要后续单独定义目标版本。按任务声明的类别筛选，优先取最近更新内容。编辑与删除影响下一次组装，已发送的请求保留其当时使用的版本。业务事实由原训练数据层提供。
 - RN 用 SQLite 保存 Agent 独立记录，按现有工作区键查询。服务端首期在现有持久化目录下按账号保存 Agent 数据，复用 [原子写入器](../../api/src/common/persistence/atomic-write.ts)，以账号为粒度串行执行读改写。服务端首期按单写入进程部署。记忆和运行记录归属执行环境。
 
 ## 6. 作业接口与运行状态（R6）
 
-RN 和 Web 调用面统一提供 `start`、`get`、`cancel`；Web 只走服务端。NestJS 在现有 API 路径前缀下提供 `POST /agent/runs`、`GET /agent/runs/:runId`、`POST /agent/runs/:runId/cancel`，以及 `GET/POST/PATCH/DELETE /agent/configs`、`GET/DELETE /agent/sessions`、`GET/POST/PATCH/DELETE /agent/memories`、`POST /agent/proposals/:proposalId/confirm` 和 `/reject`。服务端通过现有请求解析约定读取有界 JSON，并同步维护 OpenAPI。
+RN 和 Web 调用面统一提供 `start`、`get`、`cancel`；Web 只走服务端。NestJS 在现有 API 路径前缀下提供 `POST /agent/runs`、`GET /agent/runs/:runId`、`POST /agent/runs/:runId/cancel`，以及 `GET/POST /agent/configs`、`PATCH/DELETE /agent/configs/:profileId`、`GET /agent/sessions`、`GET/DELETE /agent/sessions/:sessionId`、`GET/POST /agent/memories`、`PATCH/DELETE /agent/memories/:memoryId`、`POST /agent/proposals/:proposalId/confirm` 和 `/reject`。服务端通过现有请求解析约定读取有界 JSON，并同步维护 OpenAPI。
 
 `accepted -> running -> completed | failed | cancelled | interrupted`。已接收且尚未执行的作业也可取消或标记中断。终态只写入一次，结果与完成状态原子提交。取消先提交状态再触发中止信号，模型或工具晚到时丢弃结果。作业终态和会话持久化分别校验对应对象的有效性。
 

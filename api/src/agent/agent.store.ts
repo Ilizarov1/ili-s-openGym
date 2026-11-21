@@ -47,13 +47,73 @@ function normalize(data: unknown): AgentAccountData {
   }
   // A structurally wrong document is corruption, not an empty account: this
   // read must never silently drop a run history or the request-dedup index.
-  const asRecord = (value: unknown, name: string): Record<string, never> => {
+  const asRecord = (value: unknown, name: string): Record<string, unknown> => {
     if (value === undefined) return {};
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new AgentError('agent_store_corrupt', `the agent document's ${name} is invalid`);
     }
-    return value as Record<string, never>;
+    return value as Record<string, unknown>;
   };
+  const asEntries = (value: unknown, name: string): Record<string, Record<string, unknown>> => {
+    const map = asRecord(value, name);
+    for (const [id, entry] of Object.entries(map)) {
+      if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        throw new AgentError('agent_store_corrupt', `the agent document's ${name}.${id} is invalid`);
+      }
+    }
+    return map as Record<string, Record<string, unknown>>;
+  };
+  const requireField = (entry: Record<string, unknown>, name: string, field: string, type: 'string' | 'number') => {
+    if (typeof entry[field] !== type) {
+      throw new AgentError('agent_store_corrupt', `the agent document's ${name} entry has no valid ${field}`);
+    }
+  };
+  const validateEntries = (
+    entries: Record<string, Record<string, unknown>>,
+    name: string,
+    check: (entry: Record<string, unknown>, id: string) => void,
+  ) => {
+    for (const [id, entry] of Object.entries(entries)) check(entry, id);
+    return entries;
+  };
+
+  const profiles = asEntries(raw.profiles, 'profiles');
+  validateEntries(profiles, 'profiles', entry => {
+    requireField(entry, 'profiles', 'id', 'string');
+    requireField(entry, 'profiles', 'provider', 'string');
+  });
+  const runs = asEntries(raw.runs, 'runs');
+  validateEntries(runs, 'runs', entry => {
+    requireField(entry, 'runs', 'runId', 'string');
+    requireField(entry, 'runs', 'status', 'string');
+  });
+  const requestIndex = asRecord(raw.requestIndex, 'requestIndex');
+  for (const [requestId, runId] of Object.entries(requestIndex)) {
+    if (typeof runId !== 'string') {
+      throw new AgentError('agent_store_corrupt', `the agent document's requestIndex.${requestId} is invalid`);
+    }
+  }
+  const sessions = asEntries(raw.sessions, 'sessions');
+  validateEntries(sessions, 'sessions', entry => {
+    requireField(entry, 'sessions', 'id', 'string');
+    if (entry.messages !== undefined && !Array.isArray(entry.messages)) {
+      throw new AgentError('agent_store_corrupt', "the agent document's session messages are invalid");
+    }
+  });
+  const memories = asEntries(raw.memories, 'memories');
+  validateEntries(memories, 'memories', entry => {
+    requireField(entry, 'memories', 'id', 'string');
+    requireField(entry, 'memories', 'category', 'string');
+  });
+  const proposals = asEntries(raw.proposals, 'proposals');
+  validateEntries(proposals, 'proposals', entry => {
+    requireField(entry, 'proposals', 'proposalId', 'string');
+    requireField(entry, 'proposals', 'status', 'string');
+    if (!Array.isArray(entry.changes)) {
+      throw new AgentError('agent_store_corrupt', "the agent document's proposal changes are invalid");
+    }
+  });
+
   const stub = raw.stub && typeof raw.stub === 'object' && !Array.isArray(raw.stub)
     ? (raw.stub as Record<string, unknown>)
     : null;
@@ -67,18 +127,24 @@ function normalize(data: unknown): AgentAccountData {
     || (typeof stub.facts !== 'object' || stub.facts === null || Array.isArray(stub.facts)))) {
     throw new AgentError('agent_store_corrupt', "the agent document's stub targets or facts are invalid");
   }
+  const targets = asEntries(stub?.targets, 'stub.targets');
+  validateEntries(targets, 'stub.targets', entry => {
+    requireField(entry, 'stub.targets', 'id', 'string');
+    requireField(entry, 'stub.targets', 'version', 'number');
+  });
+
   const base = emptyAgentData();
   return {
     schema: SCHEMA,
-    profiles: asRecord(raw.profiles, 'profiles'),
-    runs: asRecord(raw.runs, 'runs'),
-    requestIndex: asRecord(raw.requestIndex, 'requestIndex'),
-    sessions: asRecord(raw.sessions, 'sessions'),
-    memories: asRecord(raw.memories, 'memories'),
-    proposals: asRecord(raw.proposals, 'proposals'),
+    profiles: profiles as unknown as AgentAccountData['profiles'],
+    runs: runs as unknown as AgentAccountData['runs'],
+    requestIndex: requestIndex as AgentAccountData['requestIndex'],
+    sessions: sessions as unknown as AgentAccountData['sessions'],
+    memories: memories as unknown as AgentAccountData['memories'],
+    proposals: proposals as unknown as AgentAccountData['proposals'],
     stub: {
       targets: stub?.targets
-        ? { ...base.stub.targets, ...(stub.targets as Record<string, never>) }
+        ? { ...base.stub.targets, ...(targets as unknown as AgentAccountData['stub']['targets']) }
         : base.stub.targets,
       facts: stub?.facts
         ? { ...base.stub.facts, ...(stub.facts as Record<string, unknown>) }

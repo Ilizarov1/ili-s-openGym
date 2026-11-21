@@ -75,7 +75,7 @@
 - 真实供应商兼容性：首期只用 fixture 和可控 HTTP 替身验证，真实 OpenAI 兼容端点单独记录。
 - Docker 镜像：本机没有 `docker` 命令，`docker build` 未执行；`api/dist/agent-runtime/index.js` 已由构建脚本验证。
 - Windows 检出上的 12 条 API 和 26 条 Web 基线失败：与 CRLF 生成文件、路径分隔符、app icon 和文件权限断言有关，未在本需求范围内修改。
-- 评审整改（见 [REVIEW.md](REVIEW.md)）后的 RN 设备复验：模块级运行注册表、requestId 重试语义和 kv 版本联动已由静态检查与 Metro 打包覆盖，模拟器上的取消/提案复跑待下一轮设备验收一并执行。
+- 评审整改（见 [REVIEW.md](REVIEW.md) 和 [REVIEW2.md](REVIEW2.md)）后的 RN 设备复验：模块级运行注册表、requestId 重试语义、kv 版本联动、附件读取和记忆编辑已由静态检查与 Metro 打包覆盖，模拟器上的取消/提案/附件复跑待下一轮设备验收一并执行。
 
 ## 评审整改
 
@@ -95,3 +95,20 @@
 | `mobile-rn` | `npx.cmd expo export --platform android --output-dir .expo-agent-export` | `index-a2b568ac57c95eb848b11ac59a9f125f.hbc`，共享核心（含本轮修改）随包解析 |
 
 Windows 基线失败项与上一节记录一致，Agent 相关测试全部通过。
+
+## 第二轮评审整改
+
+2026-11-21，按 [REVIEW2.md](REVIEW2.md) 的 S1–S3、M1–M9 和 L1–L5 完成本轮修改。
+
+| 工作目录 | 命令 | 结果 |
+|---|---|---|
+| `api` | `npm.cmd run build` | `build: dist ready` |
+| `api` | `node --test test/agent-runtime.test.js test/agent-providers.test.js test/agent-portability.test.js test/agent-store.test.js test/agent-crypto.test.js` | 42 pass / 0 fail |
+| `api` | `npm.cmd run test:nest -- test/nest/agent.test.js` | 6 pass / 0 fail（新增生产 fixture gate、未完成 run 提案拒绝、超长输入 400） |
+| `api` | `node --test test/openapi-routes.test.js test/nest/routes.test.js` | 5 pass / 0 fail |
+| `frontend` | `npx vitest run src/agent/api.test.js src/views/Agent.test.jsx src/views/AgentSetup.test.jsx` | 19 pass / 0 fail |
+| `frontend` | `npm.cmd run build` | Vite 构建成功（既有 chunk/动态导入警告） |
+| `mobile-rn` | `npm.cmd run check` | lint（2 条既有 warning）、lint:rules、typecheck、design:check 全过 |
+| `mobile-rn` | `npx.cmd expo export --platform android --output-dir .expo-agent-export` | `index-f8e95166b38081b79b493a3f73410e7b.hbc` |
+
+本轮仍待设备复验：RN 附件（`photoUploads`）、记忆编辑、取消/提案和模块级活动运行表。B4 的 failed 分支、B5 的任务 memory budgets 仍只有代码检查/共享测试覆盖，已在 REVIEW2 标注。

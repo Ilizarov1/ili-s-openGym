@@ -110,5 +110,6 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [x] 共享核心：`api/agent-runtime/` 提供契约、schema、工具与提案围栏、状态机和 fixture/OpenAI 提供商，Metro 已加入解析目录。
 - [x] Android 设备验收：2026-11-20 `emulator-5560`（openGymRnQaWorker，Android 16）完成本机文本运行、提案确认、记忆保存/删除、会话写入和取消后晚到结果。
 - [x] APK 构建和签名哈希：`app-release.apk`，SHA-256 `E2B0CD6368F233D93C09189A0C626D5E43E07056CFFBA988959C0D37370B2FEC`，Debug 证书验签通过。
+- [x] 第二轮整改（2026-11-21）：requestId 完整身份键、模块级运行取消/恢复、附件从 `photoUploads` 读取、记忆编辑与类别校验、服务器禁用态；设备复验待下一轮。见 [agent-runtime/REVIEW2.md](agent-runtime/REVIEW2.md)。
 
 证据见 [agent-runtime/ACCEPTANCE.md](agent-runtime/ACCEPTANCE.md)。

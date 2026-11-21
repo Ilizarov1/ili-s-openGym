@@ -126,6 +126,17 @@ export function createProposalService(options) {
         return rejected;
       });
     },
+    /** Called by the orchestrator if cancellation lands during create(). */
+    discard(proposalId) {
+      return serialise(proposalId, async () => {
+        const proposal = await get(proposalId);
+        if (!proposal || proposal.status !== 'pending') return proposal || null;
+        const expired = { ...proposal, status: 'expired', rejectedAt: now() };
+        deepFreeze(expired);
+        await store.save(expired);
+        return expired;
+      });
+    },
   };
 }
 

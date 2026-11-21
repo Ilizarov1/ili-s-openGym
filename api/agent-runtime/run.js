@@ -9,6 +9,7 @@ import {
   withRunDefaults,
   validRequestId,
   validTaskId,
+  isMemoryCategory,
 } from './contracts.js';
 import {
   addEvidence,
@@ -278,38 +279,69 @@ export async function runAgent(options) {
       if (!proposals || typeof proposals.create !== 'function') {
         throw new AgentError('invalid_request', 'this task produced a proposal but no proposal service is configured');
       }
-      const targetId = candidate.targetId || candidate.objectId;
-      if (typeof targetId !== 'string' || !context.targetScope.has(targetId)) {
-        throw new AgentError('scope_denied', 'the proposal targets an object outside this task', {
-          details: { targetId },
-        });
+      const kind = String(candidate.kind || 'stub.write');
+      if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(kind)) {
+        throw new AgentError('invalid_request', 'the proposal kind is invalid', { details: { kind } });
       }
-      if (candidate.targetVersion === undefined) {
-        throw new AgentError('invalid_request', 'a proposal needs the target version it was generated from');
-      }
-      const known = [...context.evidence.values()].filter(item => item.objectId === targetId);
-      if (known.length) {
-        const versions = new Set(known.map(item => String(item.version)));
-        if (!versions.has(String(candidate.targetVersion))) {
-          throw new AgentError('fact_missing', 'the proposal version was not in this run', {
-            details: { targetId, targetVersion: candidate.targetVersion },
-          });
-        }
-      }
-      if (!Array.isArray(candidate.changes)) {
-        throw new AgentError('invalid_request', 'a proposal needs a changes array');
+      if (!Array.isArray(candidate.changes) || !candidate.changes.length) {
+        throw new AgentError('invalid_request', 'a proposal needs at least one change');
       }
       if (signal?.aborted || (state && !state.acceptResult())) {
         if (state && !state.isTerminal()) state.cancel('cancelled');
         return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
       }
-      proposal = await proposals.create({
-        runId: context.runId,
-        kind: String(candidate.kind || 'stub.write'),
-        changes: candidate.changes,
-        targetScope: [targetId],
-        targetVersion: candidate.targetVersion,
-      });
+
+      if (kind === 'memory' || kind === 'memory.save') {
+        const change = candidate.changes.length === 1 ? candidate.changes[0] : null;
+        if (!change || typeof change !== 'object' || Array.isArray(change)
+          || change.op !== 'save' || !isMemoryCategory(change.category) || change.value === undefined) {
+          throw new AgentError('invalid_request', 'the memory proposal changes are invalid');
+        }
+        proposal = await proposals.create({
+          runId: context.runId,
+          kind: 'memory.save',
+          changes: candidate.changes,
+          // A memory save is account/workspace scoped and has no business
+          // target version: it creates a new record after confirmation.
+          targetScope: [context.scope],
+        });
+      } else {
+        const targetId = candidate.targetId || candidate.objectId;
+        if (typeof targetId !== 'string' || !context.targetScope.has(targetId)) {
+          throw new AgentError('scope_denied', 'the proposal targets an object outside this task', {
+            details: { targetId },
+          });
+        }
+        if (candidate.targetVersion === undefined) {
+          throw new AgentError('invalid_request', 'a proposal needs the target version it was generated from');
+        }
+        const known = [...context.evidence.values()].filter(item => item.objectId === targetId);
+        if (known.length) {
+          const versions = new Set(known.map(item => String(item.version)));
+          if (!versions.has(String(candidate.targetVersion))) {
+            throw new AgentError('fact_missing', 'the proposal version was not in this run', {
+              details: { targetId, targetVersion: candidate.targetVersion },
+            });
+          }
+        }
+        proposal = await proposals.create({
+          runId: context.runId,
+          kind,
+          changes: candidate.changes,
+          targetScope: [targetId],
+          targetVersion: candidate.targetVersion,
+        });
+      }
+
+      // Cancellation can land while the proposal is being persisted. The
+      // proposal must not remain confirmable after the run has been cancelled.
+      if (signal?.aborted || (state && !state.acceptResult())) {
+        if (proposal && typeof proposals.discard === 'function') {
+          try { await proposals.discard(proposal.proposalId); } catch { /* terminal state still wins */ }
+        }
+        if (state && !state.isTerminal()) state.cancel('cancelled');
+        return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
+      }
     }
 
     const result = {

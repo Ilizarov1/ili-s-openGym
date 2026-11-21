@@ -51,6 +51,11 @@ describe('agent API', () => {
       method: 'PATCH',
       body: JSON.stringify({ model: 'gpt' }),
     })
+    await agentApi.updateMemory('mem_1', { value: 'new' })
+    expect(mocks.api).toHaveBeenCalledWith('/api/agent/memories/mem_1', {
+      method: 'PATCH',
+      body: JSON.stringify({ value: 'new' }),
+    })
   })
 
   it('lists sessions and memories by their arrays', async () => {

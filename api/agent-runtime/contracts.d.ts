@@ -235,6 +235,8 @@ export interface ProposalService {
   get(proposalId: string): Promise<Proposal | null>;
   confirm(proposalId: string): Promise<{ proposal: Proposal; result: unknown; applied: boolean }>;
   reject(proposalId: string): Promise<Proposal>;
+  /** Called by the orchestrator when a run is cancelled while a proposal is being saved. */
+  discard?(proposalId: string): Promise<unknown>;
 }
 
 export interface RunState {

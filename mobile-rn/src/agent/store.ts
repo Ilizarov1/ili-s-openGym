@@ -28,8 +28,8 @@ function database(): SQLiteDatabase {
       CREATE TABLE IF NOT EXISTS agent_runs (
         scope TEXT NOT NULL, runId TEXT NOT NULL, requestId TEXT NOT NULL, requestHash TEXT NOT NULL,
         taskId TEXT NOT NULL, profileId TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL,
-        startedAt INTEGER, finishedAt INTEGER, durationMs INTEGER, dataVersion TEXT, sessionId TEXT,
-        result TEXT, proposalId TEXT, error TEXT, PRIMARY KEY (scope, runId)
+        startedAt INTEGER, finishedAt INTEGER, durationMs INTEGER, execution TEXT,
+        dataVersion TEXT, sessionId TEXT, result TEXT, proposalId TEXT, error TEXT, PRIMARY KEY (scope, runId)
       );
       CREATE TABLE IF NOT EXISTS agent_request_index (
         scope TEXT NOT NULL, requestId TEXT NOT NULL, runId TEXT NOT NULL, hash TEXT NOT NULL,
@@ -59,6 +59,12 @@ function database(): SQLiteDatabase {
         scope TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (scope, key)
       );
     `);
+    // The first agent schema predates the execution column; keep existing
+    // device databases readable instead of asking the user to start over.
+    const runColumns = opened.getAllSync<{ name: string }>('PRAGMA table_info(agent_runs)');
+    if (!runColumns.some(column => column.name === 'execution')) {
+      opened.execSync('ALTER TABLE agent_runs ADD COLUMN execution TEXT');
+    }
     db = opened;
   }
   return db;
@@ -97,6 +103,7 @@ function runRow(row: Record<string, unknown>): AgentRunRow {
     ...(row.startedAt == null ? {} : { startedAt: Number(row.startedAt) }),
     ...(row.finishedAt == null ? {} : { finishedAt: Number(row.finishedAt) }),
     ...(row.durationMs == null ? {} : { durationMs: Number(row.durationMs) }),
+    ...(row.execution === 'server' ? { execution: 'server' as const } : row.execution === 'local' ? { execution: 'local' as const } : {}),
     ...(row.dataVersion == null ? {} : { dataVersion: String(row.dataVersion) }),
     ...(row.sessionId ? { sessionId: String(row.sessionId) } : {}),
     ...(row.result ? { result: parse<unknown>(String(row.result)) } : {}),
@@ -120,6 +127,7 @@ function sessionRow(row: Record<string, unknown>): AgentSessionRow {
 function memoryRow(row: Record<string, unknown>): AgentMemory {
   return {
     id: String(row.id),
+    ...(row.scope ? { scope: String(row.scope) } : {}),
     category: String(row.category),
     value: parse<unknown>(String(row.value)),
     ...(row.source ? { source: String(row.source) } : {}),
@@ -193,6 +201,22 @@ export class AgentStore {
     return row ? runRow(row) : null;
   }
 
+  /** The retry pre-check, before any profile, session or attachment work. */
+  findRun(scope: string, requestId: string, requestHash: string): AgentRunRow | null {
+    const known = this.db.getFirstSync<Record<string, unknown>>(
+      'SELECT * FROM agent_request_index WHERE scope = ? AND requestId = ?', scope, requestId,
+    );
+    if (!known) return null;
+    const existing = this.getRun(scope, String(known.runId));
+    if (!existing) return null;
+    if (existing.requestHash !== requestHash) {
+      throw new AgentError('request_conflict', 'this request id was already used with different input', {
+        details: { requestId, runId: existing.runId },
+      });
+    }
+    return existing;
+  }
+
   beginRun(run: AgentRunRow): RunBegin {
     let answer: RunBegin | null = null;
     this.db.withTransactionSync(() => {
@@ -226,11 +250,11 @@ export class AgentStore {
   private insertRun(run: AgentRunRow): void {
     this.db.runSync(
       `INSERT OR REPLACE INTO agent_runs
-       (scope,runId,requestId,requestHash,taskId,profileId,status,createdAt,startedAt,finishedAt,durationMs,
+       (scope,runId,requestId,requestHash,taskId,profileId,status,createdAt,startedAt,finishedAt,durationMs,execution,
         dataVersion,sessionId,result,proposalId,error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       run.scope, run.runId, run.requestId, run.requestHash, run.taskId, run.profileId, run.status,
-      run.createdAt, run.startedAt ?? null, run.finishedAt ?? null, run.durationMs ?? null,
+      run.createdAt, run.startedAt ?? null, run.finishedAt ?? null, run.durationMs ?? null, run.execution ?? null,
       run.dataVersion == null ? null : String(run.dataVersion), run.sessionId ?? null,
       run.result === undefined ? null : JSON.stringify(run.result), run.proposalId ?? null,
       run.error ? JSON.stringify(run.error) : null,
@@ -267,7 +291,23 @@ export class AgentStore {
          WHERE scope = ? AND (status = 'accepted' OR status = 'running')`,
         at, at, error, scope,
       );
+    // A proposal saved just before the process died cannot outlive its run.
+    this.db.runSync(
+      `UPDATE agent_proposals SET status = 'expired', rejectedAt = ?
+       WHERE scope = ? AND status = 'pending'
+       AND runId IN (SELECT runId FROM agent_runs WHERE scope = ? AND status = 'interrupted')`,
+      at, scope, scope,
+    );
     return result.changes;
+  }
+
+  /** Drop pending proposals of a run that has just been cancelled. */
+  expireProposalsForRun(scope: string, runId: string): number {
+    return this.db.runSync(
+      `UPDATE agent_proposals SET status = 'expired', rejectedAt = ?
+       WHERE scope = ? AND runId = ? AND status = 'pending'`,
+      Date.now(), scope, runId,
+    ).changes;
   }
 
   /* -------------------------------------------------------------- sessions */
@@ -436,6 +476,9 @@ export class AgentStore {
         throw new AgentError('proposal_consumed', 'this proposal can no longer be applied', {
           details: { proposalId, status: proposal.status },
         });
+      }
+      if (!Array.isArray(proposal.changes) || !proposal.changes.length) {
+        throw new AgentError('invalid_request', 'a proposal needs at least one change');
       }
       const result = apply(proposal);
       const consumed: AgentProposalRow = { ...proposal, status: 'consumed', result, consumedAt: Date.now() };

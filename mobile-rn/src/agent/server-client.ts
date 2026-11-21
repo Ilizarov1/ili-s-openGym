@@ -66,10 +66,27 @@ export function createServerAgent(connection: Connection) {
 
     memories: () => request<{ memories: AgentMemory[] }>(connection, '/memories').then(data => data.memories || []),
     saveMemory: (input: { category: string; value: unknown; source?: string }) => request<AgentMemory>(connection, '/memories', 'POST', input),
+    updateMemory: (id: string, input: { category?: string; value?: unknown; source?: string }) => request<AgentMemory>(connection, `/memories/${encodeURIComponent(id)}`, 'PATCH', input),
     deleteMemory: (id: string) => request<{ ok: boolean }>(connection, `/memories/${encodeURIComponent(id)}`, 'DELETE'),
 
     confirmProposal: (id: string) => request<{ proposal: AgentProposal; result: unknown; applied: boolean }>(connection, `/proposals/${encodeURIComponent(id)}/confirm`, 'POST'),
     rejectProposal: (id: string) => request<AgentProposal>(connection, `/proposals/${encodeURIComponent(id)}/reject`, 'POST'),
+
+    async status(): Promise<{ enabled: boolean }> {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20_000);
+      try {
+        const response = await fetch(`${connection.server}/api/config`, {
+          signal: controller.signal,
+          headers: { Accept: 'application/json', Authorization: `Bearer ${connection.token}` },
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const data = await response.json() as { agent?: { enabled?: boolean } };
+        return { enabled: data.agent?.enabled !== false };
+      } finally {
+        clearTimeout(timer);
+      }
+    },
 
     async pollRun(runId: string, onRun: (run: AgentRunRow) => void, signal?: AbortSignal): Promise<AgentRunRow> {
       for (;;) {

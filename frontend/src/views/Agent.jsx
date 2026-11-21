@@ -11,6 +11,12 @@ import '../agent/agent.css'
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
 const CATEGORIES = ['preference', 'goal', 'constraint', 'note']
 
+const parseMemoryValue = text => {
+  const value = String(text || '').trim()
+  if (!/^[[{]/.test(value)) return value
+  try { return JSON.parse(value) } catch { return value }
+}
+
 const statusLabel = status => ({
   accepted: t('Queued'),
   running: t('Running'),
@@ -43,6 +49,8 @@ export default function Agent() {
   const deleteMemory = useAgent(s => s.deleteMemory)
   const deleteSession = useAgent(s => s.deleteSession)
   const clearError = useAgent(s => s.clearError)
+  const ensureOwner = useAgent(s => s.ensureOwner)
+  const ownerId = useAgent(s => s.ownerId)
 
   const [prompt, setPrompt] = useState('')
   const [profileId, setProfileId] = useState('')
@@ -52,10 +60,22 @@ export default function Agent() {
   const [handledProposal, setHandledProposal] = useState(null)
   const [memoryCategory, setMemoryCategory] = useState('preference')
   const [memoryValue, setMemoryValue] = useState('')
-  const requestRef = useRef({ prompt: '', id: '' })
+  const [editingMemory, setEditingMemory] = useState(null)
+  const requestRef = useRef({ key: '', id: '' })
   const enabled = config?.agent?.enabled !== false
 
   const newRequestId = () => globalThis.crypto?.randomUUID?.() || `req_${Date.now()}_${Math.random().toString(36).slice(2)}`
+  const requestKey = body => JSON.stringify({
+    profileId: body.profileId,
+    sessionId: body.sessionId,
+    input: body.input,
+    attachmentIds: body.attachmentIds,
+  })
+
+  useEffect(() => {
+    if (!user) return
+    ensureOwner(user.id)
+  }, [user, ensureOwner])
 
   useEffect(() => {
     if (!user) return
@@ -92,10 +112,15 @@ export default function Agent() {
   // submission is still open (or its response was lost), the id is reused so
   // the server deduplicates instead of running the model twice.
   useEffect(() => {
-    if (runStatus && TERMINAL.has(runStatus)) requestRef.current = { prompt: '', id: '' }
+    if (runStatus && TERMINAL.has(runStatus)) requestRef.current = { key: '', id: '' }
   }, [runStatus])
 
   if (!user) return null
+  if (ownerId !== user.id) {
+    // The page resets the previous account's state in an effect; do not paint
+    // its run, conversations or memories in the meantime.
+    return <div className="agent-page"><p className="agent-note">{t('Loading…')}</p></div>
+  }
 
   const submit = async (body) => {
     clearError()
@@ -107,12 +132,14 @@ export default function Agent() {
   const onRun = async () => {
     const text = prompt.trim()
     if (!text || !profileId) return
-    let id = requestRef.current.prompt === text ? requestRef.current.id : ''
+    const body = { requestId: '', profileId, sessionId, input: { prompt: text } }
+    const key = requestKey(body)
+    let id = requestRef.current.key === key ? requestRef.current.id : ''
     if (!id) {
       id = newRequestId()
-      requestRef.current = { prompt: text, id }
+      requestRef.current = { key, id }
     }
-    const body = { requestId: id, profileId, sessionId, input: { prompt: text } }
+    body.requestId = id
     setLastBody(body)
     await submit(body)
   }
@@ -122,7 +149,7 @@ export default function Agent() {
     // An explicit retry of a failed or cancelled run is a new attempt, so it
     // needs a new request id; the server would otherwise return the old job.
     const id = newRequestId()
-    requestRef.current = { prompt: lastBody.input.prompt, id }
+    requestRef.current = { key: requestKey(lastBody), id }
     void submit({ ...lastBody, requestId: id })
   }
 
@@ -159,7 +186,7 @@ export default function Agent() {
           <textarea className="agent-textarea" value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t('Ask the agent, or describe a change to prepare.')} disabled={!enabled} />
           <div className="agent-actions" style={{ marginTop: 12 }}>
             <button type="button" className="btn tinted" onClick={onRun} disabled={!canRun}>{loading ? t('Starting…') : t('Start run')}</button>
-            <button type="button" className="btn" onClick={() => { setSessionId(`ses_${globalThis.crypto?.randomUUID?.() || Date.now()}`); setConfirmResult(null); requestRef.current = { prompt: '', id: '' } }}>{t('New conversation')}</button>
+            <button type="button" className="btn" onClick={() => { setSessionId(`ses_${globalThis.crypto?.randomUUID?.() || Date.now()}`); setConfirmResult(null); requestRef.current = { key: '', id: '' } }}>{t('New conversation')}</button>
             {activeRun && !TERMINAL.has(activeRun.status) ? <button type="button" className="btn" onClick={() => { void cancelRun(activeRun.runId) }}>{t('Cancel')}</button> : null}
             {lastBody && activeRun && TERMINAL.has(activeRun.status) && activeRun.status !== 'completed' ? <button type="button" className="btn" onClick={onRetry}>{t('Retry')}</button> : null}
           </div>
@@ -210,9 +237,13 @@ export default function Agent() {
               <div className="agent-row-sub">{t('{0} messages', session.messageCount)} · {new Date(session.updatedAt).toLocaleString()}</div>
             </div>
             <button type="button" className="btn xs" onClick={async () => {
-              const detail = await agentApi.getSession(session.id)
-              setSessionId(session.id)
-              setPrompt((detail.messages || []).map(message => `${message.role}: ${message.content}`).join('\n') || '')
+              try {
+                const detail = await agentApi.getSession(session.id)
+                setSessionId(session.id)
+                setPrompt((detail.messages || []).map(message => `${message.role}: ${message.content}`).join('\n') || '')
+              } catch (failure) {
+                toast(failure.message || t('Could not load the conversation'))
+              }
             }}>{t('Load')}</button>
             <button type="button" className="btn xs" onClick={() => { void deleteSession(session.id) }}>{t('Delete')}</button>
           </div>) : <p className="agent-note">{t('No conversations yet.')}</p>}
@@ -233,20 +264,34 @@ export default function Agent() {
             <label htmlFor="agent-memory-value">{t('Value')}</label>
             <input id="agent-memory-value" value={memoryValue} onChange={event => setMemoryValue(event.target.value)} placeholder={t('e.g. I train in the morning')} />
           </div>
-          <button type="button" className="btn tinted sm" disabled={!memoryValue.trim()} onClick={async () => {
-            try {
-              await agentApi.saveMemory({ category: memoryCategory, value: memoryValue.trim(), source: 'user' })
+          <div className="agent-actions">
+            <button type="button" className="btn tinted sm" disabled={!memoryValue.trim()} onClick={async () => {
+              try {
+                const body = { category: memoryCategory, value: parseMemoryValue(memoryValue), source: 'user' }
+                if (editingMemory) await agentApi.updateMemory(editingMemory.id, body)
+                else await agentApi.saveMemory(body)
+                setMemoryValue('')
+                setEditingMemory(null)
+                await loadMemories()
+              } catch (failure) {
+                toast(failure.message || t('Could not save'))
+              }
+            }}>{editingMemory ? t('Update memory') : t('Save memory')}</button>
+            {editingMemory ? <button type="button" className="btn sm" onClick={() => {
+              setEditingMemory(null)
               setMemoryValue('')
-              await loadMemories()
-            } catch (failure) {
-              toast(failure.message || t('Could not save'))
-            }
-          }}>{t('Save memory')}</button>
+            }}>{t('Cancel')}</button> : null}
+          </div>
           {memories.length ? memories.map(memory => <div className="agent-row" key={memory.id}>
             <div className="agent-row-main">
               <div className="agent-row-title">{t(memory.category)}</div>
               <div className="agent-row-sub">{typeof memory.value === 'string' ? memory.value : JSON.stringify(memory.value)}</div>
             </div>
+            <button type="button" className="btn xs" onClick={() => {
+              setEditingMemory(memory)
+              setMemoryCategory(memory.category)
+              setMemoryValue(typeof memory.value === 'string' ? memory.value : JSON.stringify(memory.value))
+            }}>{t('Edit')}</button>
             <button type="button" className="btn xs" onClick={() => { void deleteMemory(memory.id) }}>{t('Delete')}</button>
           </div>) : <p className="agent-note" style={{ marginTop: 10 }}>{t('No memories saved.')}</p>}
         </section>

@@ -28,7 +28,7 @@
 | API | `api/src/agent/agent.types.ts`、`agent.store.ts`、`agent-crypto.ts`、`agent-config.store.ts`、`agent-run.store.ts`、`agent-session.store.ts`、`agent-memory.store.ts`、`agent-proposal.store.ts`、`agent-gateway.ts`、`agent.service.ts`、`agent.flags.ts`、`agent.module.ts`；`api/src/agent/tasks/stub-task.ts`、`tools/stub-tools.ts`、`agent-proposal.adapter.ts`、`agent-media.ts`；`agent-runs.controller.ts`、`agent-configs.controller.ts`、`agent-sessions.controller.ts`、`agent-memories.controller.ts`、`agent-proposals.controller.ts` | `api/src/common/persistence/paths.ts`、`api/src/app.module.ts`、`api/src/system/system.controller.ts`、`api/openapi.yaml`、`scripts/build-api-docs.mjs`、`.env.example` |
 | API 测试 | `api/test/agent-runtime.test.js`、`agent-providers.test.js`、`agent-portability.test.js`、`agent-fixtures.mjs`、`api/test/nest/agent.test.js` | 无 |
 | Web | `frontend/src/agent/api.js`、`store.js`、`api.test.js`；`frontend/src/views/Agent.jsx`、`AgentSetup.jsx`、`Agent.test.jsx`、`AgentSetup.test.jsx` | `frontend/src/App.jsx`、`frontend/src/views/settings-pages.js`、`frontend/src/views/Settings.jsx`、`frontend/src/locales/*.js`（按需） |
-| RN | `mobile-rn/src/agent/types.ts`、`store.ts`、`config.ts`、`gateway.ts`、`media.ts`、`tasks.ts`、`tools.ts`、`runtime.ts`、`server-client.ts`、`recovery.ts`、`index.ts`；`mobile-rn/src/screens/AgentScreen.tsx`、`AgentProfileScreen.tsx` | `mobile-rn/src/storage.ts`、`mobile-rn/src/screens/index.ts`、`mobile-rn/src/screens/SettingsScreen.tsx`、`mobile-rn/App.tsx` |
+| RN | `mobile-rn/src/agent/types.ts`、`store.ts`、`config.ts`、`gateway.ts`、`media.ts`、`tasks.ts`、`runtime.ts`、`server-client.ts`、`recovery.ts`、`index.ts`；`mobile-rn/src/screens/AgentScreen.tsx`、`AgentProfileScreen.tsx` | `mobile-rn/src/storage.ts`、`mobile-rn/src/screens/index.ts`、`mobile-rn/src/screens/SettingsScreen.tsx`、`mobile-rn/App.tsx` |
 | 文档 | `docs/agent-runtime/ACCEPTANCE.md` | `docs/agent-runtime/EXECUTION.md`、`DESIGN.md`、`REQUIREMENTS.md`、`docs/README.md`、`docs/RN_MIGRATION_STATUS.md`、`AGENTS.md`、`docs/SELF_HOSTING.md` |
 
 ## 阶段 0 基线与决策
@@ -187,7 +187,7 @@ node -e "import('./dist/agent-runtime/index.js').then(m => console.log(Object.ke
   - 文件：`api/src/common/persistence/paths.ts`
   - 动作：增加 `agentFile(uid)`，返回 `data/agent-<uid>.json`；沿用 `safeUid`。
   - 判据：单元测试得到预期路径。
-  - 记录：`Paths.agentFile(uid)` 返回 `data/agent-<uid>.json`。
+  - 记录：`Paths.agentFile(uid)` 返回 `data/agent-<uid>.json`，路径与 `safeUid` 由 `api/test/agent-store.test.js` 覆盖。
 
 - [x] **2.2 定义服务端存储类型**
   - 文件：`api/src/agent/agent.types.ts`（新）
@@ -417,7 +417,7 @@ npm.cmd run build
   - 文件：`mobile-rn/src/agent/media.ts`（新）
   - 动作：用 `expo-file-system` 读取已登记图片；校验 MIME/大小；转 base64 data URL；只把元数据写日志。
   - 判据：1×1 图片作为图像输入；超限返回错误。
-  - 记录：`media.ts` 读取已登记文件、校验魔数和 2 MiB 上限。
+  - 记录：`media.ts` 读取已登记文件、校验魔数和 2 MiB 上限；`runtime.ts` 从当前工作区的 `photoUploads` 解析 `attachmentIds` 并写入 `context.meta.attachments`。
 
 - [x] **4.7 定义 RN 桩任务**
   - 文件：`mobile-rn/src/agent/tasks.ts`（新）
@@ -459,7 +459,7 @@ npm.cmd run build
   - 文件：`mobile-rn/src/screens/AgentScreen.tsx`（新）
   - 动作：本机/服务端切换；配置选择；prompt；启动/取消；状态、结果、提案确认/拒绝、会话和记忆列表；新任务用共享 `createId` 生成 `requestId`，重试沿用；复用 `Screen`、`Header`、`Card`、`ListRow`、`Button`、`Text`。
   - 判据：A1/A4/A5 的 RN 路径可操作。
-  - 记录：`AgentScreen.tsx` 本机/服务端、配置、运行、取消、提案、会话和记忆。
+  - 记录：`AgentScreen.tsx` 本机/服务端、配置、运行、取消、提案、会话和记忆；第二轮补充固定记忆类别、编辑/更新和服务器禁用态。
 
 - [x] **4.14 实现 RN 配置页**
   - 文件：`mobile-rn/src/screens/AgentProfileScreen.tsx`（新）

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import {
   AgentError,
   createFixtureProvider,
@@ -74,6 +75,48 @@ test('the HTTP client caps a response and reports a timeout', async () => {
     never('https://example.test', {}, { timeoutMs: 10 }),
     error => error.code === 'model_timeout',
   );
+});
+
+test('the HTTP client timeout also covers a stalled response body', async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.write('{"a":');
+    setTimeout(() => res.end('1}'), 200);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const request = createHttpClient();
+  const started = Date.now();
+  try {
+    await assert.rejects(
+      request(`http://127.0.0.1:${port}/`, {}, { timeoutMs: 25 }),
+      error => error instanceof AgentError && error.code === 'model_timeout',
+    );
+    assert.ok(Date.now() - started < 200, 'the body read must not outlive the timeout');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test('cancellation also covers a stalled response body', async () => {
+  const server = http.createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.write('{"a":');
+    setTimeout(() => res.end('1}'), 200);
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  const request = createHttpClient();
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), 25);
+  try {
+    await assert.rejects(
+      request(`http://127.0.0.1:${port}/`, {}, { timeoutMs: 5000, signal: controller.signal }),
+      error => error instanceof AgentError && error.code === 'run_cancelled',
+    );
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('an already-cancelled run does not send its request', async () => {

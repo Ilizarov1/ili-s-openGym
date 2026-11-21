@@ -14,8 +14,12 @@ export class AgentProposalAdapter {
   constructor(private readonly memories: AgentMemoryStore) {}
 
   apply(data: AgentAccountData, proposal: AgentProposal): unknown {
+    if (!Array.isArray(proposal.changes) || !proposal.changes.length) {
+      throw new AgentError('invalid_request', 'a proposal needs at least one change');
+    }
     if (proposal.kind === 'memory.save') {
-      return this.memories.applyInData(data, proposal);
+      const { scope: _scope, ...memory } = this.memories.applyInData(data, proposal);
+      return memory;
     }
     if (proposal.kind !== 'stub.write') {
       throw new AgentError('invalid_request', `unknown proposal kind: ${proposal.kind}`);

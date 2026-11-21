@@ -107,13 +107,21 @@ export class AgentRunStore {
     return this.store.update(uid, data => {
       let count = 0;
       const at = Date.now();
+      const interrupted = new Set<string>();
       for (const run of Object.values(data.runs)) {
         if (run.status !== 'accepted' && run.status !== 'running') continue;
         run.status = 'interrupted';
         run.finishedAt = at;
         run.durationMs = Math.max(0, at - (run.startedAt || run.createdAt || at));
         run.error = { code: 'run_interrupted', message: 'the server restarted before the run finished' };
+        interrupted.add(run.runId);
         count++;
+      }
+      // A proposal saved just before the crash cannot outlive its interrupted run.
+      for (const proposal of Object.values(data.proposals)) {
+        if (!interrupted.has(proposal.runId || '') || proposal.status !== 'pending') continue;
+        proposal.status = 'expired';
+        proposal.rejectedAt = at;
       }
       return count;
     });

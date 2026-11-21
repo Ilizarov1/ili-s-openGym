@@ -65,7 +65,7 @@ beforeEach(() => {
       capabilities: { text: true, image: true, tools: true }, keyHint: '1234', version: 2, label: 'OpenAI', available: true,
     },
   ]
-  useAgent.setState({ profiles: [], loading: false, error: null })
+  useAgent.setState({ ownerId: mocks.USER.id, profiles: [], loading: false, error: null })
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)

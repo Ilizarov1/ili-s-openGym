@@ -8,6 +8,7 @@ let pollTimer = null
 const errorText = error => (error && error.message) || 'The agent request failed.'
 
 export const useAgent = create((set, get) => ({
+  ownerId: null,
   profiles: [],
   activeRun: null,
   sessions: [],
@@ -47,6 +48,19 @@ export const useAgent = create((set, get) => ({
 
   setRun(run) {
     set({ activeRun: run || null })
+  },
+
+  /** Account-bound state must not survive a sign-out on a shared browser. */
+  reset() {
+    get().stopPolling()
+    set({ profiles: [], activeRun: null, sessions: [], memories: [], loading: false, error: null })
+  },
+
+  /** The first page mounted after a sign-in owns the store for that account. */
+  ensureOwner(userId) {
+    if (!userId || get().ownerId === userId) return
+    get().reset()
+    set({ ownerId: userId })
   },
 
   async startRun(body) {

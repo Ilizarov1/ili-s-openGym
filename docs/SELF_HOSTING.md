@@ -808,6 +808,10 @@ encrypted with a key derived from `data/secret`; restore the agent files and `da
 together or the key has to be entered again. The phone's local agent data is in its private
 `opengym-agent.db` and its key is in the device secure store. `AGENT_RUNTIME_DISABLED=1` is the
 rollback switch: it answers `503 agent_disabled` on `/api/agent/*` and keeps all agent data.
+The fixture model provider and `fixture:image` attachments are enabled only when
+`NODE_ENV` is not `production`; set `AGENT_FIXTURE_PROVIDER=0` to remove them on a
+bare-metal or development install as well. The official image already sets
+`NODE_ENV=production`.
 
 ## 7. Notifications
 

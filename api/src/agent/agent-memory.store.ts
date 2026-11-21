@@ -25,6 +25,8 @@ export class AgentMemoryStore {
 
   async list(uid: string): Promise<AgentMemory[]> {
     return Object.values(this.store.read(uid).memories)
+      // Records written before scopes were stored still belong to this account.
+      .map(memory => (memory.scope ? memory : { ...memory, scope: uid }))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }
 
@@ -37,6 +39,7 @@ export class AgentMemoryStore {
       const at = Date.now();
       const memory: AgentMemory = {
         id: crypto.randomUUID(),
+        scope: uid,
         category: category as AgentMemory['category'],
         value: body.value,
         ...(typeof body.source === 'string' && body.source ? { source: body.source.slice(0, 200) } : {}),
@@ -58,6 +61,7 @@ export class AgentMemoryStore {
       if (body.value !== undefined) assertValue(body.value);
       const next: AgentMemory = {
         ...current,
+        scope: current.scope || uid,
         category: category as AgentMemory['category'],
         ...(body.value === undefined ? {} : { value: body.value }),
         ...(typeof body.source === 'string' ? { source: body.source.slice(0, 200) } : {}),
@@ -85,9 +89,12 @@ export class AgentMemoryStore {
     }
     if (change.value === undefined) throw new AgentError('invalid_request', 'the memory proposal has no value');
     assertValue(change.value);
+    const scope = Array.isArray(proposal.targetScope) ? String(proposal.targetScope[0] || '') : '';
+    if (!scope) throw new AgentError('scope_denied', 'the memory proposal has no scope');
     const at = Date.now();
     const memory: AgentMemory = {
       id: crypto.randomUUID(),
+      scope,
       category: change.category as AgentMemory['category'],
       value: change.value,
       ...(typeof change.source === 'string' && change.source ? { source: change.source.slice(0, 200) } : {}),

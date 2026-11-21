@@ -6,6 +6,7 @@ import {
   addEvidence,
   resolveEvidence,
   trimContext,
+  contextChars,
   createDispatcher,
   createToolRegistry,
   createProposalService,
@@ -145,6 +146,37 @@ test('trimContext keeps instructions, input and facts, and trims optional histor
 
   assert.throws(
     () => trimContext({ ...input, facts: [{ evidenceId: 'e', content: 'x'.repeat(5000) }] }, { contextChars: 200 }),
+    error => error instanceof AgentError && error.code === 'context_budget_exceeded',
+  );
+});
+
+test('image payloads use the media budget, not the text context budget', () => {
+  const input = {
+    instructions: 'system',
+    user: {
+      text: 'look',
+      attachments: [{
+        id: 'img_1',
+        kind: 'image',
+        mime: 'image/png',
+        name: 'large.png',
+        size: 512 * 1024,
+        dataUrl: `data:image/png;base64,${'A'.repeat(700 * 1024)}`,
+      }],
+    },
+    facts: [],
+    memories: [],
+    history: [],
+    tools: [],
+    toolResults: [],
+  };
+  const trimmed = trimContext(input, { contextChars: 900, attachmentBytes: 2 * 1024 * 1024 });
+  assert.equal(trimmed.user.attachments.length, 1);
+  assert.equal(trimmed.user.attachments[0].dataUrl, input.user.attachments[0].dataUrl);
+  assert.ok(contextChars(trimmed) <= 900, `text budget was ${contextChars(trimmed)}`);
+
+  assert.throws(
+    () => trimContext(input, { contextChars: 24000, attachmentBytes: 400 * 1024 }),
     error => error instanceof AgentError && error.code === 'context_budget_exceeded',
   );
 });
@@ -311,6 +343,107 @@ test('a cancelled run ignores a late model answer and creates no proposal', asyn
   assert.equal(store.all().length, 0);
 });
 
+test('a cancellation during proposal save discards the proposal', async () => {
+  const context = contextFor();
+  const controller = new AbortController();
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  let discarded = 0;
+  const state = createRunState(recordFor(context));
+  const resultPromise = runAgent({
+    task: stubTask(),
+    request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'save', fixtureCase: 'proposal' } },
+    context,
+    gateway: {
+      async invoke() {
+        return fixtureModel('proposal');
+      },
+    },
+    tools: [],
+    proposals: {
+      async create(input) {
+        await gate;
+        return { proposalId: 'prop_race', ...input, status: 'pending', createdAt: 1 };
+      },
+      async discard(proposalId) {
+        discarded++;
+        assert.equal(proposalId, 'prop_race');
+      },
+    },
+    state,
+    signal: controller.signal,
+  });
+  setTimeout(() => {
+    state.cancel('user cancelled');
+    controller.abort();
+  }, 5);
+  setTimeout(() => release(), 30);
+  const result = await resultPromise;
+  assert.equal(result.status, 'cancelled');
+  assert.equal(discarded, 1);
+});
+
+test('a proposal with no changes is refused before it is stored', async () => {
+  const context = contextFor();
+  const state = createRunState(recordFor(context));
+  let stored = 0;
+  await assert.rejects(
+    runAgent({
+      task: stubTask(),
+      request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'empty' } },
+      context,
+      gateway: {
+        async invoke() {
+          return { structured: { proposal: { kind: 'stub.write', targetId: 'target-1', targetVersion: 1, changes: [] } } };
+        },
+      },
+      tools: [],
+      proposals: {
+        async create(input) { stored++; return { proposalId: 'p', ...input, status: 'pending', createdAt: 1 }; },
+      },
+      state,
+    }),
+    error => error instanceof AgentError && error.code === 'invalid_request',
+  );
+  assert.equal(stored, 0);
+  assert.equal(state.status(), 'failed');
+});
+
+test('a model memory proposal is stored against the run scope', async () => {
+  const context = contextFor();
+  const state = createRunState(recordFor(context));
+  let stored = null;
+  const result = await runAgent({
+    task: stubTask(),
+    request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'remember' } },
+    context,
+    gateway: {
+      async invoke() {
+        return {
+          structured: {
+            proposal: {
+              kind: 'memory.save',
+              changes: [{ op: 'save', category: 'preference', value: { likes: 'morning' } }],
+            },
+          },
+        };
+      },
+    },
+    tools: [],
+    proposals: {
+      async create(input) {
+        stored = input;
+        return { proposalId: 'prop_memory', ...input, status: 'pending', createdAt: 1 };
+      },
+    },
+    state,
+  });
+  assert.equal(result.status, 'completed');
+  assert.equal(stored.kind, 'memory.save');
+  assert.deepEqual(stored.targetScope, [context.scope]);
+  assert.equal(stored.targetVersion, undefined);
+});
+
 test('memory selection is scoped, ordered and deletion leaves the next context', () => {
   const memories = [
     { id: 'm1', scope: 'scope-a', category: 'preference', value: { like: 'morning' }, updatedAt: 10, version: 1 },
@@ -325,6 +458,11 @@ test('memory selection is scoped, ordered and deletion leaves the next context',
 
   // A record without a scope never passes a scope filter: fail closed.
   assert.equal(selectMemories(memories, { scope: 'scope-a' }).some(item => item.id === 'm4'), false);
+  // The task's kind filter and item budget are applied together.
+  assert.deepEqual(
+    selectMemories(memories, { scope: 'scope-a', kinds: ['goal'], limit: 1 }).map(item => item.id),
+    ['m3'],
+  );
   // Without a scope filter the host still sees its own pre-filtered list.
   assert.deepEqual(selectMemories([memories[3]]).map(item => item.id), ['m4']);
 

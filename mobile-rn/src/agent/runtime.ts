@@ -5,15 +5,20 @@ import * as Crypto from 'expo-crypto';
 import { randomUUID } from 'expo-crypto';
 import {
   AgentError,
+  assertValid,
   bindContext,
   createIds,
   createRunState,
+  isMemoryCategory,
   runAgent,
   selectMemories,
   validRequestId,
   withRunDefaults,
 } from './shared';
-import type { AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionSummary, AgentStartInput } from './types';
+import type {
+  AgentAttachment, AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionSummary, AgentStartInput,
+} from './types';
+import { readAttachment } from './media';
 import type { Connection } from '../server';
 import type { LocalState } from '../storage';
 import { workspaceScope } from '../storage';
@@ -51,6 +56,8 @@ function rowOf(record: Record<string, unknown>, scope: string): AgentRunRow {
     ...(record.startedAt == null ? {} : { startedAt: Number(record.startedAt) }),
     ...(record.finishedAt == null ? {} : { finishedAt: Number(record.finishedAt) }),
     ...(record.durationMs == null ? {} : { durationMs: Number(record.durationMs) }),
+    ...(record.execution === 'server' ? { execution: 'server' as const } : record.execution === 'local' ? { execution: 'local' as const } : {}),
+    ...(record.dataVersion == null ? {} : { dataVersion: record.dataVersion as string | number }),
     ...(record.sessionId ? { sessionId: String(record.sessionId) } : {}),
     ...(record.result === undefined ? {} : { result: record.result }),
     ...(record.proposalId ? { proposalId: String(record.proposalId) } : {}),
@@ -79,11 +86,42 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
   const scope = workspaceScope(connection);
   const store = new AgentStore();
   const config = new AgentConfig(store);
-  const gateway = new AgentGateway(config);
+  const gateway = new AgentGateway(config, {
+    toolName: 'get_workspace_fact',
+    arguments: { id: LOCAL_PROFILE },
+  });
   const targetVersion = (id: string): number =>
     store.readKv<{ version: number }>(scope, `target:${id}`)?.version ?? 1;
   const task = createLocalTask(data, { targetVersion });
   const tools = createLocalTools(data, { targetVersion });
+
+  function assertMemoryInput(input: { category?: string; value?: unknown }): void {
+    if (input.category !== undefined && !isMemoryCategory(input.category)) {
+      throw new AgentError('invalid_request', 'unknown memory category');
+    }
+    if (input.value !== undefined) {
+      const size = JSON.stringify(input.value)?.length ?? 0;
+      if (size > 4000) throw new AgentError('invalid_request', 'the memory value is too large');
+    }
+  }
+
+  // Attachments name progress photos this workspace already registered. A
+  // bare id is never read as a filesystem path.
+  async function resolveAttachments(ids: string[] | undefined): Promise<AgentAttachment[]> {
+    if (!ids?.length) return [];
+    const uploads = data.photoUploads || [];
+    const out: AgentAttachment[] = [];
+    for (const id of ids) {
+      const upload = uploads.find(item => item.hash === id || item.fileUri === id || item.ref?.hash === id);
+      if (!upload) {
+        throw new AgentError('invalid_request', 'attachment is not registered in this workspace', {
+          details: { id },
+        });
+      }
+      out.push(await readAttachment(id, upload.fileUri));
+    }
+    return out;
+  }
 
   function proposalCreator(runId: string) {
     return {
@@ -102,16 +140,30 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         store.saveProposal(proposal);
         return proposal;
       },
+      async discard(proposalId: string) {
+        try {
+          store.rejectProposal(scope, proposalId);
+        } catch {
+          // A proposal that was already handled cannot be discarded again;
+          // the run's terminal state still wins.
+        }
+      },
     };
   }
 
-  async function execute(run: AgentRunRow, profileRef: Record<string, unknown>, state: ReturnType<typeof createRunState>, controller: AbortController): Promise<void> {
+  async function execute(
+    run: AgentRunRow,
+    profileRef: Record<string, unknown>,
+    state: ReturnType<typeof createRunState>,
+    controller: AbortController,
+    attachments: AgentAttachment[],
+  ): Promise<void> {
     try {
       if (state.isTerminal()) return;
       state.start();
       const session = run.sessionId ? store.getSession(scope, run.sessionId) : null;
       if (run.sessionId && !session) {
-        state.cancel('the conversation was deleted');
+        state.failed({ code: 'session_deleted', message: 'the conversation was deleted' });
         store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope));
         return;
       }
@@ -124,6 +176,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         createdAt: message.createdAt,
       }));
       const memories = selectMemories(store.listMemories(scope), {
+        scope,
         ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
         limit: budgets.memoryItems,
         maxChars: 4000,
@@ -146,7 +199,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         signal: controller.signal,
         memories,
         history,
-        meta: { connection, prompt },
+        meta: { connection, prompt, ...(attachments.length ? { attachments } : {}) },
         ids,
       });
       const result = await runAgent({
@@ -203,10 +256,16 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
     async start(input: AgentStartInput): Promise<AgentRunRow> {
       if (!validRequestId(input.requestId)) throw new AgentError('invalid_request', 'requestId is invalid');
       if (!input.profileId) throw new AgentError('invalid_request', 'profileId is required');
-      if (!input.input || typeof input.input !== 'object') throw new AgentError('invalid_request', 'input must be an object');
-      const resolved = await config.resolve(scope, input.profileId);
-      const session = input.sessionId ? store.ensureSession(scope, input.sessionId) : null;
-      const runId = ids.run();
+      if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) {
+        throw new AgentError('invalid_request', 'input must be an object');
+      }
+      if (input.attachmentIds !== undefined && !Array.isArray(input.attachmentIds)) {
+        throw new AgentError('invalid_request', 'attachmentIds must be an array');
+      }
+      if ((input.attachmentIds?.length || 0) > 4) {
+        throw new AgentError('invalid_request', 'at most four attachments are allowed');
+      }
+      if (task.inputSchema) assertValid(task.inputSchema, input.input, '$.input', 'invalid_request');
       const hash = await fingerprint({
         taskId: task.id,
         profileId: input.profileId,
@@ -214,7 +273,20 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         sessionId: input.sessionId,
         attachmentIds: input.attachmentIds,
       });
-      const run: AgentRunRow & { input?: Record<string, unknown> } = {
+      // Idempotency comes before profile, session or attachment work: a retry
+      // must still find its original run if any of them changed in between.
+      const known = store.findRun(scope, input.requestId, hash);
+      if (known) return known;
+      const resolved = await config.resolve(scope, input.profileId);
+      const attachments = await resolveAttachments(input.attachmentIds);
+      const session = input.sessionId ? store.ensureSession(scope, input.sessionId) : null;
+      const runId = ids.run();
+      const run: AgentRunRow & {
+        input?: Record<string, unknown>;
+        attachments?: AgentAttachment[];
+        execution?: 'local';
+        dataVersion?: string | number;
+      } = {
         scope,
         runId,
         requestId: input.requestId,
@@ -223,8 +295,11 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         profileId: input.profileId,
         status: 'accepted',
         createdAt: Date.now(),
+        execution: 'local',
+        dataVersion: 1,
         ...(session ? { sessionId: session.id } : {}),
         input: input.input,
+        ...(attachments.length ? { attachments } : {}),
       };
       const begun = store.beginRun(run);
       if (!begun.created) return begun.run;
@@ -238,7 +313,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         },
       );
       activeRuns.set(runId, { scope, controller, state });
-      execute(begun.run, resolved.profile as unknown as Record<string, unknown>, state, controller)
+      execute(begun.run, resolved.profile as unknown as Record<string, unknown>, state, controller, attachments)
         .catch(() => undefined);
       return run;
     },
@@ -252,13 +327,21 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       if (!current) throw new AgentError('run_not_found', undefined, { details: { runId } });
       if (['completed', 'failed', 'cancelled', 'interrupted'].includes(current.status)) return current;
       const running = activeRuns.get(runId);
-      if (running) {
-        running.state.cancel('cancelled by the user');
-        running.controller.abort();
-        return store.finishRun(rowOf(running.state.record() as unknown as Record<string, unknown>, scope));
-      }
-      const cancelled = { ...current, status: 'cancelled' as const, finishedAt: Date.now(), error: { code: 'run_cancelled', message: 'cancelled by the user' } };
-      return store.finishRun(cancelled);
+      const finished = running
+        ? (() => {
+            running.state.cancel('cancelled by the user');
+            running.controller.abort();
+            return store.finishRun(rowOf(running.state.record() as unknown as Record<string, unknown>, scope));
+          })()
+        : store.finishRun({
+            ...current,
+            status: 'cancelled' as const,
+            finishedAt: Date.now(),
+            durationMs: Math.max(0, Date.now() - (current.startedAt || current.createdAt || Date.now())),
+            error: { code: 'run_cancelled', message: 'cancelled by the user' },
+          });
+      try { store.expireProposalsForRun(scope, runId); } catch { /* confirm gate remains */ }
+      return finished;
     },
 
     profiles: () => config.list(scope),
@@ -283,9 +366,12 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
     },
 
     saveMemory(input: { category: string; value: unknown; source?: string }): AgentMemory {
+      assertMemoryInput(input);
+      if (input.value === undefined) throw new AgentError('invalid_request', 'a memory needs a value');
       const now = Date.now();
       const memory: AgentMemory = {
         id: store.newId('mem'),
+        scope,
         category: input.category,
         value: input.value,
         ...(input.source ? { source: input.source } : {}),
@@ -296,11 +382,29 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       return store.saveMemory(scope, memory);
     },
 
+    updateMemory(id: string, patch: { category?: string; value?: unknown; source?: string }): AgentMemory {
+      assertMemoryInput(patch);
+      if (patch.category === undefined && patch.value === undefined && patch.source === undefined) {
+        throw new AgentError('invalid_request', 'no memory change was supplied');
+      }
+      return store.updateMemory(scope, id, patch);
+    },
+
     deleteMemory(id: string): boolean {
       return store.deleteMemory(scope, id);
     },
 
     confirmProposal(proposalId: string) {
+      const current = store.getProposal(scope, proposalId);
+      if (!current) throw new AgentError('proposal_not_found', undefined, { details: { proposalId } });
+      if (current.status === 'pending' && current.runId) {
+        const source = store.getRun(scope, current.runId);
+        if (!source || source.status !== 'completed') {
+          throw new AgentError('proposal_consumed', 'the run that produced this proposal did not complete', {
+            details: { proposalId, runId: current.runId, runStatus: source?.status },
+          });
+        }
+      }
       return store.confirmProposal(scope, proposalId, proposal => {
         if (proposal.kind === 'memory.save') {
           const change = proposal.changes[0] as { category?: string; value?: unknown; source?: string } | undefined;

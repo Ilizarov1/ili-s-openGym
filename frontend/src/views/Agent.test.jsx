@@ -42,6 +42,7 @@ vi.mock('../agent/api.js', () => ({
     getSession: vi.fn(async () => ({ messages: [] })),
     deleteSession: vi.fn(async () => ({ ok: true })),
     saveMemory: vi.fn(async () => ({ id: 'm1' })),
+    updateMemory: vi.fn(async (id, body) => ({ id, ...body })),
     deleteMemory: vi.fn(async () => ({ ok: true })),
   },
 }))
@@ -63,6 +64,11 @@ function typeInto(element, value) {
   element.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+function selectValue(element, value) {
+  Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(element, value)
+  element.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 let host
 let root
 beforeEach(() => {
@@ -72,11 +78,12 @@ beforeEach(() => {
   mocks.starts = []
   mocks.runStatus = 'completed'
   mocks.config = { agent: { enabled: true } }
+  mocks.USER = { id: 'u1', name: 'Owner' }
   mocks.profiles = [{
     id: 'default', source: 'default', provider: 'fixture', model: 'fixture',
     capabilities: { text: true, image: true, tools: true }, version: 1, label: 'Instance default', available: true,
   }]
-  useAgent.setState({ profiles: [], activeRun: null, sessions: [], memories: [], loading: false, error: null })
+  useAgent.setState({ ownerId: mocks.USER.id, profiles: [], activeRun: null, sessions: [], memories: [], loading: false, error: null })
   host = document.createElement('div')
   document.body.appendChild(host)
   root = createRoot(host)
@@ -188,6 +195,33 @@ describe('Agent page', () => {
     expect(mocks.starts[3].sessionId).not.toBe(mocks.starts[2].sessionId)
   })
 
+  it('does not reuse a request id for the same text under another profile', async () => {
+    mocks.runStatus = 'running'
+    mocks.profiles = [
+      {
+        id: 'default', source: 'default', provider: 'fixture', model: 'fixture',
+        capabilities: { text: true, image: true, tools: true }, version: 1, label: 'Instance default', available: true,
+      },
+      {
+        id: 'profile_2', source: 'user', provider: 'fixture', model: 'fixture-2',
+        capabilities: { text: true, image: true, tools: true }, version: 1, label: 'Second', available: true,
+      },
+    ]
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    const prompt = host.querySelector('textarea')
+    await act(async () => { typeInto(prompt, 'hello') })
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    const firstId = mocks.starts[0].requestId
+
+    await act(async () => { selectValue(host.querySelector('#agent-profile'), 'profile_2') })
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    expect(mocks.starts[1].profileId).toBe('profile_2')
+    expect(mocks.starts[1].requestId).not.toBe(firstId)
+  })
+
   it('stops polling when the page unmounts', async () => {
     mocks.runStatus = 'running'
     useAgent.setState({ activeRun: { runId: 'run_1', status: 'running' } })
@@ -204,6 +238,43 @@ describe('Agent page', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('clears the previous account run when the signed-in user changes', async () => {
+    useAgent.setState({
+      activeRun: { runId: 'run_old', status: 'completed', result: { text: 'previous account secret' } },
+    })
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    expect(host.textContent).toContain('previous account secret')
+
+    mocks.USER = { id: 'u2', name: 'Other' }
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    expect(host.textContent).not.toContain('previous account secret')
+    expect(useAgent.getState().activeRun).toBeNull()
+    expect(useAgent.getState().ownerId).toBe('u2')
+  })
+
+  it('edits a saved memory through the update endpoint', async () => {
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    await act(async () => {
+      useAgent.setState({
+        memories: [{ id: 'm1', category: 'preference', value: { like: 'morning' }, version: 1 }],
+      })
+    })
+    await flush()
+    await act(async () => { button(host, 'Edit').click() })
+    const value = host.querySelector('#agent-memory-value')
+    await act(async () => { typeInto(value, 'evening') })
+    await act(async () => { button(host, 'Update memory').click() })
+    await flush()
+    expect(agentApi.updateMemory).toHaveBeenCalledWith('m1', {
+      category: 'preference',
+      value: 'evening',
+      source: 'user',
+    })
   })
 
   it('shows the disabled state from /api/config', async () => {

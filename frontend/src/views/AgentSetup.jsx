@@ -18,6 +18,8 @@ export default function AgentSetup() {
   const loadProfiles = useAgent(s => s.loadProfiles)
   const loading = useAgent(s => s.loading)
   const error = useAgent(s => s.error)
+  const ensureOwner = useAgent(s => s.ensureOwner)
+  const ownerId = useAgent(s => s.ownerId)
   const [editing, setEditing] = useState(null)
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('')
@@ -26,10 +28,18 @@ export default function AgentSetup() {
   const enabled = config?.agent?.enabled !== false
 
   useEffect(() => {
+    if (!user) return
+    ensureOwner(user.id)
+  }, [user, ensureOwner])
+
+  useEffect(() => {
     if (user) void loadProfiles()
   }, [user, loadProfiles])
 
   if (!user) return null
+  if (ownerId !== user.id) {
+    return <div className="agent-page"><p className="agent-note">{t('Loading…')}</p></div>
+  }
 
   const reset = () => {
     setEditing(null)

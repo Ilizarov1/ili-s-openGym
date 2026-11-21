@@ -29,6 +29,7 @@ export const agentApi = {
   deleteSession: id => remove(`/api/agent/sessions/${encodeURIComponent(id)}`),
   listMemories: () => request('/api/agent/memories'),
   saveMemory: body => post('/api/agent/memories', body),
+  updateMemory: (id, body) => patch(`/api/agent/memories/${encodeURIComponent(id)}`, body),
   deleteMemory: id => remove(`/api/agent/memories/${encodeURIComponent(id)}`),
   confirmProposal: id => post(`/api/agent/proposals/${encodeURIComponent(id)}/confirm`),
   rejectProposal: id => post(`/api/agent/proposals/${encodeURIComponent(id)}/reject`),

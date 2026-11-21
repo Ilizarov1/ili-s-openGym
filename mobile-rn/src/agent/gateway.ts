@@ -6,7 +6,10 @@ import type { AgentConfig } from './config';
 import type { ModelInput, ModelOutput, ProfileReference } from './shared';
 
 export class AgentGateway {
-  constructor(private readonly config: AgentConfig) {}
+  constructor(
+    private readonly config: AgentConfig,
+    private readonly fixtureOptions: { toolName?: string; arguments?: Record<string, unknown>; lateDelayMs?: number } = {},
+  ) {}
 
   forScope(scope: string) {
     return {
@@ -34,7 +37,11 @@ export class AgentGateway {
       apiKey: resolved.apiKey,
       model: resolved.model,
       timeoutMs: 60_000,
-      ...(resolved.provider === 'fixture' ? { lateDelayMs: 5000 } : {}),
+      ...(resolved.provider === 'fixture' ? {
+        lateDelayMs: this.fixtureOptions.lateDelayMs ?? 5000,
+        ...(this.fixtureOptions.toolName ? { toolName: this.fixtureOptions.toolName } : {}),
+        ...(this.fixtureOptions.arguments ? { arguments: this.fixtureOptions.arguments } : {}),
+      } : {}),
     });
     const raw = await provider.invoke({ profile: resolved.profile, modelInput, signal });
     return normalizeModelOutput(raw);

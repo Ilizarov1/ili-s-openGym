@@ -102,6 +102,8 @@ export interface AgentStoredSession {
 
 export interface AgentMemory {
   id: string;
+  /** Present internally so shared selection can fail closed; stripped by the API. */
+  scope?: string;
   category: 'preference' | 'goal' | 'constraint' | 'note';
   value: unknown;
   source?: string;

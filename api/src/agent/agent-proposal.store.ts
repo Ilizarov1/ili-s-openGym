@@ -46,6 +46,16 @@ export class AgentProposalStore {
           details: { proposalId, status: proposal.status },
         });
       }
+      if (proposal.runId) {
+        const run = data.runs[proposal.runId];
+        if (!run || run.status !== 'completed') {
+          // A late model answer must not become an applicable write after its
+          // run was cancelled, interrupted or failed.
+          throw new AgentError('proposal_consumed', 'the run that produced this proposal did not complete', {
+            details: { proposalId, runId: proposal.runId, runStatus: run?.status },
+          });
+        }
+      }
       const result = apply(data, proposal);
       const consumed: AgentProposal = {
         ...proposal,
@@ -73,6 +83,21 @@ export class AgentProposalStore {
       };
       data.proposals[proposalId] = rejected;
       return rejected;
+    });
+  }
+
+  /** Drop the pending proposals of a run that can no longer complete. */
+  async expireForRun(uid: string, runId: string): Promise<number> {
+    return this.store.update(uid, data => {
+      let count = 0;
+      const at = Date.now();
+      for (const proposal of Object.values(data.proposals)) {
+        if (proposal.runId !== runId || proposal.status !== 'pending') continue;
+        proposal.status = 'expired';
+        proposal.rejectedAt = at;
+        count++;
+      }
+      return count;
     });
   }
 }

@@ -165,11 +165,19 @@ export class AgentService implements OnModuleInit {
   private proposalCreator(uid: string, runId: string) {
     return {
       create: async (input: Record<string, unknown>) => {
+        const kind = String(input.kind);
+        if (!/^[a-z][a-z0-9_.-]{0,63}$/.test(kind)) {
+          throw new AgentError('invalid_request', 'the proposal kind is invalid');
+        }
+        const changes = Array.isArray(input.changes) ? input.changes : [];
+        if (!changes.length) {
+          throw new AgentError('invalid_request', 'a proposal needs at least one change');
+        }
         const proposal: AgentProposal = {
           proposalId: ids.proposal(),
           runId,
-          kind: String(input.kind),
-          changes: Array.isArray(input.changes) ? input.changes : [],
+          kind,
+          changes,
           targetScope: Array.isArray(input.targetScope) ? input.targetScope.map(String) : [],
           ...(input.targetVersion === undefined ? {} : { targetVersion: input.targetVersion as string | number }),
           status: 'pending',
@@ -177,6 +185,7 @@ export class AgentService implements OnModuleInit {
         };
         return this.proposals.save(uid, proposal);
       },
+      discard: (proposalId: string) => this.proposals.reject(uid, proposalId),
     };
   }
 
@@ -204,6 +213,7 @@ export class AgentService implements OnModuleInit {
       const taskCategories = (this.task as TaskDefinition).memoryCategories;
       const allMemories = await this.memories.list(uid);
       const memoryProjection = selectMemories(allMemories, {
+        scope: uid,
         ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
         limit: budgets.memoryItems,
         maxChars: 4000,
@@ -303,9 +313,15 @@ export class AgentService implements OnModuleInit {
     if (active && active.uid === uid) {
       active.state.cancel('cancelled by the user');
       active.controller.abort();
-      return this.runs.finish(uid, runId, active.state.record() as unknown as Partial<AgentStoredRun>);
+      const finished = await this.runs.finish(uid, runId, active.state.record() as unknown as Partial<AgentStoredRun>);
+      // The run is already terminal; failing to tidy a proposal must not make
+      // cancellation look like it failed. Confirm still checks the run status.
+      try { await this.proposals.expireForRun(uid, runId); } catch { /* confirm gate remains */ }
+      return finished;
     }
-    return this.runs.cancel(uid, runId);
+    const cancelled = await this.runs.cancel(uid, runId);
+    try { await this.proposals.expireForRun(uid, runId); } catch { /* confirm gate remains */ }
+    return cancelled;
   }
 
   async listProfiles(uid: string): Promise<AgentProfilePublic[]> {
@@ -349,17 +365,19 @@ export class AgentService implements OnModuleInit {
 
   async listMemories(uid: string): Promise<AgentMemory[]> {
     this.enabled();
-    return this.memories.list(uid);
+    return (await this.memories.list(uid)).map(({ scope: _scope, ...memory }) => memory);
   }
 
   async createMemory(uid: string, body: Record<string, unknown>): Promise<AgentMemory> {
     this.enabled();
-    return this.memories.create(uid, body);
+    const { scope: _scope, ...memory } = await this.memories.create(uid, body);
+    return memory;
   }
 
   async updateMemory(uid: string, memoryId: string, body: Record<string, unknown>): Promise<AgentMemory> {
     this.enabled();
-    return this.memories.update(uid, memoryId, body);
+    const { scope: _scope, ...memory } = await this.memories.update(uid, memoryId, body);
+    return memory;
   }
 
   async deleteMemory(uid: string, memoryId: string): Promise<void> {

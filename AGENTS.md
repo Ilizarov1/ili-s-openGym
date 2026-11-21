@@ -81,6 +81,7 @@ docs/
     EXECUTION.md                         分阶段实施、验收证据和回退步骤
     ACCEPTANCE.md                        环境、命令、A1-A7 证据和待设备项
     REVIEW.md                            评审整改清单与本轮修改记录
+    REVIEW2.md                           第二轮评审问题、证据与整改顺序
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/

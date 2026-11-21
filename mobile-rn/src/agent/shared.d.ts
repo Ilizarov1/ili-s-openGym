@@ -58,6 +58,7 @@ export type AgentProposal = {
 };
 export type AgentMemory = {
   id: string;
+  scope?: string;
   category: string;
   value: unknown;
   source?: string;
@@ -148,11 +149,18 @@ export type RunAgentOptions = {
   tools: AgentTool[];
   proposals: {
     create(input: Record<string, unknown>): Promise<AgentProposal>;
+    discard?(proposalId: string): Promise<unknown>;
   };
   state: AgentRunState;
   signal?: AbortSignal;
 };
 
+export function assertValid(
+  schema: Record<string, unknown>,
+  value: unknown,
+  path?: string,
+  code?: string,
+): unknown;
 export function createIds(randomUUID: () => string): {
   run(): string;
   session(): string;

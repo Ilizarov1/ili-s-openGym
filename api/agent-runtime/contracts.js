@@ -56,6 +56,7 @@ export const RUN_DEFAULTS = Object.freeze({
   historyItems: 8,
   memoryItems: 8,
   attachments: 4,
+  /** Per-attachment cap; the media adapters enforce the same number. */
   attachmentBytes: 2 * 1024 * 1024,
 });
 

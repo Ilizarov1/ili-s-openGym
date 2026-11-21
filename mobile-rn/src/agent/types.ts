@@ -37,6 +37,7 @@ export type AgentRunRow = {
   startedAt?: number;
   finishedAt?: number;
   durationMs?: number;
+  execution?: 'local' | 'server';
   dataVersion?: string | number;
   sessionId?: string;
   result?: unknown;

@@ -146,8 +146,32 @@ export function evidenceList(context) {
   }));
 }
 
+/**
+ * The text budget a model sees: attachment payloads are media, not text. The
+ * data URL can be megabytes, so counting it here would make every real image
+ * fail the text budget even though the media budget is separate.
+ */
+function budgetView(modelInput) {
+  const attachments = modelInput?.user?.attachments;
+  if (!Array.isArray(attachments) || !attachments.length) return modelInput;
+  return {
+    ...modelInput,
+    user: {
+      ...modelInput.user,
+      attachments: attachments.map(({ dataUrl, ...rest }) => rest),
+    },
+  };
+}
+
 export function contextChars(modelInput) {
-  return JSON.stringify(modelInput).length;
+  return JSON.stringify(budgetView(modelInput)).length;
+}
+
+function attachmentSize(attachment) {
+  const size = Number(attachment?.size);
+  if (Number.isFinite(size) && size >= 0) return size;
+  const dataUrl = typeof attachment?.dataUrl === 'string' ? attachment.dataUrl : '';
+  return dataUrl.length;
 }
 
 /**
@@ -173,6 +197,18 @@ export function trimContext(modelInput, budgets = {}) {
   if (next.memories.length > limits.memoryItems) next.memories = next.memories.slice(0, limits.memoryItems);
   if (next.user.attachments && next.user.attachments.length > limits.attachments) {
     next.user.attachments = next.user.attachments.slice(0, limits.attachments);
+  }
+  for (const attachment of next.user.attachments || []) {
+    const bytes = attachmentSize(attachment);
+    if (bytes > limits.attachmentBytes) {
+      throw new AgentError('context_budget_exceeded', 'an attachment exceeds the media budget', {
+        details: {
+          attachmentId: attachment?.id,
+          size: bytes,
+          limit: limits.attachmentBytes,
+        },
+      });
+    }
   }
 
   let size = contextChars(next);

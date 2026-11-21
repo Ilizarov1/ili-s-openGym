@@ -164,6 +164,25 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
     assert.equal(conflict.status, 409, conflict.text);
     assert.equal(conflict.body.code, 'request_conflict');
 
+    // B2: the task input schema is checked before a run (and its request id)
+    // is created, so a corrected retry can still use the same request id.
+    const tooLong = await call(server, owner, '/api/agent/runs', {
+      method: 'POST',
+      body: JSON.stringify({
+        requestId: 'req_too_long_001',
+        profileId: 'default',
+        input: { prompt: 'x'.repeat(2001) },
+      }),
+    });
+    assert.equal(tooLong.status, 400, tooLong.text);
+    assert.equal(tooLong.body.code, 'invalid_request');
+    const corrected = await startRun(server, owner, {
+      requestId: 'req_too_long_001',
+      profileId: 'default',
+      input: { prompt: 'short now' },
+    });
+    assert.equal((await waitRun(server, owner, corrected.runId)).status, 'completed');
+
     // A1: a server user profile is selectable and its key is never returned.
     const profile = await call(server, owner, '/api/agent/configs', {
       method: 'POST',
@@ -247,6 +266,7 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
       body: JSON.stringify({ category: 'preference', value: { like: 'morning' }, source: 'user' }),
     });
     assert.equal(memory.status, 201, memory.text);
+    assert.equal(memory.body.scope, undefined);
     const ownerMemories = await call(server, owner, '/api/agent/memories');
     assert.equal(ownerMemories.body.memories.length, 1);
     const memberMemories = await call(server, member, '/api/agent/memories');
@@ -354,6 +374,72 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
     // Cross-account reads are 404, not another profile's run.
     const foreign = await call(server, member, `/api/agent/runs/${first.runId}`);
     assert.equal(foreign.status, 404, foreign.text);
+  } finally {
+    await server.stop();
+  }
+});
+
+test('the agent runtime keeps a production instance free of fixture profiles', { timeout: 20000 }, async () => {
+  const server = await startAgentServer({ NODE_ENV: 'production' });
+  try {
+    const token = fixtureSession(server.seed.secret, OWNER_ID, 'b');
+    const configs = await call(server, token, '/api/agent/configs');
+    assert.equal(configs.status, 200, configs.text);
+    assert.equal(configs.body.profiles[0].available, false);
+    const fixture = await call(server, token, '/api/agent/configs', {
+      method: 'POST',
+      body: JSON.stringify({ provider: 'fixture', model: 'fixture' }),
+    });
+    assert.equal(fixture.status, 400, fixture.text);
+    assert.equal(fixture.body.code, 'invalid_request');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('a run that did not complete cannot apply its proposal', { timeout: 20000 }, async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-proposal-gate-'));
+  const seed = seedData(dir, 'default');
+  writeCoach(dir);
+  fs.writeFileSync(path.join(dir, `agent-${OWNER_ID}.json`), JSON.stringify({
+    schema: 1,
+    profiles: {},
+    runs: {
+      run_cancelled: {
+        runId: 'run_cancelled', requestId: 'req_cancelled_01', requestHash: 'h', taskId: 'stub.v1',
+        profileId: 'default', executionLocation: 'server', status: 'cancelled', createdAt: 1,
+      },
+      run_running: {
+        runId: 'run_running', requestId: 'req_running_0001', requestHash: 'h', taskId: 'stub.v1',
+        profileId: 'default', executionLocation: 'server', status: 'running', createdAt: 1, startedAt: 2,
+      },
+    },
+    requestIndex: {},
+    sessions: {},
+    memories: {},
+    proposals: {
+      prop_cancelled: {
+        proposalId: 'prop_cancelled', runId: 'run_cancelled', kind: 'stub.write',
+        changes: [{ field: 'value', value: 'x' }], targetScope: ['target-1'], targetVersion: 1,
+        status: 'pending', createdAt: 1,
+      },
+      prop_running: {
+        proposalId: 'prop_running', runId: 'run_running', kind: 'stub.write',
+        changes: [{ field: 'value', value: 'y' }], targetScope: ['target-1'], targetVersion: 1,
+        status: 'pending', createdAt: 1,
+      },
+    },
+    stub: { targets: {}, facts: {}, writes: [] },
+  }), { mode: 0o600 });
+  const server = await startAgentServerFrom(dir);
+  try {
+    const token = fixtureSession(seed.secret, OWNER_ID, 'b');
+    const cancelled = await call(server, token, '/api/agent/proposals/prop_cancelled/confirm', { method: 'POST' });
+    assert.equal(cancelled.status, 409, cancelled.text);
+    assert.equal(cancelled.body.code, 'proposal_consumed');
+    const interrupted = await call(server, token, '/api/agent/proposals/prop_running/confirm', { method: 'POST' });
+    assert.equal(interrupted.status, 409, interrupted.text);
+    assert.equal(interrupted.body.code, 'proposal_consumed');
   } finally {
     await server.stop();
   }

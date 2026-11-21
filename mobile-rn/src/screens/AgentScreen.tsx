@@ -11,6 +11,13 @@ import type { AgentMemory, AgentProfilePublic, AgentProposal, AgentRunRow, Agent
 
 type Mode = 'local' | 'server';
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+const MEMORY_CATEGORIES = ['preference', 'goal', 'constraint', 'note'] as const;
+
+const parseMemoryValue = (text: string): unknown => {
+  const value = text.trim();
+  if (!/^[[{]/.test(value)) return value;
+  try { return JSON.parse(value) as unknown; } catch { return value; }
+};
 
 export type AgentScreenProps = {
   connection: Connection | null;
@@ -39,11 +46,15 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
   const [memories, setMemories] = useState<AgentMemory[]>([]);
   const [memoryCategory, setMemoryCategory] = useState('preference');
   const [memoryValue, setMemoryValue] = useState('');
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [handledProposal, setHandledProposal] = useState<string | null>(null);
+  const [serverEnabled, setServerEnabled] = useState(true);
+  const [handledProposal, setHandledProposal] = useState<{ id: string; status: 'consumed' | 'rejected' } | null>(null);
   // Reused only while the submission it names is still open (or its response
   // was lost); a terminal run or a new conversation closes the window.
-  const requestRef = useRef<{ prompt: string; id: string }>({ prompt: '', id: '' });
+  const requestRef = useRef<{ key: string; id: string }>({ key: '', id: '' });
+  const requestKey = (input: Record<string, unknown>, profile: string, session: string) =>
+    JSON.stringify({ mode, profileId: profile, sessionId: session, input });
 
   const modes: { value: Mode; label: string }[] = connection
     ? [{ value: 'local', label: '本机' }, { value: 'server', label: '服务器' }]
@@ -77,6 +88,13 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
 
   useEffect(() => { loadProfiles().catch(() => undefined); }, [loadProfiles]);
   useEffect(() => { loadLists().catch(() => undefined); }, [loadLists]);
+  useEffect(() => {
+    if (!server) {
+      setServerEnabled(true);
+      return;
+    }
+    server.status().then(next => setServerEnabled(next.enabled)).catch(() => undefined);
+  }, [server]);
 
   const refreshRun = useCallback(async (runId: string): Promise<AgentRunRow | null> => {
     if (!runId) return null;
@@ -102,7 +120,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
   }, [run?.status, loadLists]);
 
   useEffect(() => {
-    if (run && TERMINAL.has(run.status)) requestRef.current = { prompt: '', id: '' };
+    if (run && TERMINAL.has(run.status)) requestRef.current = { key: '', id: '' };
   }, [run]);
 
   const start = async (fixtureCase?: string) => {
@@ -111,12 +129,13 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
     setError('');
     try {
       const text = prompt.trim();
-      let requestId = requestRef.current.prompt === text ? requestRef.current.id : '';
+      const input = { prompt: text, ...(fixtureCase ? { fixtureCase } : {}) };
+      const key = requestKey(input, profileId, sessionId);
+      let requestId = requestRef.current.key === key ? requestRef.current.id : '';
       if (!requestId) {
         requestId = createId('req', randomUUID);
-        requestRef.current = { prompt: text, id: requestId };
+        requestRef.current = { key, id: requestId };
       }
-      const input = { prompt: text, ...(fixtureCase ? { fixtureCase } : {}) };
       if (mode === 'server' && server) {
         const started = await server.startRun({ requestId, profileId, sessionId, input });
         await refreshRun(started.runId);
@@ -147,7 +166,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
       const answer = mode === 'server' && server
         ? await server.confirmProposal(proposal.proposalId)
         : local.confirmProposal(proposal.proposalId);
-      setHandledProposal(proposal.proposalId);
+      setHandledProposal({ id: proposal.proposalId, status: 'consumed' });
       Alert.alert('已应用', JSON.stringify(answer.result ?? null));
       await refreshRun(run?.runId || '');
     } catch (failure) {
@@ -159,7 +178,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
     try {
       if (mode === 'server' && server) await server.rejectProposal(proposal.proposalId);
       else local.rejectProposal(proposal.proposalId);
-      setHandledProposal(proposal.proposalId);
+      setHandledProposal({ id: proposal.proposalId, status: 'rejected' });
       Alert.alert('已拒绝');
       await refreshRun(run?.runId || '');
     } catch (failure) {
@@ -173,7 +192,16 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
 
   return <Screen>
     <Header title="Agent" subtitle="本机或服务端执行" onBack={onClose} right={<Button size="sm" variant="tinted" onPress={onOpenProfiles}>配置</Button>} />
-    <Segmented options={modes} value={mode} onChange={value => { setMode(value); setRun(null); }} />
+    <Segmented options={modes} value={mode} onChange={value => {
+      setMode(value);
+      setRun(null);
+      setEditingMemoryId(null);
+      setMemoryValue('');
+      requestRef.current = { key: '', id: '' };
+    }} />
+    {mode === 'server' && !serverEnabled
+      ? <Text tone="danger" variant="footnote">服务器 Agent 已在此实例禁用；本机执行仍可使用。</Text>
+      : null}
     <Card>
       <Text variant="headline">选择模型配置</Text>
       {profiles.length ? profiles.map(profile => <ListRow
@@ -188,14 +216,14 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
     <Card>
       <TextField label="任务输入" value={prompt} onChangeText={setPrompt} placeholder="问点什么，或描述要准备的改动。" multiline />
       <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.sm }}>
-        <Button variant="primary" onPress={() => { start().catch(() => undefined); }} disabled={busy || !prompt.trim() || !profileId}>{busy ? '启动中…' : '开始'}</Button>
+        <Button variant="primary" onPress={() => { start().catch(() => undefined); }} disabled={busy || !prompt.trim() || !profileId || (mode === 'server' && !serverEnabled)}>{busy ? '启动中…' : '开始'}</Button>
         {profiles.find(profile => profile.id === profileId)?.provider === 'fixture'
           ? <View style={{ flexDirection: 'row', gap: theme.space.xs }}>
-            <Button variant="secondary" onPress={() => { start('proposal').catch(() => undefined); }} disabled={busy || !prompt.trim()}>测试提案</Button>
-            <Button variant="secondary" onPress={() => { start('late').catch(() => undefined); }} disabled={busy || !prompt.trim()}>延迟</Button>
+            <Button variant="secondary" onPress={() => { start('proposal').catch(() => undefined); }} disabled={busy || !prompt.trim() || (mode === 'server' && !serverEnabled)}>测试提案</Button>
+            <Button variant="secondary" onPress={() => { start('late').catch(() => undefined); }} disabled={busy || !prompt.trim() || (mode === 'server' && !serverEnabled)}>延迟</Button>
           </View>
           : null}
-        <Button variant="secondary" onPress={() => { setSessionId(`ses_${randomUUID()}`); setRun(null); requestRef.current = { prompt: '', id: '' }; }} disabled={busy}>新会话</Button>
+        <Button variant="secondary" onPress={() => { setSessionId(`ses_${randomUUID()}`); setRun(null); requestRef.current = { key: '', id: '' }; }} disabled={busy}>新会话</Button>
         {run && !TERMINAL.has(run.status) ? <Button variant="secondary" onPress={() => { cancel().catch(() => undefined); }}>取消</Button> : null}
       </View>
       {error ? <Text tone="danger" variant="footnote" style={{ marginTop: theme.space.sm }}>{error}</Text> : null}
@@ -213,8 +241,8 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
         <SectionHeader title="待确认改动" />
         <Text tone="secondary" variant="footnote">{JSON.stringify(proposal.changes)}</Text>
         <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.sm }}>
-          <Button size="sm" variant="primary" disabled={proposal.status !== 'pending' || handledProposal === proposal.proposalId} onPress={() => { confirm(proposal).catch(() => undefined); }}>{handledProposal === proposal.proposalId ? '已应用' : '确认'}</Button>
-          <Button size="sm" variant="secondary" disabled={proposal.status !== 'pending' || handledProposal === proposal.proposalId} onPress={() => { reject(proposal).catch(() => undefined); }}>拒绝</Button>
+          <Button size="sm" variant="primary" disabled={proposal.status !== 'pending' || handledProposal?.id === proposal.proposalId} onPress={() => { confirm(proposal).catch(() => undefined); }}>{handledProposal?.id === proposal.proposalId ? (handledProposal.status === 'rejected' ? '已拒绝' : '已应用') : '确认'}</Button>
+          <Button size="sm" variant="secondary" disabled={proposal.status !== 'pending' || handledProposal?.id === proposal.proposalId} onPress={() => { reject(proposal).catch(() => undefined); }}>拒绝</Button>
         </View>
       </View> : null}
     </Card> : null}
@@ -240,37 +268,60 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
 
     <Card>
       <SectionHeader title="长期记忆" />
-      <View style={{ flexDirection: 'row', gap: theme.space.sm }}>
-        <View style={{ flex: 1 }}>
-          <TextField label="类别" value={memoryCategory} onChangeText={setMemoryCategory} />
-        </View>
-        <View style={{ flex: 2 }}>
-          <TextField label="内容" value={memoryValue} onChangeText={setMemoryValue} />
-        </View>
-      </View>
-      <Button size="sm" variant="tinted" disabled={!memoryValue.trim()} onPress={() => { (async () => {
-        try {
-          if (mode === 'server' && server) await server.saveMemory({ category: memoryCategory, value: memoryValue.trim(), source: 'user' });
-          else local.saveMemory({ category: memoryCategory, value: memoryValue.trim(), source: 'user' });
+      <Segmented
+        options={MEMORY_CATEGORIES.map(id => ({ value: id, label: id }))}
+        value={memoryCategory}
+        onChange={value => setMemoryCategory(value)}
+      />
+      <TextField label="内容" value={memoryValue} onChangeText={setMemoryValue} />
+      <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.sm }}>
+        <Button size="sm" variant="tinted" disabled={!memoryValue.trim()} onPress={() => { (async () => {
+          try {
+            const body = { category: memoryCategory, value: parseMemoryValue(memoryValue), source: 'user' };
+            if (mode === 'server' && server) {
+              if (editingMemoryId) await server.updateMemory(editingMemoryId, body);
+              else await server.saveMemory(body);
+            } else if (editingMemoryId) {
+              local.updateMemory(editingMemoryId, body);
+            } else {
+              local.saveMemory(body);
+            }
+            setMemoryValue('');
+            setEditingMemoryId(null);
+            await loadLists();
+          } catch (failure) {
+            Alert.alert('无法保存', failure instanceof Error ? failure.message : '请重试。');
+          }
+        })().catch(() => undefined); }}>{editingMemoryId ? '更新记忆' : '保存记忆'}</Button>
+        {editingMemoryId ? <Button size="sm" variant="secondary" onPress={() => {
+          setEditingMemoryId(null);
           setMemoryValue('');
-          await loadLists();
-        } catch (failure) {
-          Alert.alert('无法保存', failure instanceof Error ? failure.message : '请重试。');
-        }
-      })().catch(() => undefined); }}>保存记忆</Button>
+        }}>取消</Button> : null}
+      </View>
       {memories.length ? memories.map(memory => <ListRow
         key={memory.id}
         title={memory.category}
         subtitle={typeof memory.value === 'string' ? memory.value : JSON.stringify(memory.value)}
-        trailing={<Button size="xs" variant="ghost" onPress={() => { (async () => {
-          try {
-            if (mode === 'server' && server) await server.deleteMemory(memory.id);
-            else local.deleteMemory(memory.id);
-            await loadLists();
-          } catch (failure) {
-            Alert.alert('无法删除', failure instanceof Error ? failure.message : '请重试。');
-          }
-        })().catch(() => undefined); }}>删除</Button>}
+        trailing={<View style={{ flexDirection: 'row', gap: theme.space.xs }}>
+          <Button size="xs" variant="ghost" onPress={() => {
+            setEditingMemoryId(memory.id);
+            setMemoryCategory(memory.category);
+            setMemoryValue(typeof memory.value === 'string' ? memory.value : JSON.stringify(memory.value));
+          }}>编辑</Button>
+          <Button size="xs" variant="ghost" onPress={() => { (async () => {
+            try {
+              if (mode === 'server' && server) await server.deleteMemory(memory.id);
+              else local.deleteMemory(memory.id);
+              if (editingMemoryId === memory.id) {
+                setEditingMemoryId(null);
+                setMemoryValue('');
+              }
+              await loadLists();
+            } catch (failure) {
+              Alert.alert('无法删除', failure instanceof Error ? failure.message : '请重试。');
+            }
+          })().catch(() => undefined); }}>删除</Button>
+        </View>}
       />) : <Text tone="secondary" variant="footnote">还没有记忆。</Text>}
     </Card>
   </Screen>;
