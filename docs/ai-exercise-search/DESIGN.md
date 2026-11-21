@@ -13,20 +13,21 @@
 | `api/agent-runtime/tasks/exercise-search.js`（新） | 共享任务 `exercise-search.v1`：输入/输出 schema、受控词表 prompt、预算、fixture 用例、内联图片校验与 `parseOutput` 清洗。无平台依赖。 |
 | `api/agent-runtime/tasks/exercise-search-vocabulary.json`（新） | 身体部位/器械 slug 的共享快照；由 API 测试对照 `frontend/src/lib/exercises-data.js` 和移动端目录校验，避免两端词表漂移。 |
 | `api/agent-runtime/providers/fixture.js`（改） | 增加 `candidates`、`fallback-only` fixture 序列，或提供任务级 fixture 适配；未知用例仍返回明确错误。 |
+| `api/agent-runtime/providers/index.js`（改） | 注册命名提供商 `opencode`：OpenAI 兼容实现、固定 `baseUrl https://opencode.ai/inference/openai/v1`；服务端用户/默认配置与 RN 本机配置均可选用，验收 smoke 模型 `deepseek-v4.1-flash-1017`。 |
 | `api/agent-runtime/errors.js`（改） | 新增 `agent_media_invalid`（400）、`agent_media_too_large`（413）、`turn_limit`（429）、`session_busy`（409）、`session_conflict`（409）。五个码都不在 agent-runtime 现有错误清单（其执行计划 1.2）内，由本需求第一步一并落入共享 `errors.js`。 |
 | `api/src/agent/tasks/index.ts`（新） | 服务端任务注册表：`taskId -> { task, tools, messageOf }`。桩任务保留为 `stub.v1`，AI 任务注册为 `exercise-search.v1`。 |
 | `api/src/agent/agent.service.ts`（改） | 按 `taskId` 选择任务及其工具；按任务输入校验 schema；用任务消息投影写会话；校验 `sessionMode`、会话执行位置、轮次和并发；运行结果附带脱敏配置摘要。 |
 | `api/src/agent/agent.types.ts`（改） | 配置能力显式覆盖；会话 `taskId`/`executionLocation`/`meta`；消息可选 `meta`；`AgentStartBody.sessionMode`；运行结果配置摘要。 |
 | `api/src/agent/agent-session.store.ts`（改） | 会话增加 `taskId`、`executionLocation`、`meta`；消息增加可选 `meta`；`append` 接受期望的 `sessionVersion`；按 task/session 统计轮次；清理过期 AI 会话。 |
 | `api/src/agent/agent-run.store.ts`（改） | AI 任务 run 记录 TTL 清理；保留轮询窗口，超时删除结果和请求索引。 |
-| `api/src/agent/agent-config.store.ts`（改） | 配置能力支持显式 `image` 覆盖；默认配置支持管理员 `agentVision`；`list` 返回稳定排序；`resolve` 不改变已固定执行位置。 |
+| `api/src/agent/agent-config.store.ts`（改） | 配置能力支持显式 `image` 覆盖；默认配置支持管理员 `agentVision`；`list` 返回稳定排序；`resolve` 不改变已固定执行位置；用户配置 provider 枚举增加 `opencode`（端点固定、密钥按账号加密）。 |
 | `api/src/agent/agent.flags.ts`、`.env.example`（改） | 增加 `agentVision` 开关（默认可用），供服务端默认配置声明是否支持图像；与 `AGENT_RUNTIME_DISABLED` 区分。 |
 | `api/src/agent/agent-media.ts`（不变） | 继续只解析已登记媒体；AI 内联图片不走这里，由共享任务附件钩子处理，避免服务端落盘。 |
 | `api/openapi.yaml`（改） | `AgentRunRequest` 增加 `taskId` 可选值说明、`sessionMode`；错误枚举增加五个新码；`AgentRunStart`/`AgentRun` 增加脱敏配置摘要；不新增路由。 |
 | `frontend/src/lib/exercise-ai-search.js`（新） | 双端共享匹配管道：模型候选 → 注入的检索器/匹配器 → 动作库对象；CJK 回退、提示词去歧义、去重、等级合成、兜底 slug 过滤。纯函数，不依赖平台、网络、存储。 |
 | `frontend/src/lib/exercise-search.js`（改） | 增加 `searchScored(list, query)`，返回 `{ exercise, score }`；现有 `searchExercises` 行为保持不变。 |
 | `frontend/src/views/Library.jsx`（改） | 动作库入口、AI 识别态、摘要卡、追问行、结果/兜底区；AI 模式忽略关键词与筛选；退出恢复快照。 |
-| `frontend/src/views/AgentSetup.jsx`（改） | 配置表单增加“该模型可读取图片”的能力开关；服务端用户配置可显式覆盖 provider 默认能力。 |
+| `frontend/src/views/AgentSetup.jsx`（改） | 配置表单增加“该模型可读取图片”的能力开关；服务端用户配置可显式覆盖 provider 默认能力；provider 可选列表增加 `opencode`。 |
 | `frontend/src/sheets.jsx`（改） | `ExercisePicker` 搜索行增加 ✨；AI 检索以覆盖层替换选择器列表，不叠加 Sheet；候选沿用 `onPick(ex)` / `onPick(ex, true)` 语义。 |
 | `frontend/src/components/ExerciseAiSearch.jsx`（新） | Web 动作库与选择器共用的识别态 UI：发起面板、摘要卡、候选行、兜底、追问行、错误态。 |
 | `mobile-rn/src/agent/tasks.ts`（改） | 注册共享任务；宿主仍提供桩任务。 |
@@ -35,8 +36,8 @@
 | `mobile-rn/src/agent/store.ts`（改） | 新增 `agent_ai_images` 表（scope、sessionId、turn、id、mime、size、width、height、bytes、createdAt）；会话/消息 meta；启动清理孤儿图片。 |
 | `mobile-rn/src/agent/runtime.ts`（改） | `start` 接受 `taskId`、`sessionMode`；按会话固定执行位置；任务附件钩子；本机完成等待/轮询辅助；会话消息按任务投影；轮次/并发校验。 |
 | `mobile-rn/src/agent/server-client.ts`（改） | `startRun` 传递 `taskId`、`sessionMode`、`input.images`；2s 轮询沿用；断线后按 run ID 查询。 |
-| `mobile-rn/src/agent/config.ts`（改） | 配置能力显式 `image` 覆盖；首轮解析顺序；返回脱敏摘要。 |
-| `mobile-rn/src/screens/AgentProfileScreen.tsx`（改） | 本机/服务端用户配置增加“该模型可读取图片”的能力开关；与 AgentSetup 行为一致。 |
+| `mobile-rn/src/agent/config.ts`（改） | 配置能力显式 `image` 覆盖；首轮解析顺序；返回脱敏摘要；本机 provider 选项增加 `opencode`（密钥仍入 SecureStore）。 |
+| `mobile-rn/src/screens/AgentProfileScreen.tsx`（改） | 本机/服务端用户配置增加“该模型可读取图片”的能力开关；provider 可选列表增加 `opencode`；与 AgentSetup 行为一致。 |
 | `mobile-rn/src/librarySearch.ts`（改） | 暴露 AI 匹配所需的完整候选池、别名和 `resolveCandidates` 入口；不改变现有关键词检索行为。 |
 | `mobile-rn/src/agent/recovery.ts`（改） | 启动时把本机遗留 AI run 标记中断；保留最近 AI run 引用供 A12 提示。 |
 | `mobile-rn/src/screens/ExerciseLibraryScreen.tsx`（改） | 识别态状态机、Sheet、追问行、结果区；动作库 Tab 与 `replacing` 选择器共用；候选按当前 `replacing`/`onPick` 语义处理。 |
@@ -142,6 +143,8 @@ or gym slang; a brand or slang mention can go in the rationale instead.
 - `session.append` 使用 `messageOf`，不再读取 `request.input.prompt`。
 
 RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；`AgentStartInput` 增加 `taskId`，`server-client.startRun` 不再硬编码 `stub.v1`。
+
+**命名提供商 `opencode`。** OpenAI 兼容的预设端点（`https://opencode.ai/inference/openai/v1`），注册进共享 `providers/index.js` 后可被三类配置选用：RN 本机（密钥 SecureStore）、服务端用户（密钥按账号加密）、服务端默认（管理员经 `.env` 的 `OPENCODE_API_KEY` 配置）。baseUrl 固定在提供商实现内、不进入用户输入，因此不构成服务端自定义端点的开口。验收 smoke 指定模型 `deepseek-v4.1-flash-1017`（模型 ID 以服务端模型列表为准），能力开关按模型实际声明。密钥纪律：真实密钥只存 SecureStore、按账号密文或 git 忽略的 `api/.env`；`.env.example` 只留空占位；日志、OpenAPI 与配置响应排除密钥（沿用 agent-runtime R1）。
 
 ## 4. 执行位置与配置解析
 
@@ -317,3 +320,4 @@ sequenceDiagram
 | 提示词与匹配常量补全 | §2 增加系统提示词全文（沿用教练提示词的成文规格，不变量入测试）；§6 固化打分与 CJK 阈值常量表，双端改为同一匹配算法，Fuse 建议退回仅服务关键词零结果通道。 |
 | 检索效果评测补全 | §6 效果评测与执行计划 3.4 增加 golden 集：覆盖矩阵、双语池、初始命中率门槛与"最小常量过门槛"校准闭环；7.2 扩为实物照片手工 smoke 协议。 |
 | 边界场景补全 | 评测矩阵增加边界子集（无关节输出、幻觉请求、全景多器械、五候选同动作、语言错配、追问矛盾轮，100% 门槛）；任务测试补长度/图片/至少一项边界；7.2 引用 `test_pic/` 实物照片并加 EXIF 方向校验。 |
+| 命名提供商 opencode | 注册 OpenAI 兼容预设端点（固定 baseUrl，不开服务端自定义口）与 smoke 模型 `deepseek-v4.1-flash-1017`；RN 本机、服务端用户/默认三类配置可选；真实密钥只进 SecureStore、按账号密文或 git 忽略的 `.env`。 |

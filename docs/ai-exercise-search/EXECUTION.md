@@ -90,9 +90,9 @@
 
 - [ ] **1.4 提供商结构化输出支持**
   - 范围：共享 provider 的 JSON 模式与 fixture 序列。
-  - 文件：`api/agent-runtime/providers/openai.js`、`providers/fixture.js`。
-  - 动作：`openai.js` 在任务请求结构化输出时携带 `response_format: json_object`（或等价兼容参数），不支持的配置静默跳过；`fixture.js` 新增 `candidates`、`fallback-only` 固定序列，未知用例返回明确错误。
-  - 判据：`agent-providers.test.js` 断言 JSON 模式请求构造与 fixture 新序列；fixture 外部网络调用为 0。
+  - 文件：`api/agent-runtime/providers/openai.js`、`providers/fixture.js`、`providers/index.js`。
+  - 动作：`openai.js` 在任务请求结构化输出时携带 `response_format: json_object`（或等价兼容参数），不支持的配置静默跳过；`fixture.js` 新增 `candidates`、`fallback-only` 固定序列，未知用例返回明确错误；`index.js` 注册命名提供商 `opencode`（复用 OpenAI 兼容实现，固定 `baseUrl https://opencode.ai/inference/openai/v1`，不作为服务端自定义端点的开口）。
+  - 判据：`agent-providers.test.js` 断言 JSON 模式请求构造、fixture 新序列与 opencode 固定 baseUrl；fixture 外部网络调用为 0。
   - 记录：待填。
 
 - [ ] **1.5 更新 API 构建复制清单**
@@ -208,7 +208,7 @@
 - [ ] **4.5 配置能力与解析顺序**
   - 范围：服务端配置的图像能力声明与稳定排序。
   - 文件：`api/src/agent/agent-config.store.ts`、`api/src/agent/agent.flags.ts`、`.env.example`。
-  - 动作：配置支持显式 `capabilities.image` 覆盖；服务端默认配置由管理员 `agentVision`（默认开）声明图像能力；`list` 返回按配置 ID 升序的稳定排序；`resolve` 只在当前执行位置内取第一个可用配置，不跨端回退。
+  - 动作：配置支持显式 `capabilities.image` 覆盖；服务端默认配置由管理员 `agentVision`（默认开）声明图像能力；`list` 返回按配置 ID 升序的稳定排序；`resolve` 只在当前执行位置内取第一个可用配置，不跨端回退；用户配置 provider 枚举增加 `opencode`；`.env.example` 增加 `OPENCODE_API_KEY` 空占位与说明，真实值只进 git 忽略的 `.env`。
   - 判据：`image:false` 配置拒绝带图请求并返回 `profile_capability_missing`；纯文字请求在同配置下可跑；同层多配置时选择可复现。
   - 记录：待填。
 
@@ -261,7 +261,7 @@
 - [ ] **5.4 配置页能力开关**
   - 范围：服务端用户配置的图像能力声明。
   - 文件：`frontend/src/views/AgentSetup.jsx`。
-  - 动作：配置表单增加“该模型可读取图片”开关，写 `capabilities.image` 覆盖；默认关闭 provider 推断。
+  - 动作：配置表单增加“该模型可读取图片”开关，写 `capabilities.image` 覆盖；默认关闭 provider 推断；provider 可选列表增加 `opencode`。
   - 判据：开关状态随配置往返；关闭后带图请求得到可读错误（A10）。
   - 记录：待填。
 
@@ -300,7 +300,7 @@
 - [ ] **6.3 配置解析与能力覆盖**
   - 范围：RN 静默解析顺序。
   - 文件：`mobile-rn/src/agent/config.ts`。
-  - 动作：首轮解析顺序本机（按 ID 升序）> 服务端用户 > 服务端默认；练习模式仅本机；能力校验用共享 `capabilities(input)`；返回脱敏配置摘要；`AGENT_RUNTIME_DISABLED` 只隐藏服务端路径，本机不受影响。
+  - 动作：首轮解析顺序本机（按 ID 升序）> 服务端用户 > 服务端默认；练习模式仅本机；能力校验用共享 `capabilities(input)`；返回脱敏配置摘要；`AGENT_RUNTIME_DISABLED` 只隐藏服务端路径，本机不受影响；本机 provider 选项增加 `opencode`（密钥仍入 SecureStore）。
   - 判据：A10/A11 的本机路径可复现：仅文本配置拒绝带图、禁用后本机入口仍在。
   - 记录：待填。
 
@@ -356,7 +356,7 @@
 - [ ] **6.11 配置页能力开关**
   - 范围：RN 配置声明。
   - 文件：`mobile-rn/src/screens/AgentProfileScreen.tsx`。
-  - 动作：本机与服务端用户配置增加“该模型可读取图片”开关，写 `capabilities.image`。
+  - 动作：本机与服务端用户配置增加“该模型可读取图片”开关，写 `capabilities.image`；provider 可选列表增加 `opencode`。
   - 判据：开关往返保存；`image:false` 配置带图请求被拒（A10 设备路径）。
   - 记录：待填。
 
@@ -395,7 +395,7 @@
 - [ ] **7.2 真实视觉模型 smoke**
   - 范围：真实供应商的一次性验证。
   - 文件：`docs/ai-exercise-search/ACCEPTANCE.md`。
-  - 动作：用真实支持图像的配置对 `docs/ai-exercise-search/test_pic/` 中的实物照片执行手工 smoke（每张配一句文字），期望候选按下表预先填写，执行时逐张核对；竖拍照片同时验证 EXIF 方向归一化；只跑 fixture 的项保持"待验"标记。
+  - 动作：smoke 配置使用 `opencode` 提供商与模型 `deepseek-v4.1-flash-1017`（ID 以服务端模型列表为准；密钥从 git 忽略的 `api/.env` 读 `OPENCODE_API_KEY` 配服务端默认配置，或在 RN 本机配置录入，**任何真实密钥不进提交、文档与日志**）；对 `docs/ai-exercise-search/test_pic/` 中的实物照片执行手工 smoke（每张配一句文字），期望候选按下表预先填写，执行时逐张核对；竖拍照片同时验证 EXIF 方向归一化；只跑 fixture 的项保持"待验"标记。若该模型实测无图像能力，如实关闭能力开关并记录，另选有视觉能力的模型完成照片项。
 
 | 照片（`test_pic/`） | 内容 | 期望候选（执行前预填） |
 |---|---|---|
