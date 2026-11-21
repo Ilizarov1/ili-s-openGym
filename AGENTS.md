@@ -82,6 +82,9 @@ docs/
     ACCEPTANCE.md                        环境、命令、A1-A7 证据和待设备项
     REVIEW.md                            评审整改清单与本轮修改记录
     REVIEW2.md                           第二轮评审问题、证据与整改顺序
+  ai-exercise-search/
+    REQUIREMENTS.md                      多模态动作检索的范围、入口、交互和验收条件
+    DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/
