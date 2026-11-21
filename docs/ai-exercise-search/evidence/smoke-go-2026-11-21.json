@@ -1,0 +1,261 @@
+{
+  "date": "2026-11-21",
+  "provider": "opencode",
+  "endpoint": "https://opencode.ai/inference/go/v1",
+  "model": "deepseek-v4.1-flash",
+  "keyInLog": false,
+  "results": [
+    {
+      "photo": "微信图片_20261121172209_120_66.jpg",
+      "hint": "这是一台坐姿推胸器械，我想找胸部推举动作",
+      "bytes": 375631,
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "status": "completed",
+      "durationMs": 14340,
+      "structured": {
+        "candidates": [
+          {
+            "name": "seated chest press",
+            "nameEn": "seated chest press",
+            "rationale": "The photo shows a machine with a fixed seat, a back pad and two lever arms with vertical grips at chest height that travel forward and away from the torso — the defining setup of a seated chest press.",
+            "level": "high"
+          },
+          {
+            "name": "lever chest press",
+            "nameEn": "lever chest press",
+            "rationale": "User states '坐姿推胸器械' (seated chest press machine); the lever arms pivoting on a frame and the plate-loaded weight horn identify a lever-style press rather than a cable station.",
+            "level": "medium"
+          },
+          {
+            "name": "single arm chest press",
+            "nameEn": "single arm chest press",
+            "rationale": "The two press arms are independent lever arms, so the machine also allows alternating/one-arm pressing on the same apparatus; not visible as a separate item in the photo.",
+            "level": "low"
+          },
+          {
+            "name": "incline chest press",
+            "nameEn": "incline chest press",
+            "rationale": "The pressing arms are mounted above the seat and drive slightly upward-forward, which matches an incline-path machine press; the exact angle cannot be confirmed from the photo.",
+            "level": "low"
+          },
+          {
+            "name": "cable chest press",
+            "nameEn": "cable chest press",
+            "rationale": "Included as the free-weight/stack alternative to the user's request for a forward horizontal press; the photographed apparatus is a lever machine, not a cable column, so this only fits if a different ",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "A plate-loaded, seated press machine with a back pad, two forward-driving lever arms with vertical grips at chest level, and a weight horn base — used for a horizontal chest press while seated.",
+          "bodyParts": [
+            "chest",
+            "upper arms",
+            "shoulders"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "photo": "微信图片_20261121172210_121_66.jpg",
+      "hint": "这是一台斜躺的腿举器械，我想找腿部推蹬动作",
+      "bytes": 104892,
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "status": "completed",
+      "durationMs": 9231,
+      "structured": {
+        "candidates": [
+          {
+            "name": "腿举",
+            "nameEn": "leg press",
+            "rationale": "图中是一台带靠背和脚踏板的斜躺式腿举机（背部靠垫在上、脚掌朝前上方推蹬），与你说的“斜躺的腿举器械、腿部推蹬”完全对应。",
+            "level": "high"
+          },
+          {
+            "name": "45度腿举",
+            "nameEn": "sled 45 degree leg press",
+            "rationale": "机器为约45度倾斜的滑轨式推蹬结构：座椅与背垫固定、脚踏板沿斜轨前后滑动，是典型的45度腿举。",
+            "level": "high"
+          },
+          {
+            "name": "坐姿腿举",
+            "nameEn": "seated leg press",
+            "rationale": "照片中背垫与座垫连成斜躺姿势，身体接近坐卧而非水平仰卧，因此也可能是坐姿腿举这一变式；具体取决于你实际使用的坐姿角度。",
+            "level": "medium"
+          },
+          {
+            "name": "单腿腿举",
+            "nameEn": "single leg press",
+            "rationale": "同一台斜躺腿举机也可单脚推蹬；若你只想练单侧腿，对应这个动作。",
+            "level": "low"
+          },
+          {
+            "name": "腿举机提踵",
+            "nameEn": "calf press on leg press machine",
+            "rationale": "同一脚踏板上仅用前脚掌推蹬即可做提踵，属于该器械上的常见附属动作。",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "你发来一张健身房照片，画面中是一台斜躺式腿举机（靠背加倾斜滑轨和脚踏板），文字说明你想找的是这台器械上的腿部推蹬动作。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "leverage machine",
+            "sled machine"
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "photo": "微信图片_20261121172211_122_66.jpg",
+      "hint": "这是一台坐姿腿屈伸器械，我想找大腿前侧的训练动作",
+      "bytes": 394506,
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "status": "completed",
+      "durationMs": 11273,
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿腿屈伸",
+            "nameEn": "seated leg extension",
+            "rationale": "你的文字直接点明了“坐姿腿屈伸器械”，照片中也能看到带靠背的座椅、前下方压住小腿前侧的滚轮垫，以及带黄色插销的配重片——这正是腿屈伸机用来将膝关节从屈曲伸直的经典结构，动作直接针对大腿前侧。",
+            "level": "high"
+          },
+          {
+            "name": "单腿腿屈伸",
+            "nameEn": "single-leg leg extension",
+            "rationale": "同样基于这台滚轮压在胫骨前侧、靠背固定的坐姿器械；单腿版本只是改为一侧腿单独发力，具体是不是这个变式取决于你是否拆开发力腿，照片里看不出来。",
+            "level": "medium"
+          }
+        ],
+        "fallback": {
+          "understanding": "你发来一张健身房里的坐姿腿屈伸机照片：灰色座椅带靠背，前方有一组小臂粗的滚轮垫压在胫骨下端，机身中部是插销式配重片，旁边还摆着其他固定器械。你想用这台机器练大腿前侧（股四头肌），所以最直接的就是坐在这台机器上做腿屈伸——臀部贴紧靠背、滚轮垫压在脚踝上方小腿前侧，靠伸膝把重量抬起来。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "photo": "微信图片_20261121172211_123_66.jpg",
+      "hint": "这是一台挂片式坐姿上推器械，我想找肩部推举动作",
+      "bytes": 300852,
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "status": "completed",
+      "durationMs": 11257,
+      "structured": {
+        "candidates": [
+          {
+            "name": "挂片式肩部推举",
+            "nameEn": "plate-loaded shoulder press",
+            "rationale": "图中的框架上有对称的挂片杆，蓝色推臂带握把，座位配有靠背和脚踏板，这正是挂片式坐姿上推器械，对应向斜上方推起的肩部推举动作。",
+            "level": "high"
+          },
+          {
+            "name": "坐姿器械肩推",
+            "nameEn": "seated machine shoulder press",
+            "rationale": "靠背和座椅固定了躯干，双手从肩部高度沿推臂轨迹上推，因此是坐姿器械肩推这一动作类别；具体采用哪种器械取决于器械抓手和轨迹的设计。",
+            "level": "medium"
+          },
+          {
+            "name": "单臂挂片式肩推",
+            "nameEn": "single-arm plate-loaded shoulder press",
+            "rationale": "两侧推臂相互独立，都带有挂片杆，因此可以单侧交替推举；但由于图中推臂的连接方式看不清楚，所以只能算合理猜测。",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "你发的是一台挂片式坐姿上推器械：银灰框架、蓝色双推臂带握把、黑色靠背与脚踏板、多根挂片杆。你想找用这台器械完成的肩部推举动作。",
+          "bodyParts": [
+            "shoulders"
+          ],
+          "equipment": [
+            "leverage machine",
+            "weight plate"
+          ]
+        }
+      },
+      "error": null
+    },
+    {
+      "photo": "微信图片_20261121172212_124_66.jpg",
+      "hint": "这是一台斜板哈克深蹲/腿举器械，我想找深蹲或腿举动作",
+      "bytes": 222326,
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "status": "completed",
+      "durationMs": 10224,
+      "structured": {
+        "candidates": [
+          {
+            "name": "哈克深蹲",
+            "nameEn": "hack squat",
+            "rationale": "器械上有肩垫、背垫和倾斜滑轨，还有下方的固定踏板，正是哈克深蹲机的特征结构；这与你说的「斜板哈克深蹲」直接对应。",
+            "level": "high"
+          },
+          {
+            "name": "腿举",
+            "nameEn": "leg press",
+            "rationale": "这类斜板滑轨机常被当作腿举使用：人仰卧或坐上去，双脚踩踏板向前蹬；但照片中看不到你实际的姿势，所以只能确定它属于腿举这一类。",
+            "level": "medium"
+          },
+          {
+            "name": "反向哈克深蹲",
+            "nameEn": "reverse hack squat",
+            "rationale": "同一台肩垫加斜滑轨的器械，如果人面朝背垫站立、肩膀顶住肩垫，就变成反向哈克深蹲；这一动作只能从器械结构推断，看不到你的站姿。",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "一台倾斜滑轨式哈克深蹲/腿举机：滑架上装有肩垫与背垫，底部是一块站立踏板，两侧挂杆可加杠铃片。你想在这台器械上找深蹲或腿推动作。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "sled machine"
+          ]
+        }
+      },
+      "error": null
+    }
+  ]
+}

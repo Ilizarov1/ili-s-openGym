@@ -818,7 +818,7 @@ run request and are never uploaded or written to `data/`; the API's 5 MiB body l
 hard ceiling, and the task itself accepts at most two images of 1 MiB each. Server sessions
 and their messages are temporary: idle AI sessions are removed after 2 hours and AI run
 records after 1 hour. `OPENCODE_API_KEY` can serve the instance default profile through the
-fixed OpenCode inference endpoint (`OPENCODE_MODEL`, default `deepseek-v4.1-flash`); the key
+fixed OpenCode Go inference endpoint (`https://opencode.ai/inference/go/v1`, `OPENCODE_MODEL`, default `deepseek-v4.1-flash`); the key must belong to a Go subscription, and the provider sends `x-opencode-session`; the key
 is read from the environment and is not written into `agent-<uid>.json`. `AGENT_VISION=0`
 makes the default profile refuse images while text search keeps working.
 `AGENT_RUNTIME_DISABLED=1` only disables the server execution path: Web's entry disappears

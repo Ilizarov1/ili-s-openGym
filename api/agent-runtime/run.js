@@ -256,6 +256,7 @@ export async function runAgent(options) {
           ? task.instructions(request.input, context)
           : (task.instructions || DEFAULT_INSTRUCTIONS),
         ...(task.outputFormat === 'json' ? { responseFormat: 'json' } : {}),
+        sessionId: request.sessionId || context.runId,
         user: {
           text: typeof task.userText === 'function'
             ? task.userText(request.input, context)

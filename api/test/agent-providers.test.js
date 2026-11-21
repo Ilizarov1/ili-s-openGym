@@ -200,24 +200,35 @@ test('JSON mode and image labels are part of the provider request', () => {
   ]);
 });
 
-test('the named opencode provider always uses the fixed inference endpoint', async () => {
-  assert.equal(OPENCODE_BASE_URL, 'https://opencode.ai/inference/openai/v1');
+test('the named opencode provider uses the fixed Go endpoint and session header', async () => {
+  assert.equal(OPENCODE_BASE_URL, 'https://opencode.ai/inference/go/v1');
   assert.equal(createProvider('opencode', { model: 'fixture' }).id, 'opencode');
   let seen = null;
   const provider = createProvider('opencode', {
     baseUrl: 'https://attacker.example/v1',
     apiKey: 'sk-test',
-    model: 'deepseek-v4.1-flash-1017',
+    model: 'deepseek-v4.1-flash',
     fetchImpl: async (url, init) => {
-      seen = { url: String(url), body: JSON.parse(String(init.body)) };
+      seen = { url: String(url), body: JSON.parse(String(init.body)), headers: init.headers };
       return jsonResponse({ choices: [{ message: { content: '{"candidates":[],"fallback":{"understanding":"x"}}' } }] });
     },
   });
   await provider.invoke({
-    modelInput: { instructions: '', responseFormat: 'json', user: { text: 'x' }, facts: [], memories: [], history: [], tools: [], toolResults: [] },
+    modelInput: {
+      instructions: '',
+      responseFormat: 'json',
+      sessionId: 'ses_test_go_1',
+      user: { text: 'x' },
+      facts: [],
+      memories: [],
+      history: [],
+      tools: [],
+      toolResults: [],
+    },
   });
   assert.equal(seen.url, `${OPENCODE_BASE_URL}/chat/completions`);
   assert.equal(seen.body.response_format.type, 'json_object');
+  assert.equal(seen.headers['x-opencode-session'], 'ses_test_go_1');
   assert.equal(JSON.stringify(seen).includes('attacker'), false);
 });
 

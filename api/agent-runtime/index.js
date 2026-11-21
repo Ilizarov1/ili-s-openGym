@@ -35,7 +35,13 @@ export {
   providerCapabilities,
 } from './model-gateway.js';
 export { runAgent } from './run.js';
-export { createProvider, isProviderId, PROVIDER_IDS, OPENCODE_BASE_URL } from './providers/index.js';
+export {
+  createProvider,
+  isProviderId,
+  PROVIDER_IDS,
+  OPENCODE_BASE_URL,
+  OPENCODE_CREDITS_BASE_URL,
+} from './providers/index.js';
 export { createFixtureProvider } from './providers/fixture.js';
 export { createOpenAIProvider, buildOpenAIRequest } from './providers/openai.js';
 export { createHttpClient } from './providers/http.js';

@@ -13,7 +13,7 @@
 | `api/agent-runtime/tasks/exercise-search.js`（新） | 共享任务 `exercise-search.v1`：输入/输出 schema、受控词表 prompt、预算、fixture 用例、内联图片校验与 `parseOutput` 清洗。无平台依赖。 |
 | `api/agent-runtime/tasks/exercise-search-vocabulary.json`（新） | 身体部位/器械 slug 的共享快照；由 API 测试对照 `frontend/src/lib/exercises-data.js` 和移动端目录校验，避免两端词表漂移。 |
 | `api/agent-runtime/providers/fixture.js`（改） | 增加 `candidates`、`fallback-only` fixture 序列，或提供任务级 fixture 适配；未知用例仍返回明确错误。 |
-| `api/agent-runtime/providers/index.js`（改） | 注册命名提供商 `opencode`：OpenAI 兼容实现、固定 `baseUrl https://opencode.ai/inference/openai/v1`；服务端用户/默认配置与 RN 本机配置均可选用，验收 smoke 模型 `deepseek-v4.1-flash-1017`。 |
+| `api/agent-runtime/providers/index.js`（改） | 注册命名提供商 `opencode`：OpenAI 兼容实现、固定 `baseUrl https://opencode.ai/inference/go/v1`；服务端用户/默认配置与 RN 本机配置均可选用，验收 smoke 模型 `deepseek-v4.1-flash-1017`。 |
 | `api/agent-runtime/errors.js`（改） | 新增 `agent_media_invalid`（400）、`agent_media_too_large`（413）、`turn_limit`（429）、`session_busy`（409）、`session_conflict`（409）。五个码都不在 agent-runtime 现有错误清单（其执行计划 1.2）内，由本需求第一步一并落入共享 `errors.js`。 |
 | `api/src/agent/tasks/index.ts`（新） | 服务端任务注册表：`taskId -> { task, tools, messageOf }`。桩任务保留为 `stub.v1`，AI 任务注册为 `exercise-search.v1`。 |
 | `api/src/agent/agent.service.ts`（改） | 按 `taskId` 选择任务及其工具；按任务输入校验 schema；用任务消息投影写会话；校验 `sessionMode`、会话执行位置、轮次和并发；运行结果附带脱敏配置摘要。 |
@@ -145,7 +145,7 @@ or gym slang; a brand or slang mention can go in the rationale instead.
 
 RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；`AgentStartInput` 增加 `taskId`，`server-client.startRun` 不再硬编码 `stub.v1`。
 
-**命名提供商 `opencode`。** OpenAI 兼容的预设端点（`https://opencode.ai/inference/openai/v1`），注册进共享 `providers/index.js` 后可被三类配置选用：RN 本机（密钥 SecureStore）、服务端用户（密钥按账号加密）、服务端默认（管理员经 `.env` 的 `OPENCODE_API_KEY` 配置）。baseUrl 固定在提供商实现内、不进入用户输入，因此不构成服务端自定义端点的开口。验收 smoke 指定模型 `deepseek-v4.1-flash-1017`（2026-11-21 服务端模型列表把该版本暴露为 id `deepseek-v4.1-flash`，显示名 `DeepSeek V4.1 Flash 1017`，以列表为准；实测输入支持 text/jpeg/png/gif/webp），能力开关按模型实际声明。密钥纪律：真实密钥只存 SecureStore、按账号密文或 git 忽略的 `api/.env`；`.env.example` 只留空占位；日志、OpenAPI 与配置响应排除密钥（沿用 agent-runtime R1）。
+**命名提供商 `opencode`。** OpenAI 兼容的预设端点（`https://opencode.ai/inference/go/v1`），注册进共享 `providers/index.js` 后可被三类配置选用：RN 本机（密钥 SecureStore）、服务端用户（密钥按账号加密）、服务端默认（管理员经 `.env` 的 `OPENCODE_API_KEY` 配置）。baseUrl 固定在提供商实现内、不进入用户输入，因此不构成服务端自定义端点的开口。该端点是 **OpenCode Go 订阅端点**，不是按量付费的 Console 端点；provider 每次请求附带 `x-opencode-session`（会话 ID 或 run ID）以满足 Go 路由要求。只买 Console credits 而未订阅 Go 的账户应在 Console 端点使用，不能混用。验收 smoke 指定模型 `deepseek-v4.1-flash-1017`（2026-11-21 服务端模型列表把该版本暴露为 id `deepseek-v4.1-flash`，显示名 `DeepSeek V4.1 Flash 1017`，以列表为准；实测输入支持 text/jpeg/png/gif/webp），能力开关按模型实际声明。密钥纪律：真实密钥只存 SecureStore、按账号密文或 git 忽略的 `api/.env`；`.env.example` 只留空占位；日志、OpenAPI 与配置响应排除密钥（沿用 agent-runtime R1）。
 
 ## 4. 执行位置与配置解析
 
@@ -325,5 +325,6 @@ sequenceDiagram
 | 检索效果评测补全 | §6 效果评测与执行计划 3.4 增加 golden 集：覆盖矩阵、双语池、初始命中率门槛与"最小常量过门槛"校准闭环；7.2 扩为实物照片手工 smoke 协议。 |
 | 边界场景补全 | 评测矩阵增加边界子集（无关节输出、幻觉请求、全景多器械、五候选同动作、语言错配、追问矛盾轮，100% 门槛）；任务测试补长度/图片/至少一项边界；7.2 引用 `test_pic/` 实物照片并加 EXIF 方向校验。 |
 | 命名提供商 opencode | 注册 OpenAI 兼容预设端点（固定 baseUrl，不开服务端自定义口）与 smoke 模型 `deepseek-v4.1-flash-1017`；RN 本机、服务端用户/默认三类配置可选；真实密钥只进 SecureStore、按账号密文或 git 忽略的 `.env`。 |
+| Go 端点修正 | 2026-11-21 实测：`https://opencode.ai/inference/openai/v1` 是按量付费 Console 端点，Go 订阅账户调用仍 402；Go 端点 `https://opencode.ai/inference/go/v1` 需要 `x-opencode-session`，provider 现按会话/run 生成该头。smoke 使用 Go 端点完成。 |
 | 执行计划落地澄清 | 会话存储由宿主持有，`run.js` 只校验 `sessionMode`，ensure/只读分派在服务端与 RN；`assistantMessage` 增加本轮输入参数以写图片元数据；任务用 `outputFormat: 'json'` 触发 provider JSON 模式；图片单边 ≤4096、长短边比 ≤16。 |
 | golden 校准与精确名 | 88 条 golden 全部达标后把常量固化为 `BASE_FLOOR=60`、`EQ_BONUS=25`、`BP_BONUS=15`、`CJK_DICE_MIN=0.60`、`CJK_LCS_MIN=3`、`CJK_MARGIN=0.12`；“精确名”按名称/别名归一化相等判定，拼写近似不得标高；非精确 CJK 名进入字符回退，回退歧义时仅保留有名称证据的关键词命中。fixture 配置省略 `fixtureCase` 时默认 `candidates`，供双端交互验收。 |

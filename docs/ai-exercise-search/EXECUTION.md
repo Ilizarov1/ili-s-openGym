@@ -91,9 +91,9 @@
 - [x] **1.4 提供商结构化输出支持**
   - 范围：共享 provider 的 JSON 模式与 fixture 序列。
   - 文件：`api/agent-runtime/providers/openai.js`、`providers/fixture.js`、`providers/index.js`。
-  - 动作：`openai.js` 在任务请求结构化输出时携带 `response_format: json_object`（或等价兼容参数），不支持的配置静默跳过；`fixture.js` 新增 `candidates`、`fallback-only` 固定序列，未知用例返回明确错误；`index.js` 注册命名提供商 `opencode`（复用 OpenAI 兼容实现，固定 `baseUrl https://opencode.ai/inference/openai/v1`，不作为服务端自定义端点的开口）。
+  - 动作：`openai.js` 在任务请求结构化输出时携带 `response_format: json_object`（或等价兼容参数），不支持的配置静默跳过；`fixture.js` 新增 `candidates`、`fallback-only` 固定序列，未知用例返回明确错误；`index.js` 注册命名提供商 `opencode`（复用 OpenAI 兼容实现，固定 `baseUrl https://opencode.ai/inference/go/v1`，不作为服务端自定义端点的开口）。
   - 判据：`agent-providers.test.js` 断言 JSON 模式请求构造、fixture 新序列与 opencode 固定 baseUrl；fixture 外部网络调用为 0。
-  - 记录：2026-11-21：`openai.js` 支持 `response_format: json_object` 与图片 label；`fixture.js` 增加 `candidates`/`fallback-only`；`providers/index.js` 注册固定端点的 `opencode`。`agent-providers.test.js` 通过。
+  - 记录：2026-11-21：`openai.js` 支持 `response_format: json_object` 与图片 label；`fixture.js` 增加 `candidates`/`fallback-only`；`providers/index.js` 注册固定端点的 `opencode`。后续真实 smoke 发现 Go 订阅必须走 `https://opencode.ai/inference/go/v1` 并带 `x-opencode-session`；provider 与测试已修正，`agent-providers.test.js` 通过。
 
 - [x] **1.5 更新 API 构建复制清单**
   - 范围：构建产物完整性。
@@ -365,21 +365,21 @@
   - 文件：无源码新增。
   - 动作：`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check`；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export`。
   - 判据：全部通过；bundle 含共享任务与词表 JSON；无 Node 内建报错。
-  - 记录：2026-11-21 完成。`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check` 全部通过（lint 仅保留既有 `PlanScreen.tsx:205`、`StatsScreen.tsx:276` 的 array-index warnings，0 errors）；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export` 成功。bundle：`mobile-rn/.expo-ai-search-export/_expo/static/js/android/index-5bc2874abf9dbaf39806878a5a2bb08e.hbc`（10,542,672 bytes），SHA-256 `AE63FCF932EA031616788F9B915D65DFC77056C9D10E65E4525CCC726656D6DD`；bundle 内已核对 `exercise-search.v1`、`agent_ai_images`、共享任务提示词与词表 slug（`stepmill machine`），无 Node 内建解析报错。
+  - 记录：2026-11-21 完成。`npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run design:check`、`npm.cmd run check` 全部通过（lint 仅保留既有 `PlanScreen.tsx:205`、`StatsScreen.tsx:276` 的 array-index warnings，0 errors）；`npx.cmd expo export --platform android --output-dir .expo-ai-search-export` 成功。bundle：`mobile-rn/.expo-ai-search-export/_expo/static/js/android/index-02513567f73b6640e54d766faffdeb24.hbc`（10,543,113 bytes），SHA-256 `664A717019610D333E1C7973BDBFC38FE39B13BD5B4AA0CAA1D1354B5579BDD2`；bundle 内已核对 `exercise-search.v1`、`agent_ai_images`、共享任务提示词与词表 slug（`stepmill machine`），无 Node 内建解析报错。
 
 - [x] **6.13 设备验收**
   - 范围：模拟器上的双路径验收。
   - 文件：无源码新增。
   - 动作：按 [RN Android 工具与验收](../../.agents/skills/opengym-development/references/rn-android.md) 申请设备；安装 APK；fixture 配置下执行 A1（本机 + 服务端）、A2、A3、A6、A8、A14、A15；另验 A11（服务端禁用时本机入口仍在）。
   - 判据：设备记录含模拟器序列号、APK 哈希、截图与实际结果；A1/A6/A8/A15 全过。
-  - 记录：2026-11-21，`emulator-5556` / `openGymRnQa`（Android 16，x86_64），APK SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3`。本机路径：A1 文字与纯图（相册照片）`completed`、A2 独占识别态与关键词清空、A3 候选/详情往返保持、A6 追问替换候选且轮次 5→4、A8 点 x 恢复快照并退出、A15 训练替换选择器选中候选后第一槽位由“杠铃卧推”变为“哑铃坐姿肩部推举”且 4 组保留。服务端路径：通过 `http://10.0.2.2:3000` 配对临时 fixture 实例后，A1 文字运行 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端且未回退本机。截图：`evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`、`device-ai-server.png`、`device-pair-filled3.png`、`device-paired.png`。A14 识别态重开与 A11 服务端禁用隐藏未做设备复验（Web 单测/API 用例覆盖），列为待验。
+  - 记录：2026-11-21，`emulator-5556` / `openGymRnQa`（Android 16，x86_64），APK SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`。本机路径：A1 文字与纯图（相册照片）`completed`、A2 独占识别态与关键词清空、A3 候选/详情往返保持、A6 追问替换候选且轮次 5→4、A8 点 x 恢复快照并退出、A15 训练替换选择器选中候选后第一槽位由“杠铃卧推”变为“哑铃坐姿肩部推举”且 4 组保留。服务端路径：通过 `http://10.0.2.2:3000` 配对临时 fixture 实例后，A1 文字运行 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端且未回退本机。截图：`evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`、`device-ai-server.png`、`device-pair-filled3.png`、`device-paired.png`。A14 识别态重开与 A11 服务端禁用隐藏未做设备复验（Web 单测/API 用例覆盖），列为待验。
 
 - [x] **6.14 构建并验证 APK**
   - 范围：发布产物。
   - 文件：无源码新增。
   - 动作：`npx.cmd expo prebuild --platform android --no-install`；`.\android\gradlew.bat :app:assembleRelease`；`apksigner verify`；`Get-FileHash -Algorithm SHA256`。
   - 判据：签名通过；哈希写入验收记录。
-  - 记录：2026-11-21，`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`；`apksigner verify` 通过（APK Signature Scheme v2），包名 `dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`；SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3`。
+  - 记录：2026-11-21，`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`；`apksigner verify` 通过（APK Signature Scheme v2），包名 `dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`；SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`。
 
 ## 阶段 7 双端验收与交接
 
@@ -392,21 +392,21 @@
   - 判据：每条有证据；未跑项标明待验。
   - 记录：2026-11-21：`docs/ai-exercise-search/ACCEPTANCE.md` 已按 A1–A16 填写，fixture 离线、RN 设备与服务端 workspace 分栏；7.2 真实模型、A11 配对服务端隐藏、A12/A14 设备复验标注待验。
 
-- [ ] **7.2 真实视觉模型 smoke**
+- [x] **7.2 真实视觉模型 smoke**
   - 范围：真实供应商的一次性验证。
   - 文件：`docs/ai-exercise-search/ACCEPTANCE.md`。
   - 动作：smoke 配置使用 `opencode` 提供商与模型 `deepseek-v4.1-flash`（服务端列表中该 ID 的名称是 DeepSeek V4.1 Flash 1017，canonical id 为 `deepseek/deepseek-v4.1-flash-1017`；密钥从 git 忽略的 `api/.env` 读 `OPENCODE_API_KEY` 配服务端默认配置，或在 RN 本机配置录入，**任何真实密钥不进提交、文档与日志**）；对 `docs/ai-exercise-search/test_pic/` 中的实物照片执行手工 smoke（每张配一句文字），期望候选按下表预先填写，执行时逐张核对；竖拍照片同时验证 EXIF 方向归一化；只跑 fixture 的项保持"待验"标记。若该模型实测无图像能力，如实关闭能力开关并记录，另选有视觉能力的模型完成照片项。
 
-| 照片（`test_pic/`） | 内容 | 期望候选（执行前预填） |
-|---|---|---|
-| `微信图片_20261121172209_120_66.jpg` | 坐姿推胸器械（黑色，双握把向前推），竖拍 1280×1706 | `lever chest press` / `machine chest press` / `seated chest press`（胸部、leverage machine） |
-| `微信图片_20261121172210_121_66.jpg` | 斜躺腿举/蹬腿器械（灰色，滑轨与脚踏），竖拍 1024×1366 | `sled 45° leg press` / `leg press` / `sled hack squat`（大腿、sled machine） |
-| `微信图片_20261121172211_122_66.jpg` | 坐姿腿屈伸器械（灰色，前侧滚垫），竖拍 1280×1706；画面带社媒文字 | `lever leg extension` / `leg extension`（大腿、leverage machine） |
-| `微信图片_20261121172211_123_66.jpg` | 蓝色挂片式坐姿推举/推胸器械（黑色靠垫与脚踏），竖拍 1280×1706 | `lever shoulder press` / `seated shoulder press` / `plate loaded shoulder press`（肩部、leverage machine） |
-| `微信图片_20261121172212_124_66.jpg` | 黑色斜板哈克深蹲/腿举器械（肩垫、脚踏、配重片），竖拍 1280×1706 | `sled hack squat` / `hack squat` / `leg press`（大腿、sled machine） |
+| 照片（`test_pic/`） | 内容 | 期望候选（执行前预填） | 实际候选 |
+|---|---|---|---|
+| `微信图片_20261121172209_120_66.jpg` | 坐姿推胸器械（黑色，双握把向前推），竖拍 1280×1706 | `lever chest press` / `machine chest press` / `seated chest press`（胸部、leverage machine） | `seated chest press` [high]、`lever chest press` [medium]、`single arm chest press` [low]、`incline chest press` [low]、`cable chest press` [low] |
+| `微信图片_20261121172210_121_66.jpg` | 斜躺腿举/蹬腿器械（灰色，滑轨与脚踏），竖拍 1024×1366 | `sled 45° leg press` / `leg press` / `sled hack squat`（大腿、sled machine） | `腿举` [high]、`45度腿举` [high]、`坐姿腿举` [medium]、`单腿腿举` [low]、`腿举机提踵` [low] |
+| `微信图片_20261121172211_122_66.jpg` | 坐姿腿屈伸器械（灰色，前侧滚垫），竖拍 1280×1706；画面带社媒文字 | `lever leg extension` / `leg extension`（大腿、leverage machine） | `坐姿腿屈伸` [high]、`单腿腿屈伸` [medium] |
+| `微信图片_20261121172211_123_66.jpg` | 蓝色挂片式坐姿推举/推胸器械（黑色靠垫与脚踏），竖拍 1280×1706 | `lever shoulder press` / `seated shoulder press` / `plate loaded shoulder press`（肩部、leverage machine） | `挂片式肩部推举` [high]、`坐姿器械肩推` [medium]、`单臂挂片式肩推` [low] |
+| `微信图片_20261121172212_124_66.jpg` | 黑色斜板哈克深蹲/腿举器械（肩垫、脚踏、配重片），竖拍 1280×1706 | `sled hack squat` / `hack squat` / `leg press`（大腿、sled machine） | `哈克深蹲` [high]、`腿举` [medium]、`反向哈克深蹲` [low] |
 
   - 判据：真实模型路径产出可读结果或明确错误；每张的期望命中与实际差异逐张可追溯；竖拍照片识别后显示方向正确；结果与截图入验收记录。
-  - 记录：2026-11-21：阻塞：OpenCode API 账户余额不足/免费额度用尽。`deepseek-v4.1-flash`（列表显示名 DeepSeek V4.1 Flash 1017，支持图片输入）返回 HTTP 402 `Insufficient balance`；免费模型 `deepseek-v4.1-flash-free` 返回 HTTP 429 `FreeUsageLimitError`；文字模型同样 402，故无法完成真实图片 smoke。证据：`docs/ai-exercise-search/evidence/smoke-opencode-2026-11-21.json`（仅结构化错误，无密钥）；服务器日志确认未泄露密钥。照片内容与期望表已预填，待账户恢复后逐张执行。
+  - 记录：2026-11-21：已通过。首次失败为产品配置问题而非模型能力：`https://opencode.ai/inference/openai/v1` 是 Console 按量付费端点，Go 订阅账户调用返回 402；改用 Go 端点 `https://opencode.ai/inference/go/v1` 并附带 `x-opencode-session` 后，5 张照片全部 `completed`，每张 9–15 秒，返回预期器械类别（推胸、腿举、腿屈伸、肩推、哈克深蹲），竖拍显示方向正确。证据：`docs/ai-exercise-search/evidence/smoke-go-2026-11-21.json`；密钥未进入日志。旧 402 证据保留在 `smoke-opencode-2026-11-21.json` 作为排障记录。
 
 - [x] **7.3 更新文档与项目地图**
   - 范围：仓库导航与自托管说明。
@@ -420,7 +420,7 @@
   - 文件：无。
   - 动作：按下表跑完整命令矩阵；记录 API 镜像、Web 构建、RN APK 的哈希。
   - 判据：全部通过或明确待验。
-  - 记录：2026-11-21：API 共享 51 pass、API 集成 13 pass、OpenAPI 5 pass、Web 匹配/识别态 76 pass、Web 选择器回归 59 pass、Web 构建成功、RN `npm.cmd run check` 与 `expo export` 成功、final APK v2 验签通过（SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3`）。真实视觉模型 smoke 与 RN 配对服务端隐藏设备项见待验。
+  - 记录：2026-11-21：API 共享 51 pass、API 集成 13 pass、OpenAPI 5 pass、Web 匹配/识别态 76 pass、Web 选择器回归 59 pass、Web 构建成功、RN `npm.cmd run check` 与 `expo export` 成功、final APK v2 验签通过（SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`）。真实视觉模型 smoke 5/5 通过；RN 配对服务端隐藏设备项待验。
 
 - [ ] **7.5 演练回退**
   - 范围：运行开关与数据保留。

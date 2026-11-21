@@ -2,9 +2,12 @@
 import { createFixtureProvider } from './fixture.js';
 import { createOpenAIProvider } from './openai.js';
 
-/** The one OpenCode inference endpoint. It is fixed here, never supplied by
- *  an account, so "opencode" cannot become a custom-endpoint bypass. */
-export const OPENCODE_BASE_URL = 'https://opencode.ai/inference/openai/v1';
+/** The one OpenCode Go inference endpoint. It is fixed here, never supplied by
+ *  an account, so "opencode" cannot become a custom-endpoint bypass. The
+ *  credit-billed Console endpoint is a different product and returns 402 when
+ *  the account only has a Go subscription. */
+export const OPENCODE_BASE_URL = 'https://opencode.ai/inference/go/v1';
+export const OPENCODE_CREDITS_BASE_URL = 'https://opencode.ai/inference/openai/v1';
 
 export const PROVIDER_IDS = Object.freeze(['fixture', 'openai', 'compatible', 'opencode']);
 

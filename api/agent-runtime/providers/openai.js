@@ -115,6 +115,13 @@ export function createOpenAIProvider(config = {}) {
         'content-type': 'application/json',
         ...(config.headers || {}),
         ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
+        ...(id === 'opencode' ? {
+          'x-opencode-session': String(
+            input.modelInput?.sessionId
+            || input.sessionId
+            || `opengym-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+          ).slice(0, 128),
+        } : {}),
       };
       const response = await request(endpoint, { method: 'POST', headers, body: JSON.stringify(body) }, {
         timeoutMs,

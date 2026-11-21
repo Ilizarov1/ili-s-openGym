@@ -59,6 +59,8 @@ export interface ModelInput {
   instructions: string;
   /** Set by the orchestrator when the task asks for one JSON object. */
   responseFormat?: 'json';
+  /** Stable per-conversation id; OpenCode Go uses it as x-opencode-session. */
+  sessionId?: string;
   user: {
     text: string;
     fixtureCase?: string;

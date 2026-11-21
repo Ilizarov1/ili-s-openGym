@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [技术设计](DESIGN.md) · [执行计划](EXECUTION.md)
 
-状态：fixture 离线项与 RN 设备项已完成；真实视觉模型 smoke 因 OpenCode 账户余额/免费额度阻塞，待账户恢复后补跑。实施提交 `2808653b2`。所有命令在 `D:\dev\open-gym-agent-runtime`（分支 `feat/agent-runtime`）执行，Windows PowerShell。
+状态：fixture 离线项、RN 设备项和 OpenCode Go 真实视觉模型 smoke 已完成；A11 的 RN 配对服务端隐藏与 A12/A14 设备复验仍待验。实施提交 `2808653b2`（Go 端点修正另行提交）。所有命令在 `D:\dev\open-gym-agent-runtime`（分支 `feat/agent-runtime`）执行，Windows PowerShell。
 
 ## 环境
 
@@ -41,10 +41,10 @@
 | 5 Web | `npm.cmd test -- src/components/ExerciseAiSearch.test.jsx src/views/Library.test.jsx src/views/AgentSetup.test.jsx` | 62 pass / 0 fail | 2026-11-21 |
 | 5 Web 构建 | `npm.cmd run build` | 478 modules，Library/AgentSetup 独立 chunk | 2026-11-21 |
 | 6 RN 静态 | `npm.cmd run check` | lint 仅 2 条既有 warning；typecheck/design:check 通过 | 2026-11-21 |
-| 6 Metro | `npx.cmd expo export --platform android --output-dir .expo-ai-search-export` | `index-5bc2874abf9dbaf39806878a5a2bb08e.hbc`，SHA-256 `AE63FCF932EA031616788F9B915D65DFC77056C9D10E65E4525CCC726656D6DD` | 2026-11-21 |
+| 6 Metro | `npx.cmd expo export --platform android --output-dir .expo-ai-search-export` | `index-02513567f73b6640e54d766faffdeb24.hbc`，SHA-256 `664A717019610D333E1C7973BDBFC38FE39B13BD5B4AA0CAA1D1354B5579BDD2` | 2026-11-21 |
 | 6 RN 设备 | `emulator-5556`（openGymRnQa，Android 16） | A1 本机/服务端、A2、A3、A6、A8、A15 通过；截图见下 | 2026-11-21 |
-| 6 APK | `app-release.apk`；`apksigner verify`；`Get-FileHash` | v2 签名通过；SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3` | 2026-11-21 |
-| 7 真实视觉 smoke | `test_pic/` 5 张 | **阻塞**：OpenCode 402 `Insufficient balance` / 免费模型 429 `FreeUsageLimitError` | 2026-11-21 |
+| 6 APK | `app-release.apk`；`apksigner verify`；`Get-FileHash` | v2 签名通过；SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001` | 2026-11-21 |
+| 7 真实视觉 smoke | `test_pic/` 5 张；`smoke-go-2026-11-21.json` | 5/5 `completed`，9–15 秒，类别与期望一致；Go 端点 + `x-opencode-session` | 2026-11-21 |
 
 ## 验收对照
 
@@ -75,22 +75,23 @@ fixture 离线项与设备项分开标注。
 |---|---|
 | 日期 | 2026-11-21 |
 | 提供商 / 模型 | `opencode` / `deepseek-v4.1-flash`（列表名称 DeepSeek V4.1 Flash 1017，canonical id `deepseek/deepseek-v4.1-flash-1017`） |
+| 端点 | `https://opencode.ai/inference/go/v1`（OpenCode Go；请求带 `x-opencode-session`） |
 | 能力 | 模型元数据声明输入 `text,image/jpeg,image/png,image/gif,image/webp`，`structured_output: true` |
 | 服务端配置 | 通过 `OPENCODE_API_KEY` 环境变量解析为服务端默认配置；密钥未写入 `agent-<uid>.json`，日志未包含密钥 |
-| 结果 | **阻塞**：付费模型 HTTP 402 `Insufficient balance`；免费模型 HTTP 429 `FreeUsageLimitError`；文字/图片请求均未获得模型回答 |
-| 证据 | [evidence/smoke-opencode-2026-11-21.json](evidence/smoke-opencode-2026-11-21.json) |
-| 后续 | 账户充值或恢复额度后，按 EXECUTION 7.2 的 5 张照片与期望表逐张执行并补截图。照片内容与期望候选已预填；5 张均为竖拍，无 EXIF Orientation 标签，像素本身正向。 |
+| 结果 | **5/5 通过**：5 张竖拍照片均 `completed`（9–15 秒），返回推胸、腿举、腿屈伸、肩推、哈克深蹲候选与兜底理解；方向正确 |
+| 证据 | [evidence/smoke-go-2026-11-21.json](evidence/smoke-go-2026-11-21.json)；旧 402 排障记录 [evidence/smoke-opencode-2026-11-21.json](evidence/smoke-opencode-2026-11-21.json) |
+| 说明 | 首次 402 的原因是代码固定到了 Console 按量付费端点，而非 Go 端点；改为 Go 端点并补 `x-opencode-session` 后解决。见 EXECUTION 7.2 与 DESIGN §12。 |
 
 ## 设备记录
 
 - 设备：`emulator-5556` / `openGymRnQa`（Android 16，x86_64），`agent-device` 冷启动并声明。
-- APK：`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`，SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3`；`apksigner verify` v2 通过；`dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`。
+- APK：`mobile-rn/android/app/build/outputs/apk/release/app-release.apk`，SHA-256 `5A58F79182B2F919AC04CFDE6EB88E0CF71306303D3D4C9174434B83734E9001`；`apksigner verify` v2 通过；`dev.opengym.rn`，versionCode 7 / versionName 0.1.6，`arm64-v8a`/`x86_64`。
 - 本机 workspace：fixture 配置，A1 文字/纯图、A2、A3、A6、A8、A15 通过；证据 `evidence/device-ai-run3.png`、`device-ai-followup.png`、`device-ai-exit.png`、`device-ai-image-result.png`、`device-replace-result.png`、`device-replaced.png`。
 - 服务端 workspace：临时 fixture API（`http://10.0.2.2:3000`）配对后 A1 文字 `completed`，摘要卡显示“经 Fixture (instance) 检索”，证明首轮固定服务端；证据 `device-pair-filled3.png`、`device-paired.png`、`device-ai-server.png`。
 - 设备验收后已 `agent-device close` 释放声明；模拟器保留。
 
 ## 待验项
 
-- 真实视觉模型 smoke：账户余额/额度阻塞，见上节。
 - A11 RN 配对服务端入口在 `AGENT_RUNTIME_DISABLED=1` 下的隐藏未做设备复验（API 503、Web 隐藏和 RN 本机可用已验）。
 - A14 识别态重开 ✨ 与 A12 进程重启提示未做设备复验（Web 单测和 RN 代码已覆盖）。
+- 真实模型 smoke 的客户端选择回填本次通过 API 运行验证；设备端使用 fixture 验证选择/替换，二者共同覆盖但未在同一台设备上叠加真实模型照片 → 动作详情。
