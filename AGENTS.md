@@ -75,6 +75,9 @@ docs/
     REQUIREMENTS.md                      双执行环境、上下文、工具围栏、记忆与验收要求
     DESIGN.md                            RN 与 NestJS 的模块、契约和持久化设计
     EXECUTION.md                         分阶段实施、验收证据和回退步骤
+  ai-exercise-search/
+    REQUIREMENTS.md                      多模态动作检索的范围、入口、交互和验收条件
+    DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/
