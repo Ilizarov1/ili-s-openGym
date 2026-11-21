@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [技术设计](DESIGN.md) · [执行计划](EXECUTION.md)
 
-状态：fixture 离线项与 RN 设备项已完成；真实视觉模型 smoke 因 OpenCode 账户余额/免费额度阻塞，待账户恢复后补跑。所有命令在 `D:\dev\open-gym-agent-runtime`（分支 `feat/agent-runtime`）执行，Windows PowerShell。
+状态：fixture 离线项与 RN 设备项已完成；真实视觉模型 smoke 因 OpenCode 账户余额/免费额度阻塞，待账户恢复后补跑。实施提交 `2808653b2`。所有命令在 `D:\dev\open-gym-agent-runtime`（分支 `feat/agent-runtime`）执行，Windows PowerShell。
 
 ## 环境
 
