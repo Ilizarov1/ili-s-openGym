@@ -593,6 +593,8 @@ type SearchFieldProps = {
   onClear?: () => void;
   resultCount?: number;
   autoFocus?: boolean;
+  editable?: boolean;              // AI 识别态下禁用文字，保留入口
+  onAiPress?: () => void;          // 传入才渲染 sparkles 入口
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
@@ -603,6 +605,7 @@ type SearchFieldProps = {
 - 输入 17/400，占位符 `label3`。
 - 有值时显示 `xmark` 圆形清除按钮，44×44 触控区。
 - `resultCount` 显示在右侧，`footnote` + `label2`。
+- 传入 `onAiPress` 时在右侧渲染 `sparkles` 44×44 按钮，`accessibilityLabel="AI 检索动作"`；AI 识别态用 `editable={false}` 禁用文字，但保留 sparkle 入口。
 
 ### 7.13 Sheet
 
