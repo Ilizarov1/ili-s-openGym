@@ -13,11 +13,13 @@ import { AgentError } from '../../agent-runtime/errors.js';
 import { providerCapabilities } from '../../agent-runtime/model-gateway.js';
 import type { AgentAccountData, AgentProfilePublic, AgentStoredProfile } from './agent.types.js';
 import { AgentCrypto } from './agent-crypto.js';
-import { fixtureAllowed } from './agent.flags.js';
+import { agentVision, fixtureAllowed } from './agent.flags.js';
+import { OPENCODE_BASE_URL } from '../../agent-runtime/providers/index.js';
 import { AgentStore } from './agent.store.js';
 
-const SERVER_PROVIDERS = new Set(['fixture', 'openai']);
+const SERVER_PROVIDERS = new Set(['fixture', 'openai', 'opencode']);
 const DEFAULT_ID = 'default';
+const DEFAULT_OPENCODE_MODEL = 'deepseek-v4.1-flash';
 
 export interface ResolvedAgentProfile {
   profile: AgentProfilePublic & { capabilities: { text: boolean; image: boolean; tools: boolean } };
@@ -32,6 +34,36 @@ function keyHintOf(key: string): string {
   return clean.length > 4 ? clean.slice(-4) : '****';
 }
 
+function labelOf(provider: string): string {
+  if (provider === 'fixture') return 'Fixture';
+  if (provider === 'opencode') return 'OpenCode';
+  return 'OpenAI';
+}
+
+function capabilitiesFor(provider: string, override?: unknown): { text: boolean; image: boolean; tools: boolean } {
+  const base = providerCapabilities(provider);
+  const caps = override && typeof override === 'object' && !Array.isArray(override)
+    ? override as Record<string, unknown>
+    : null;
+  if (caps && caps.image !== undefined) {
+    if (typeof caps.image !== 'boolean') throw new AgentError('invalid_request', 'capabilities.image must be a boolean');
+    base.image = caps.image;
+  }
+  return base;
+}
+
+function providerOf(value: unknown): 'fixture' | 'openai' | 'opencode' {
+  const provider = String(value || '');
+  if (!SERVER_PROVIDERS.has(provider)) {
+    throw new AgentError('invalid_request', 'provider must be fixture, openai or opencode');
+  }
+  return provider as 'fixture' | 'openai' | 'opencode';
+}
+
+function needsKey(provider: string): boolean {
+  return provider === 'openai' || provider === 'opencode';
+}
+
 @Injectable()
 export class AgentConfigStore {
   constructor(
@@ -40,6 +72,26 @@ export class AgentConfigStore {
   ) {}
 
   private defaultProfile(uid: string): ResolvedAgentProfile | null {
+    const opencodeKey = String(process.env.OPENCODE_API_KEY || '').trim();
+    if (opencodeKey) {
+      const model = String(process.env.OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL).trim() || DEFAULT_OPENCODE_MODEL;
+      return {
+        profile: {
+          id: DEFAULT_ID,
+          source: 'default',
+          provider: 'opencode',
+          model,
+          capabilities: { text: true, image: agentVision(), tools: true },
+          version: 1,
+          label: 'OpenCode (instance)',
+          available: true,
+        },
+        provider: 'opencode',
+        model,
+        baseUrl: OPENCODE_BASE_URL,
+        apiKey: opencodeKey,
+      };
+    }
     if (!coachConfig.isEnabled() || !coachConfig.isConnected()) return null;
     const cfg = coachConfig.load();
     if (cfg.authMode !== 'instance') return null;
@@ -57,7 +109,7 @@ export class AgentConfigStore {
         source: 'default',
         provider,
         model,
-        capabilities: providerCapabilities(provider),
+        capabilities: { ...providerCapabilities(provider), image: agentVision() },
         version: 1,
         label: provider === 'fixture' ? 'Fixture (instance)' : 'Instance default',
         available: true,
@@ -98,7 +150,7 @@ export class AgentConfigStore {
       capabilities: profile.capabilities,
       ...(profile.keyHint ? { keyHint: profile.keyHint } : {}),
       version: profile.version,
-      label: profile.provider === 'fixture' ? 'Fixture' : 'OpenAI',
+      label: labelOf(profile.provider),
       available: profile.provider !== 'fixture' || fixtureAllowed(),
       ...(profile.provider === 'fixture' && !fixtureAllowed() ? { reason: 'Fixture profiles are not available on this instance.' } : {}),
     };
@@ -111,10 +163,7 @@ export class AgentConfigStore {
   }
 
   async create(uid: string, body: Record<string, unknown>, id: string): Promise<AgentProfilePublic> {
-    const provider = String(body.provider || '');
-    if (!SERVER_PROVIDERS.has(provider)) {
-      throw new AgentError('invalid_request', 'provider must be fixture or openai');
-    }
+    const provider = providerOf(body.provider);
     if (body.baseUrl !== undefined && body.baseUrl !== null && String(body.baseUrl).trim() !== '') {
       throw new AgentError('invalid_request', 'server profiles do not accept a custom endpoint');
     }
@@ -124,19 +173,19 @@ export class AgentConfigStore {
     const model = String(body.model || (provider === 'fixture' ? 'fixture' : '')).trim();
     if (!model || model.length > 200) throw new AgentError('invalid_request', 'model is required');
     const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    if (provider === 'openai' && apiKey.length < 8) {
-      throw new AgentError('invalid_request', 'an OpenAI API key is required');
+    if (needsKey(provider) && apiKey.length < 8) {
+      throw new AgentError('invalid_request', 'an API key is required');
     }
-    if (provider === 'openai' && !this.crypto.enabled) {
+    if (needsKey(provider) && !this.crypto.enabled) {
       throw new AgentError('agent_config_disabled');
     }
     const now = Date.now();
     const profile: AgentStoredProfile = {
       id,
-      provider: provider as 'fixture' | 'openai',
+      provider,
       model,
-      capabilities: providerCapabilities(provider),
-      ...(provider === 'openai' ? {
+      capabilities: capabilitiesFor(provider, body.capabilities),
+      ...(needsKey(provider) ? {
         secret: this.crypto.encrypt(uid, id, 1, apiKey),
         keyHint: keyHintOf(apiKey),
       } : {}),
@@ -162,8 +211,7 @@ export class AgentConfigStore {
     await this.store.update(uid, data => {
       const current = data.profiles[profileId];
       if (!current) throw new AgentError('profile_not_found');
-      const provider = body.provider === undefined ? current.provider : String(body.provider);
-      if (!SERVER_PROVIDERS.has(provider)) throw new AgentError('invalid_request', 'provider must be fixture or openai');
+      const provider = body.provider === undefined ? current.provider : providerOf(body.provider);
       if (provider === 'fixture' && !fixtureAllowed()) {
         throw new AgentError('invalid_request', 'fixture profiles are not available on this instance');
       }
@@ -173,9 +221,9 @@ export class AgentConfigStore {
       const version = (current.version || 0) + 1;
       let secret = current.secret;
       let keyHint = current.keyHint;
-      if (provider === 'openai') {
+      if (needsKey(provider)) {
         if (suppliedKey) {
-          if (suppliedKey.length < 8) throw new AgentError('invalid_request', 'an OpenAI API key is required');
+          if (suppliedKey.length < 8) throw new AgentError('invalid_request', 'an API key is required');
           if (!this.crypto.enabled) throw new AgentError('agent_config_disabled');
           secret = this.crypto.encrypt(uid, profileId, version, suppliedKey);
           keyHint = keyHintOf(suppliedKey);
@@ -184,7 +232,7 @@ export class AgentConfigStore {
           const plaintext = this.crypto.decrypt(uid, profileId, current.version, current.secret);
           secret = this.crypto.encrypt(uid, profileId, version, plaintext);
         } else {
-          throw new AgentError('invalid_request', 'an OpenAI API key is required');
+          throw new AgentError('invalid_request', 'an API key is required');
         }
       } else {
         secret = undefined;
@@ -192,9 +240,9 @@ export class AgentConfigStore {
       }
       updated = {
         ...current,
-        provider: provider as 'fixture' | 'openai',
+        provider,
         model,
-        capabilities: providerCapabilities(provider),
+        capabilities: capabilitiesFor(provider, body.capabilities === undefined ? current.capabilities : body.capabilities),
         ...(secret ? { secret } : {}),
         ...(keyHint ? { keyHint } : {}),
         version,
@@ -234,7 +282,7 @@ export class AgentConfigStore {
       throw new AgentError('profile_not_found', 'fixture profiles are not available on this instance');
     }
     let apiKey: string | null = null;
-    if (profile.provider === 'openai') {
+    if (needsKey(profile.provider)) {
       if (!profile.secret) throw new AgentError('agent_config_disabled', 'this profile has no credential');
       apiKey = this.crypto.decrypt(uid, profile.id, profile.version, profile.secret);
     }

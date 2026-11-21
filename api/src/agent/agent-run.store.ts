@@ -6,6 +6,8 @@ import { isTerminalStatus } from '../../agent-runtime/contracts.js';
 import type { AgentStoredRun } from './agent.types.js';
 import { AgentStore } from './agent.store.js';
 
+export const AI_RUN_TTL_MS = 60 * 60 * 1000;
+
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (!value || typeof value !== 'object') return value;
@@ -45,7 +47,11 @@ export class AgentRunStore {
     return existing;
   }
 
-  async begin(uid: string, run: AgentStoredRun): Promise<{ run: AgentStoredRun; created: boolean }> {
+  async begin(
+    uid: string,
+    run: AgentStoredRun,
+    options: { maxTurns?: number } = {},
+  ): Promise<{ run: AgentStoredRun; created: boolean }> {
     return this.store.update(uid, data => {
       const knownId = data.requestIndex[run.requestId];
       if (knownId) {
@@ -59,6 +65,29 @@ export class AgentRunStore {
         } else {
           return { run: existing, created: false };
         }
+      }
+      if (run.sessionId) {
+        const active = Object.values(data.runs).find(candidate =>
+          candidate.sessionId === run.sessionId
+          && candidate.taskId === run.taskId
+          && (candidate.status === 'accepted' || candidate.status === 'running'));
+        if (active) {
+          throw new AgentError('session_busy', 'another run is active in this conversation', {
+            details: { sessionId: run.sessionId, runId: active.runId },
+          });
+        }
+        const session = data.sessions[run.sessionId];
+        const counted = Number(session?.meta?.turns);
+        const turns = Number.isFinite(counted) && counted >= 0
+          ? counted
+          : Object.values(data.runs).filter(candidate =>
+            candidate.sessionId === run.sessionId && candidate.taskId === run.taskId).length;
+        if (options.maxTurns !== undefined && turns >= options.maxTurns) {
+          throw new AgentError('turn_limit', 'this conversation has used all its follow-up turns', {
+            details: { sessionId: run.sessionId, turns, limit: options.maxTurns },
+          });
+        }
+        if (session) session.meta = { ...(session.meta || {}), turns: turns + 1 };
       }
       data.runs[run.runId] = run;
       data.requestIndex[run.requestId] = run.runId;
@@ -100,6 +129,35 @@ export class AgentRunStore {
         error: { code: 'run_cancelled', message },
       };
       return data.runs[runId];
+    });
+  }
+
+  activeForSession(uid: string, taskId: string, sessionId: string): AgentStoredRun | null {
+    const data = this.store.read(uid);
+    return Object.values(data.runs).find(run =>
+      run.taskId === taskId
+      && run.sessionId === sessionId
+      && (run.status === 'accepted' || run.status === 'running')) || null;
+  }
+
+  /** AI runs are only a short polling/retry window. The request index is
+   *  removed with them; stub runs are not touched. */
+  async purgeExpired(uid: string, now = Date.now()): Promise<number> {
+    return this.store.update(uid, data => {
+      let removed = 0;
+      for (const [runId, run] of Object.entries(data.runs)) {
+        if (!run.taskId.startsWith('exercise-search.')) continue;
+        const at = run.finishedAt || run.createdAt || 0;
+        if (now - at < AI_RUN_TTL_MS) continue;
+        delete data.runs[runId];
+        removed++;
+      }
+      if (removed) {
+        for (const [requestId, runId] of Object.entries(data.requestIndex)) {
+          if (!data.runs[runId]) delete data.requestIndex[requestId];
+        }
+      }
+      return removed;
     });
   }
 

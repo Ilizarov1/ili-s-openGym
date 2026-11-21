@@ -2,6 +2,7 @@ export const AGENT_SCHEMA_VERSION: 1;
 
 export type RunStatus = 'accepted' | 'running' | 'completed' | 'failed' | 'cancelled' | 'interrupted';
 export type ExecutionLocation = 'local' | 'server';
+export type SessionMode = 'new' | 'continue';
 export type MemoryCategory = 'preference' | 'goal' | 'constraint' | 'note';
 
 export interface ModelCapabilities {
@@ -26,6 +27,10 @@ export interface AttachmentReference {
   dataUrl?: string;
   ref?: string;
   size?: number;
+  width?: number;
+  height?: number;
+  /** Rendered next to the image block, e.g. "当前图片" / "上一轮图片". */
+  label?: string;
 }
 
 export interface RunRequest {
@@ -34,6 +39,7 @@ export interface RunRequest {
   profileId: string;
   input: Record<string, unknown>;
   sessionId?: string;
+  sessionMode?: SessionMode;
   attachmentIds?: string[];
 }
 
@@ -51,6 +57,8 @@ export interface ModelOutput {
 
 export interface ModelInput {
   instructions: string;
+  /** Set by the orchestrator when the task asks for one JSON object. */
+  responseFormat?: 'json';
   user: {
     text: string;
     fixtureCase?: string;
@@ -114,12 +122,22 @@ export interface TaskDefinition {
   requiredCapabilities?: Array<'text' | 'image' | 'tools'>;
   budgets?: Budgets;
   steps: TaskStep[];
-  /** Memories the model may see; unfiltered when omitted. */
+  /** Memories the model may see; an empty array means "read none". */
   memoryCategories?: string[];
+  /** `json` asks providers that support it for a JSON object response. */
+  outputFormat?: 'text' | 'json';
   targetScope(input: Record<string, unknown>, context: RunContext): string[] | Promise<string[]>;
+  validateInput?(input: Record<string, unknown>, context?: RunContext): void;
+  attachments?(input: Record<string, unknown>, context: RunContext): AttachmentReference[] | Promise<AttachmentReference[]>;
+  capabilities?(input: Record<string, unknown>): Array<'text' | 'image' | 'tools'>;
   instructions?(input: Record<string, unknown>, context: RunContext): string;
   userText?(input: Record<string, unknown>, context: RunContext): string;
-  fixtureCase?(input: Record<string, unknown>): string | undefined;
+  userMessage?(input: Record<string, unknown>): string;
+  assistantMessage?(
+    result: RunResult | { result?: RunResult; status?: RunStatus },
+    input?: Record<string, unknown>,
+  ): { content: string; meta?: Record<string, unknown> };
+  fixtureCase?(input: Record<string, unknown>, context?: RunContext): string | undefined;
   readFacts?(input: Record<string, unknown>, context: RunContext): unknown[] | Promise<unknown[]>;
   parseOutput?(output: ModelOutput, context: RunContext): unknown;
 }
@@ -258,6 +276,8 @@ export function isMemoryCategory(value: string): boolean;
 export function validRequestId(value: string): boolean;
 export function validProfileId(value: string): boolean;
 export function validTaskId(value: string): boolean;
+export function isSessionMode(value: string): boolean;
+export const SESSION_MODES: readonly SessionMode[];
 export const RUN_DEFAULTS: Readonly<Budgets>;
 export const RUN_STATUSES: readonly RunStatus[];
 export const TERMINAL_STATUSES: readonly RunStatus[];

@@ -5,8 +5,8 @@ import { openDatabaseSync, type SQLiteDatabase } from 'expo-sqlite';
 import { randomUUID } from 'expo-crypto';
 import { AgentError } from './shared';
 import type {
-  AgentMemory, AgentMessageRow, AgentProfileRow, AgentProposal, AgentProposalRow, AgentRunRow,
-  AgentSession, AgentSessionRow, AgentSessionSummary,
+  AgentAiImageInput, AgentAiImageRow, AgentExecutionLocation, AgentMemory, AgentMessageRow, AgentProfileRow,
+  AgentProposal, AgentProposalRow, AgentRunRow, AgentSession, AgentSessionRow, AgentSessionSummary,
 } from './types';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
@@ -28,7 +28,7 @@ function database(): SQLiteDatabase {
       CREATE TABLE IF NOT EXISTS agent_runs (
         scope TEXT NOT NULL, runId TEXT NOT NULL, requestId TEXT NOT NULL, requestHash TEXT NOT NULL,
         taskId TEXT NOT NULL, profileId TEXT NOT NULL, status TEXT NOT NULL, createdAt INTEGER NOT NULL,
-        startedAt INTEGER, finishedAt INTEGER, durationMs INTEGER, execution TEXT,
+        startedAt INTEGER, finishedAt INTEGER, durationMs INTEGER, execution TEXT, profile TEXT,
         dataVersion TEXT, sessionId TEXT, result TEXT, proposalId TEXT, error TEXT, PRIMARY KEY (scope, runId)
       );
       CREATE TABLE IF NOT EXISTS agent_request_index (
@@ -38,13 +38,22 @@ function database(): SQLiteDatabase {
       CREATE TABLE IF NOT EXISTS agent_sessions (
         scope TEXT NOT NULL, id TEXT NOT NULL, title TEXT NOT NULL, version INTEGER NOT NULL,
         createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, deletedAt INTEGER,
+        taskId TEXT, executionLocation TEXT, meta TEXT,
         PRIMARY KEY (scope, id)
       );
       CREATE TABLE IF NOT EXISTS agent_messages (
         scope TEXT NOT NULL, sessionId TEXT NOT NULL, id TEXT NOT NULL, role TEXT NOT NULL,
-        content TEXT NOT NULL, createdAt INTEGER NOT NULL, runId TEXT,
+        content TEXT NOT NULL, createdAt INTEGER NOT NULL, runId TEXT, meta TEXT,
         PRIMARY KEY (scope, id)
       );
+      CREATE TABLE IF NOT EXISTS agent_ai_images (
+        scope TEXT NOT NULL, sessionId TEXT NOT NULL, turn INTEGER NOT NULL, id TEXT NOT NULL,
+        mime TEXT NOT NULL, size INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL,
+        bytes TEXT NOT NULL, createdAt INTEGER NOT NULL,
+        PRIMARY KEY (scope, sessionId, id)
+      );
+      CREATE INDEX IF NOT EXISTS agent_ai_images_session
+        ON agent_ai_images (scope, sessionId, turn DESC, createdAt DESC);
       CREATE TABLE IF NOT EXISTS agent_memories (
         scope TEXT NOT NULL, id TEXT NOT NULL, category TEXT NOT NULL, value TEXT NOT NULL,
         source TEXT, createdAt INTEGER NOT NULL, updatedAt INTEGER NOT NULL, version INTEGER NOT NULL,
@@ -64,6 +73,23 @@ function database(): SQLiteDatabase {
     const runColumns = opened.getAllSync<{ name: string }>('PRAGMA table_info(agent_runs)');
     if (!runColumns.some(column => column.name === 'execution')) {
       opened.execSync('ALTER TABLE agent_runs ADD COLUMN execution TEXT');
+    }
+    if (!runColumns.some(column => column.name === 'profile')) {
+      opened.execSync('ALTER TABLE agent_runs ADD COLUMN profile TEXT');
+    }
+    const sessionColumns = opened.getAllSync<{ name: string }>('PRAGMA table_info(agent_sessions)');
+    if (!sessionColumns.some(column => column.name === 'taskId')) {
+      opened.execSync('ALTER TABLE agent_sessions ADD COLUMN taskId TEXT');
+    }
+    if (!sessionColumns.some(column => column.name === 'executionLocation')) {
+      opened.execSync('ALTER TABLE agent_sessions ADD COLUMN executionLocation TEXT');
+    }
+    if (!sessionColumns.some(column => column.name === 'meta')) {
+      opened.execSync('ALTER TABLE agent_sessions ADD COLUMN meta TEXT');
+    }
+    const messageColumns = opened.getAllSync<{ name: string }>('PRAGMA table_info(agent_messages)');
+    if (!messageColumns.some(column => column.name === 'meta')) {
+      opened.execSync('ALTER TABLE agent_messages ADD COLUMN meta TEXT');
     }
     db = opened;
   }
@@ -106,6 +132,7 @@ function runRow(row: Record<string, unknown>): AgentRunRow {
     ...(row.execution === 'server' ? { execution: 'server' as const } : row.execution === 'local' ? { execution: 'local' as const } : {}),
     ...(row.dataVersion == null ? {} : { dataVersion: String(row.dataVersion) }),
     ...(row.sessionId ? { sessionId: String(row.sessionId) } : {}),
+    ...(row.profile ? { profile: parse<AgentRunRow['profile']>(String(row.profile)) } : {}),
     ...(row.result ? { result: parse<unknown>(String(row.result)) } : {}),
     ...(row.proposalId ? { proposalId: String(row.proposalId) } : {}),
     ...(row.error ? { error: parse<{ code: string; message: string }>(String(row.error)) } : {}),
@@ -120,7 +147,30 @@ function sessionRow(row: Record<string, unknown>): AgentSessionRow {
     version: Number(row.version),
     createdAt: Number(row.createdAt),
     updatedAt: Number(row.updatedAt),
+    ...(row.taskId ? { taskId: String(row.taskId) } : {}),
+    ...(row.executionLocation === 'server'
+      ? { executionLocation: 'server' as const }
+      : row.executionLocation === 'local' ? { executionLocation: 'local' as const } : {}),
+    ...(row.meta ? { meta: parse<Record<string, unknown>>(String(row.meta)) } : {}),
     ...(row.deletedAt == null ? {} : { deletedAt: Number(row.deletedAt) }),
+  };
+}
+
+function aiImageRow(row: Record<string, unknown>): AgentAiImageRow {
+  return {
+    scope: String(row.scope),
+    sessionId: String(row.sessionId),
+    turn: Number(row.turn),
+    id: String(row.id),
+    mime: String(row.mime),
+    size: Number(row.size),
+    width: Number(row.width),
+    height: Number(row.height),
+    // `bytes` holds the inline data URL (never logged); the numeric byte
+    // count is the separate `size` column and mirrors it in `bytes`.
+    bytes: Number(row.size),
+    dataUrl: String(row.bytes),
+    createdAt: Number(row.createdAt),
   };
 }
 
@@ -159,6 +209,40 @@ export class AgentStore {
 
   constructor() {
     this.db = database();
+  }
+
+  /** Local AI runs that are still submitted, used for the concurrent-run guard. */
+  activeRunForSession(scope: string, sessionId: string): AgentRunRow | null {
+    const row = this.db.getFirstSync<Record<string, unknown>>(
+      `SELECT * FROM agent_runs
+       WHERE scope = ? AND sessionId = ? AND (status = 'accepted' OR status = 'running')
+       ORDER BY createdAt DESC LIMIT 1`,
+      scope, sessionId,
+    );
+    return row ? runRow(row) : null;
+  }
+
+  /** Every submitted run of a session; failed and cancelled runs count too. */
+  countRunsForSession(scope: string, sessionId: string, taskId?: string): number {
+    const row = taskId
+      ? this.db.getFirstSync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM agent_runs WHERE scope = ? AND sessionId = ? AND taskId = ?',
+        scope, sessionId, taskId,
+      )
+      : this.db.getFirstSync<{ count: number }>(
+        'SELECT COUNT(*) AS count FROM agent_runs WHERE scope = ? AND sessionId = ?',
+        scope, sessionId,
+      );
+    return Number(row?.count || 0);
+  }
+
+  /** The newest run of one task in this workspace, for restart recovery. */
+  latestRun(scope: string, taskId: string): AgentRunRow | null {
+    const row = this.db.getFirstSync<Record<string, unknown>>(
+      'SELECT * FROM agent_runs WHERE scope = ? AND taskId = ? ORDER BY createdAt DESC LIMIT 1',
+      scope, taskId,
+    );
+    return row ? runRow(row) : null;
   }
 
   /* ------------------------------------------------------------- profiles */
@@ -251,10 +335,11 @@ export class AgentStore {
     this.db.runSync(
       `INSERT OR REPLACE INTO agent_runs
        (scope,runId,requestId,requestHash,taskId,profileId,status,createdAt,startedAt,finishedAt,durationMs,execution,
-        dataVersion,sessionId,result,proposalId,error)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        profile,dataVersion,sessionId,result,proposalId,error)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       run.scope, run.runId, run.requestId, run.requestHash, run.taskId, run.profileId, run.status,
       run.createdAt, run.startedAt ?? null, run.finishedAt ?? null, run.durationMs ?? null, run.execution ?? null,
+      run.profile ? JSON.stringify(run.profile) : null,
       run.dataVersion == null ? null : String(run.dataVersion), run.sessionId ?? null,
       run.result === undefined ? null : JSON.stringify(run.result), run.proposalId ?? null,
       run.error ? JSON.stringify(run.error) : null,
@@ -335,11 +420,27 @@ export class AgentStore {
       content: String(message.content),
       createdAt: Number(message.createdAt),
       ...(message.runId ? { runId: String(message.runId) } : {}),
+      ...(message.meta ? { meta: parse<Record<string, unknown>>(String(message.meta)) } : {}),
     }));
-    return { id: session.id, title: session.title, version: session.version, createdAt: session.createdAt, updatedAt: session.updatedAt, messages };
+    return {
+      id: session.id,
+      title: session.title,
+      version: session.version,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      ...(session.taskId ? { taskId: session.taskId } : {}),
+      ...(session.executionLocation ? { executionLocation: session.executionLocation } : {}),
+      ...(session.meta ? { meta: session.meta } : {}),
+      messages,
+    };
   }
 
-  ensureSession(scope: string, sessionId: string, title = 'Agent session'): AgentSessionRow {
+  ensureSession(
+    scope: string,
+    sessionId: string,
+    title = 'Agent session',
+    options: { taskId?: string; executionLocation?: AgentExecutionLocation; meta?: Record<string, unknown> } = {},
+  ): AgentSessionRow {
     let out: AgentSessionRow | null = null;
     this.db.withTransactionSync(() => {
       const row = this.db.getFirstSync<Record<string, unknown>>(
@@ -347,12 +448,48 @@ export class AgentStore {
       );
       const current = row ? sessionRow(row) : null;
       if (current?.deletedAt) throw new AgentError('session_deleted', undefined, { details: { sessionId } });
-      if (current) { out = current; return; }
+      if (current) {
+        if (options.taskId && current.taskId && current.taskId !== options.taskId) {
+          throw new AgentError('session_conflict', 'this session belongs to another task', {
+            details: { sessionId, taskId: current.taskId },
+          });
+        }
+        if ((options.taskId && !current.taskId)
+          || (options.executionLocation && !current.executionLocation)) {
+          const taskId = options.taskId || current.taskId;
+          const executionLocation = options.executionLocation || current.executionLocation;
+          this.db.runSync(
+            'UPDATE agent_sessions SET taskId = ?, executionLocation = ? WHERE scope = ? AND id = ?',
+            taskId ?? null, executionLocation ?? null, scope, sessionId,
+          );
+          out = {
+            ...current,
+            ...(taskId ? { taskId } : {}),
+            ...(executionLocation ? { executionLocation } : {}),
+          };
+          return;
+        }
+        out = current;
+        return;
+      }
       const now = Date.now();
-      const session = { scope, id: sessionId, title: title.slice(0, 120), version: 1, createdAt: now, updatedAt: now };
+      const session: AgentSessionRow = {
+        scope,
+        id: sessionId,
+        title: title.slice(0, 120),
+        version: 1,
+        createdAt: now,
+        updatedAt: now,
+        ...(options.taskId ? { taskId: options.taskId } : {}),
+        ...(options.executionLocation ? { executionLocation: options.executionLocation } : {}),
+        ...(options.meta ? { meta: options.meta } : {}),
+      };
       this.db.runSync(
-        'INSERT INTO agent_sessions (scope,id,title,version,createdAt,updatedAt) VALUES (?,?,?,?,?,?)',
-        scope, sessionId, session.title, 1, now, now,
+        `INSERT INTO agent_sessions
+         (scope,id,title,version,createdAt,updatedAt,taskId,executionLocation,meta)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        scope, sessionId, session.title, 1, now, now, session.taskId ?? null,
+        session.executionLocation ?? null, session.meta ? JSON.stringify(session.meta) : null,
       );
       out = session;
     });
@@ -360,7 +497,12 @@ export class AgentStore {
     return out;
   }
 
-  appendMessages(scope: string, sessionId: string, messages: Omit<AgentMessageRow, 'scope' | 'sessionId'>[]): AgentSessionRow {
+  appendMessages(
+    scope: string,
+    sessionId: string,
+    messages: Omit<AgentMessageRow, 'scope' | 'sessionId'>[],
+    expectedVersion?: number,
+  ): AgentSessionRow {
     let out: AgentSessionRow | null = null;
     this.db.withTransactionSync(() => {
       const row = this.db.getFirstSync<Record<string, unknown>>(
@@ -369,10 +511,16 @@ export class AgentStore {
       if (!row) throw new AgentError('invalid_request', 'session does not exist', { details: { sessionId } });
       const current = sessionRow(row);
       if (current.deletedAt) throw new AgentError('session_deleted', undefined, { details: { sessionId } });
+      if (expectedVersion !== undefined && current.version !== expectedVersion) {
+        throw new AgentError('session_conflict', 'the session changed while this run was executing', {
+          details: { sessionId, expected: expectedVersion, current: current.version },
+        });
+      }
       for (const message of messages) {
         this.db.runSync(
-          'INSERT OR REPLACE INTO agent_messages (scope,sessionId,id,role,content,createdAt,runId) VALUES (?,?,?,?,?,?,?)',
-          scope, sessionId, message.id, message.role, message.content.slice(0, MAX_MESSAGE), message.createdAt, message.runId ?? null,
+          'INSERT OR REPLACE INTO agent_messages (scope,sessionId,id,role,content,createdAt,runId,meta) VALUES (?,?,?,?,?,?,?,?)',
+          scope, sessionId, message.id, message.role, message.content.slice(0, MAX_MESSAGE),
+          message.createdAt, message.runId ?? null, message.meta ? JSON.stringify(message.meta) : null,
         );
       }
       const at = Date.now();
@@ -399,8 +547,83 @@ export class AgentStore {
         Date.now(), current.version + 1, scope, sessionId,
       );
       this.db.runSync('DELETE FROM agent_messages WHERE scope = ? AND sessionId = ?', scope, sessionId);
+      this.db.runSync('DELETE FROM agent_ai_images WHERE scope = ? AND sessionId = ?', scope, sessionId);
     });
     return found;
+  }
+
+  /* ------------------------------------------------------------- AI images */
+  /**
+   * Keep at most two normalized images for one session, newest first. Only the
+   * current turn's image and the newest earlier image survive; the data URL is
+   * never written to a message, a run or a log.
+   */
+  addAiImage(scope: string, sessionId: string, turn: number, image: AgentAiImageInput): AgentAiImageRow {
+    const row: AgentAiImageRow = {
+      ...image,
+      scope,
+      sessionId,
+      turn,
+      bytes: image.size,
+    };
+    this.db.withTransactionSync(() => {
+      this.db.runSync(
+        `INSERT OR REPLACE INTO agent_ai_images
+         (scope,sessionId,turn,id,mime,size,width,height,bytes,createdAt)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        scope, sessionId, turn, image.id, image.mime, image.size, image.width, image.height,
+        image.dataUrl, image.createdAt,
+      );
+      this.db.runSync(
+        `DELETE FROM agent_ai_images
+         WHERE scope = ? AND sessionId = ? AND id NOT IN (
+           SELECT id FROM agent_ai_images WHERE scope = ? AND sessionId = ?
+           ORDER BY turn DESC, createdAt DESC LIMIT 2
+         )`,
+        scope, sessionId, scope, sessionId,
+      );
+    });
+    return row;
+  }
+
+  listAiImages(scope: string, sessionId: string): AgentAiImageRow[] {
+    return this.db.getAllSync<Record<string, unknown>>(
+      `SELECT * FROM agent_ai_images WHERE scope = ? AND sessionId = ?
+       ORDER BY turn DESC, createdAt DESC`,
+      scope, sessionId,
+    ).map(aiImageRow);
+  }
+
+  deleteAiImages(scope: string, sessionId: string): number {
+    return this.db.runSync(
+      'DELETE FROM agent_ai_images WHERE scope = ? AND sessionId = ?', scope, sessionId,
+    ).changes;
+  }
+
+  /** Drop temporary AI sessions older than the retention window at boot. */
+  expireAiSessions(scope: string, taskId: string, before: number): number {
+    const rows = this.db.getAllSync<{ id: string }>(
+      `SELECT id FROM agent_sessions
+       WHERE scope = ? AND taskId = ? AND deletedAt IS NULL AND updatedAt < ?`,
+      scope, taskId, before,
+    );
+    let deleted = 0;
+    for (const row of rows) {
+      if (this.deleteSession(scope, row.id)) deleted++;
+    }
+    return deleted;
+  }
+
+  /** Remove images whose session is gone or soft-deleted; runs at app boot. */
+  cleanupAiImages(scope?: string): number {
+    const sql = `DELETE FROM agent_ai_images
+      WHERE (${scope === undefined ? '1 = 1' : 'scope = ?'}) AND NOT EXISTS (
+        SELECT 1 FROM agent_sessions s
+        WHERE s.scope = agent_ai_images.scope AND s.id = agent_ai_images.sessionId AND s.deletedAt IS NULL
+      )`;
+    return scope === undefined
+      ? this.db.runSync(sql).changes
+      : this.db.runSync(sql, scope).changes;
   }
 
   /* -------------------------------------------------------------- memories */

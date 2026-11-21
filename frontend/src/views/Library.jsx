@@ -1,7 +1,8 @@
-import { useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useUI } from '../store/useUI.js'
 import { useNavigate } from 'react-router-dom'
 import { useStore } from '../store/useStore.js'
+import { agentApi } from '../agent/api.js'
 import { EXDB, BODYPARTS, allExercises, equipmentOf, byCategory, searchExercises, similarExercises } from '../lib/exercises.js'
 import { MUSCLE_NAME } from '../lib/muscles.js'
 import { activeProfile, exAvailable } from '../lib/equipment.js'
@@ -12,6 +13,7 @@ import { Thumb } from '../components/Media.jsx'
 import { exerciseDetailSheet, addToRoutineSheet, customExSheet } from '../sheets.jsx'
 import Icon from '../components/Icon.jsx'
 import ExerciseViewToggle from '../components/ExerciseViewToggle.jsx'
+import ExerciseAiSearch, { readInterrupted, clearInterrupted } from '../components/ExerciseAiSearch.jsx'
 import { Button } from '../components/ui.jsx'
 import { tappable, useRevealActiveChip } from '../lib/use-sheet-keyboard.js'
 import { useAutoMore } from '../lib/use-auto-more.js'
@@ -20,15 +22,22 @@ import { isFav, sortFavouritesFirst, sortYoursFirst, usageOf } from '../lib/favo
 export default function Library() {
   const nav = useNavigate()
   const S = useStore(s => s.S)
+  const config = useStore(s => s.config)
+  const user = useStore(s => s.user)
   const [q, setQ] = useState('')
   const [bp, setBp] = useState('')
   const [eq, setEq] = useState('')
   const [cat, setCat] = useState('')
   const [showAll, setShowAll] = useState(false)   // ignore the active equipment profile for this session
   const [shown, setShown] = useState(40)
+  const [aiOn, setAiOn] = useState(false)
+  const [interrupted, setInterrupted] = useState(null)
+  const aiSnapshot = useRef(null)
+  const aiRef = useRef(null)
   const bpStrip = useRef(null)
   const moreRef = useAutoMore(() => setShown(s => s + 40))
   const profile = activeProfile(S)
+  const aiEnabled = config?.agent?.enabled !== false
   // Your own exercises, counted the way the list below shows them (allExercises puts every
   // custom entry in front of the catalogue; deleting one removes it from customEx outright).
   const ownCount = (S.customEx || []).filter(c => c && c.id).length
@@ -46,6 +55,69 @@ export default function Library() {
   const usage = useMemo(() => (q.trim() ? usageOf(S) : null), [q, S.routines, S.workouts])
   const f = usage ? sortYoursFirst(narrowedList, S, usage) : sortFavouritesFirst(narrowedList, S)
   useRevealActiveChip(bpStrip, bp)
+  // A reference left behind by a run the tab/server never finished. It is written when a run
+  // starts and removed at a terminal state, so only a genuinely open run gets the notice.
+  useEffect(() => {
+    const saved = readInterrupted(user?.id)
+    if (!saved) return undefined
+    if (!aiEnabled) {
+      clearInterrupted(user?.id, saved.runId)
+      return undefined
+    }
+    let live = true
+    const check = async () => {
+      try {
+        const run = await agentApi.getRun(saved.runId)
+        if (!live) return
+        if (run && ['completed', 'failed', 'cancelled', 'interrupted'].includes(run.status)) {
+          clearInterrupted(user?.id, saved.runId)
+          return
+        }
+      } catch {
+        /* The server may have restarted and forgotten it; it is still unfinished. */
+      }
+      if (!live) return
+      setInterrupted(saved)
+      try { await agentApi.cancelRun(saved.runId) } catch { /* already gone */ }
+      clearInterrupted(user?.id, saved.runId)
+    }
+    void check()
+    return () => { live = false }
+  }, [user?.id, aiEnabled])
+  const enterAi = () => {
+    if (!aiEnabled) return
+    setInterrupted(null)
+    aiSnapshot.current = { q, bp, eq, cat, shown }
+    setQ('')
+    setShown(40)
+    setAiOn(true)
+  }
+  const exitAi = () => {
+    const saved = aiSnapshot.current
+    if (saved) {
+      setQ(saved.q)
+      setBp(saved.bp)
+      setEq(saved.eq)
+      setCat(saved.cat)
+      setShown(saved.shown)
+    }
+    aiSnapshot.current = null
+    setAiOn(false)
+  }
+  const applyAiFallback = (kind, value) => {
+    // R3: a suggested chip never restores the snapshot that would filter the suggestion away.
+    aiSnapshot.current = null
+    setAiOn(false)
+    setQ('')
+    setCat('')
+    setShown(40)
+    if (kind === 'bodyPart') { setBp(value); setEq('') }
+    else { setEq(value); setBp('') }
+  }
+  const openAi = () => {
+    if (aiOn) { aiRef.current?.reopen(); return }
+    enterAi()
+  }
   // Type and equipment live in the Filters sheet (P7). It works out its own options from the same
   // search and body part, so a choice it offers is never a dead end either.
   const sheetOn = (catOn ? 1 : 0) + (eqOn ? 1 : 0)
@@ -59,7 +131,7 @@ export default function Library() {
     onChange={(c, e) => { setCat(c); setEq(e); setShown(40) }} />)
   // A live count at the end of the search field while a search or filter narrows the list
   // (idea and first version: GitLab !31) — how many are left, before scrolling to find out.
-  const narrowed = !!(q.trim() || bp || eqOn || catOn)
+  const narrowed = !aiOn && !!(q.trim() || bp || eqOn || catOn)
   // Close but not exact (a typo too many, most of the words, a similar name), under the results
   // once they are all on screen, so a search almost never ends on "No match".
   // Worked out a beat behind the typing (useDeferredValue): the list itself never waits for it.
@@ -88,12 +160,22 @@ export default function Library() {
         ? tn('{1} animated exercises + 1 of your own', '{1} animated exercises + {0} of your own', ownCount, EXDB.length)
         : t('{0} exercises with animations', EXDB.length)}</div>
     </div>
+    {interrupted && !aiOn ? <div className="ai-interrupted" role="status">
+      <span className="ico"><Icon name="clock" /></span>
+      <div className="ai-interrupted-main">
+        <div className="ai-interrupted-title">{t('上次检索未完成')}</div>
+        <div className="ai-interrupted-text">{t('上次的 AI 检索没有结束，可以重新发起。')}</div>
+      </div>
+      <Button size="sm" variant="tinted" onClick={() => { setInterrupted(null); enterAi() }}>{t('重新发起')}</Button>
+      <button type="button" className="iconbtn" aria-label={t('忽略')} onClick={() => setInterrupted(null)}><Icon name="xmark" /></button>
+    </div> : null}
     <div className="search-row" data-tour="lib-search" style={{ marginBottom: 10 }}><div className={'search' + (narrowed ? ' has-count' : '') + (q ? ' has-clear' : '')}><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
-      <input className="input" placeholder={t('Search…')} value={q} onChange={e => { setQ(e.target.value); setShown(40) }} />
+      <input className="input" placeholder={t('Search…')} value={q} disabled={aiOn} onChange={e => { setQ(e.target.value); setShown(40) }} />
       {narrowed && <span className="search-count" role="status" aria-label={exCount(f.length)}>{fmtNum(f.length)}</span>}
-      {q && <button className="clear" onClick={() => { setQ(''); setShown(40) }} aria-label={t('Clear')}><Icon name="xmark" /></button>}</div>
-      <ExerciseViewToggle /></div>
-    {profile && <div className="small dim row" style={{ margin: '-4px 2px 10px', gap: 6, alignItems: 'center' }}>
+      {q && !aiOn && <button className="clear" onClick={() => { setQ(''); setShown(40) }} aria-label={t('Clear')}><Icon name="xmark" /></button>}</div>
+      {aiEnabled && <button type="button" className={'iconbtn ai-search-btn' + (aiOn ? ' on' : '')} aria-label={t('AI 检索动作')} title={t('AI 检索动作')} onClick={openAi}><Icon name="sparkles" /></button>}
+      {!aiOn && <ExerciseViewToggle />}</div>
+    {!aiOn && profile && <div className="small dim row" style={{ margin: '-4px 2px 10px', gap: 6, alignItems: 'center' }}>
       <Icon name="kettlebell" style={{ fontSize: 'var(--fs-footnote)' }} />
       {showAll ? t('Showing all equipment') : t('Showing what you have in "{0}"', profile.name)}
       <button className="chip nocap" style={{ marginInlineStart: 'auto', padding: '3px 10px', fontSize: 'var(--fs-caption)' }} onClick={() => setShowAll(v => !v)}>
@@ -107,7 +189,7 @@ export default function Library() {
         old "All" chip). Changing body part keeps the equipment filter (issue #71): the eqOn
         fallback above drops it only for the current view if the new body part has nothing under
         it, without forgetting the choice. */}
-    <div className="chips lib-filters" data-tour="lib-filters" ref={bpStrip}>
+    {!aiOn && <div className="chips lib-filters" data-tour="lib-filters" ref={bpStrip}>
       <button type="button" className={'chip nocap ichip lib-fbtn' + (sheetOn ? ' on' : '')} aria-haspopup="dialog" onClick={openFilters}>
         <Icon name="slider" />{t('Filters')}{sheetOn ? <span className="lib-fn">{sheetOn}</span> : null}
       </button>
@@ -115,18 +197,20 @@ export default function Library() {
       {eqOn && <button type="button" className="chip on ichip" aria-label={t('Clear') + ': ' + t(eqOn)} onClick={() => { setEq(''); setShown(40) }}>{t(eqOn)}<Icon name="xmark" /></button>}
       {BODYPARTS.map(b => <button key={b} className={'chip' + (bp === b ? ' on ichip' : '')} aria-pressed={bp === b}
         onClick={() => { setBp(bp === b ? '' : b); setShown(40) }}>{t(b)}{bp === b && <Icon name="xmark" />}</button>)}
-    </div>
-    <div className={'list' + (S.exerciseView === 'cards' ? ' ex-grid' : '')}>
-      <div className="item ex-new" data-tour="lib-new" {...tappable(() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim()))}>
-        <div className="thumb thumb-x"><Icon name="plusCircle" /></div>
-        <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, and a photo or video if you like')}</div></div><Icon name="plus" className="chev" />
+    </div>}
+    {aiOn ? <ExerciseAiSearch ref={aiRef} accountId={user?.id} onExit={exitAi} onPick={ex => exerciseDetailSheet(ex)} onFallbackPick={applyAiFallback} /> : <>
+      <div className={'list' + (S.exerciseView === 'cards' ? ' ex-grid' : '')}>
+        <div className="item ex-new" data-tour="lib-new" {...tappable(() => customExSheet(null, ex => exerciseDetailSheet(ex), q.trim()))}>
+          <div className="thumb thumb-x"><Icon name="plusCircle" /></div>
+          <div className="grow"><div className="tt">{t('Create your own exercise')}</div><div className="ss">{t('name + body part, and a photo or video if you like')}</div></div><Icon name="plus" className="chev" />
+        </div>
+        {f.slice(0, shown).map(row)}
+        {f.length === 0 && !similar.length && <div className="empty"><div className="ico"><Icon name="magnifier" /></div>{t('No match')}</div>}
+        {similar.length > 0 && <h4 className="sec similar-label">{f.length ? t('Similar exercises') : t('No exact match. These come close:')}</h4>}
+        {similar.map(row)}
       </div>
-      {f.slice(0, shown).map(row)}
-      {f.length === 0 && !similar.length && <div className="empty"><div className="ico"><Icon name="magnifier" /></div>{t('No match')}</div>}
-      {similar.length > 0 && <h4 className="sec similar-label">{f.length ? t('Similar exercises') : t('No exact match. These come close:')}</h4>}
-      {similar.map(row)}
-    </div>
-    {f.length > shown && <><div style={{ height: 10 }} /><Button ref={moreRef} onClick={() => setShown(s => s + 40)}>{t('Show more')}</Button></>}
+      {f.length > shown && <><div style={{ height: 10 }} /><Button ref={moreRef} onClick={() => setShown(s => s + 40)}>{t('Show more')}</Button></>}
+    </>}
   </>
 }
 

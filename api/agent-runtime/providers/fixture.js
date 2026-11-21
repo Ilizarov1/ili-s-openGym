@@ -6,7 +6,7 @@
  */
 import { AgentError } from '../errors.js';
 
-const CASES = new Set(['text', 'tool', 'proposal', 'error', 'late']);
+const CASES = new Set(['text', 'tool', 'proposal', 'error', 'late', 'candidates', 'fallback-only']);
 
 function caseOf(options, input) {
   const raw = options.case || options.fixtureCase || input?.profile?.fixtureCase
@@ -74,6 +74,47 @@ async function fixtureAnswer(name, input, options) {
     }
     case 'error':
       return { error: { code: 'model_unavailable', message: options.errorMessage || 'fixture provider refused' } };
+    case 'candidates':
+      return {
+        structured: {
+          candidates: [
+            {
+              name: 'seated barbell shoulder press',
+              nameEn: 'seated barbell shoulder press',
+              rationale: '描述是坐着向上推的器械',
+              level: 'high',
+              equipment: 'barbell',
+              bodyPart: 'shoulders',
+            },
+            {
+              name: 'seated dumbbell shoulder press',
+              nameEn: 'seated dumbbell shoulder press',
+              rationale: '坐姿、双手上推',
+              level: 'medium',
+              equipment: 'dumbbell',
+              bodyPart: 'shoulders',
+            },
+          ],
+          fallback: {
+            understanding: 'fixture: a seated overhead press',
+            bodyParts: ['shoulders'],
+            equipment: ['barbell'],
+          },
+        },
+        toolCalls: [],
+      };
+    case 'fallback-only':
+      return {
+        structured: {
+          candidates: [],
+          fallback: {
+            understanding: 'fixture: the input does not match a catalogue exercise',
+            bodyParts: ['chest'],
+            equipment: ['body weight'],
+          },
+        },
+        toolCalls: [],
+      };
     case 'late':
       await new Promise(resolve => setTimeout(resolve, Math.max(0, Number(options.lateDelayMs) || 250)));
       return { text: 'this answer arrived after cancellation' };

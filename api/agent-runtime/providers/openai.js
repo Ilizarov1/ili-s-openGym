@@ -28,6 +28,7 @@ function userContent(modelInput) {
   if (modelInput.user.text) parts.push({ type: 'text', text: String(modelInput.user.text) });
   for (const attachment of attachments) {
     if (!attachment || !attachment.dataUrl) continue;
+    if (attachment.label) parts.push({ type: 'text', text: `[${attachment.label}]` });
     parts.push({ type: 'image_url', image_url: { url: attachment.dataUrl } });
   }
   return parts.length ? parts : '';
@@ -59,6 +60,9 @@ export function buildOpenAIRequest({ model, modelInput, maxTokens = DEFAULT_MAX_
     : [...blocks[0], { type: 'text', text: blocks.slice(1).join('\n\n') }]);
   messages.push({ role: 'user', content });
   const body = { model, messages, max_tokens: maxTokens };
+  if (modelInput?.responseFormat === 'json') {
+    body.response_format = { type: 'json_object' };
+  }
   const tools = Array.isArray(modelInput?.tools) ? modelInput.tools : [];
   if (tools.length) {
     body.tools = tools.map(tool => ({
@@ -88,7 +92,7 @@ export function buildOpenAIRequest({ model, modelInput, maxTokens = DEFAULT_MAX_
  * }} config
  */
 export function createOpenAIProvider(config = {}) {
-  const id = config.id === 'compatible' ? 'compatible' : 'openai';
+  const id = config.id === 'compatible' || config.id === 'opencode' ? config.id : 'openai';
   const baseUrl = validateBaseUrl(config.baseUrl);
   if (!baseUrl.ok) throw new AgentError('invalid_request', baseUrl.error);
   if (!baseUrl.value) throw new AgentError('invalid_request', 'an OpenAI endpoint needs a base URL');

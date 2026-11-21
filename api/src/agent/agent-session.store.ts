@@ -7,6 +7,7 @@ import type { AgentMessage, AgentSessionSummary, AgentStoredSession } from './ag
 import { AgentStore } from './agent.store.js';
 
 const MAX_MESSAGE = 8000;
+export const AI_SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
 function summaryOf(session: AgentStoredSession): AgentSessionSummary {
   return {
@@ -16,6 +17,7 @@ function summaryOf(session: AgentStoredSession): AgentSessionSummary {
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+    ...(session.taskId ? { taskId: session.taskId } : {}),
   };
 }
 
@@ -38,18 +40,33 @@ export class AgentSessionStore {
     return session;
   }
 
-  async ensure(uid: string, sessionId: string, title = 'Agent session'): Promise<AgentStoredSession> {
+  async ensure(
+    uid: string,
+    sessionId: string,
+    options: { taskId?: string; executionLocation?: 'local' | 'server'; title?: string } = {},
+  ): Promise<AgentStoredSession> {
     return this.store.update(uid, data => {
       const current = data.sessions[sessionId];
       if (current?.deletedAt) throw new AgentError('session_deleted', undefined, { details: { sessionId } });
-      if (current) return current;
+      if (current) {
+        if (options.taskId && current.taskId && current.taskId !== options.taskId) {
+          throw new AgentError('session_conflict', 'this conversation belongs to another task', {
+            details: { sessionId, taskId: current.taskId, requested: options.taskId },
+          });
+        }
+        if (!current.taskId && options.taskId) current.taskId = options.taskId;
+        if (!current.executionLocation && options.executionLocation) current.executionLocation = options.executionLocation;
+        return current;
+      }
       const at = Date.now();
       const session: AgentStoredSession = {
         id: sessionId,
-        title: String(title || 'Agent session').slice(0, 120),
+        title: String(options.title || 'Agent session').slice(0, 120),
         version: 1,
         createdAt: at,
         updatedAt: at,
+        ...(options.taskId ? { taskId: options.taskId } : {}),
+        ...(options.executionLocation ? { executionLocation: options.executionLocation } : {}),
         messages: [],
       };
       data.sessions[sessionId] = session;
@@ -57,7 +74,12 @@ export class AgentSessionStore {
     });
   }
 
-  async append(uid: string, sessionId: string, messages: AgentMessage[]): Promise<AgentStoredSession> {
+  async append(
+    uid: string,
+    sessionId: string,
+    messages: AgentMessage[],
+    expectedVersion?: number,
+  ): Promise<AgentStoredSession> {
     if (!Array.isArray(messages) || !messages.length) {
       throw new AgentError('invalid_request', 'messages are required');
     }
@@ -65,6 +87,11 @@ export class AgentSessionStore {
       const session = data.sessions[sessionId];
       if (!session) throw new AgentError('invalid_request', 'session does not exist', { details: { sessionId } });
       if (session.deletedAt) throw new AgentError('session_deleted', undefined, { details: { sessionId } });
+      if (expectedVersion !== undefined && session.version !== expectedVersion) {
+        throw new AgentError('session_conflict', 'the conversation changed while this run was in flight', {
+          details: { sessionId, expected: expectedVersion, current: session.version },
+        });
+      }
       for (const message of messages) {
         if (!message || (message.role !== 'user' && message.role !== 'assistant')) {
           throw new AgentError('invalid_request', 'message role must be user or assistant');
@@ -76,11 +103,37 @@ export class AgentSessionStore {
           content,
           createdAt: message.createdAt || Date.now(),
           ...(message.runId ? { runId: message.runId } : {}),
+          ...(message.meta ? { meta: message.meta } : {}),
         });
       }
       session.version = (session.version || 0) + 1;
       session.updatedAt = Date.now();
       return session;
+    });
+  }
+
+  /** Submitted runs for one task/session; failed and cancelled runs count, so
+   *  a retry cannot get around the follow-up budget. */
+  turnCount(uid: string, taskId: string, sessionId: string): number {
+    const data = this.store.read(uid);
+    return Object.values(data.runs).filter(run => run.taskId === taskId && run.sessionId === sessionId).length;
+  }
+
+  /** Temporary AI conversations are removed after two idle hours. Stub
+   *  conversations keep the old behaviour. */
+  async purgeExpired(uid: string, now = Date.now()): Promise<number> {
+    return this.store.update(uid, data => {
+      let removed = 0;
+      for (const session of Object.values(data.sessions)) {
+        if (session.deletedAt || !session.taskId?.startsWith('exercise-search.')) continue;
+        if (now - (session.updatedAt || session.createdAt || 0) < AI_SESSION_TTL_MS) continue;
+        session.deletedAt = now;
+        session.version = (session.version || 0) + 1;
+        session.messages = [];
+        delete session.summary;
+        removed++;
+      }
+      return removed;
     });
   }
 

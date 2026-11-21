@@ -117,7 +117,7 @@ Sheet 发起面板（点动作库搜索框或选择器搜索框内的 ✨）
 - 点 ✨ 时先校验：无可用配置不弹 Sheet，列表区直接 EmptyState + "去配置"（RN → `AgentProfileScreen`，Web → `AgentSetup`）。
 - `AGENT_RUNTIME_DISABLED` 只关闭服务端执行路径：Web 入口不渲染；RN 配对服务端路径不渲染，练习模式/本机配置仍可用。
 - 服务端运行在 `start` 响应和运行结果中返回脱敏配置摘要（ID、label、provider、model、version），供摘要卡展示；不返回密钥或尾号以外的凭据信息。
-- 预设提供商含 `opencode`（OpenAI 兼容，固定端点 `https://opencode.ai/inference/openai/v1`），服务端不开放自定义端点；验收 smoke 模型为 `deepseek-v4.1-flash-1017`（ID 以服务端模型列表为准）。真实密钥只存设备安全存储、服务端密文或 git 忽略的 `.env`，不进提交、文档与日志。
+- 预设提供商含 `opencode`（OpenAI 兼容，固定端点 `https://opencode.ai/inference/openai/v1`），服务端不开放自定义端点；验收 smoke 模型为 `deepseek-v4.1-flash-1017` 版本；2026-11-21 服务端列表中的调用 ID 是 `deepseek-v4.1-flash`（显示名 DeepSeek V4.1 Flash 1017，以列表为准）。真实密钥只存设备安全存储、服务端密文或 git 忽略的 `.env`，不进提交、文档与日志。
 
 ### R6 边界与异常状态
 

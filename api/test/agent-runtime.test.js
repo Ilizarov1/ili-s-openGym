@@ -560,3 +560,117 @@ test('the fixture carries a real 1x1 PNG', () => {
   assert.match(PNG_1X1_DATA_URL, /^data:image\/png;base64,/);
   assert.ok(PNG_1X1_DATA_URL.length > 40);
 });
+
+test('a task attachment hook takes over host attachments, including an empty array', async () => {
+  let seen = null;
+  const attachment = {
+    id: 'task-image',
+    kind: 'image',
+    mime: 'image/png',
+    name: 'task.png',
+    size: 10,
+    dataUrl: PNG_1X1_DATA_URL,
+  };
+  const context = contextFor({ meta: { attachments: [{ ...attachment, id: 'host-image' }] } });
+  await runAgent({
+    task: stubTask({
+      attachments: () => [attachment],
+      userText: () => 'with image',
+    }),
+    request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'with image' } },
+    context,
+    gateway: {
+      async invoke(_profile, modelInput) {
+        seen = modelInput.user.attachments;
+        return { text: 'ok', toolCalls: [] };
+      },
+    },
+    tools: [],
+  });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].id, 'task-image');
+
+  let empty = null;
+  const emptyContext = contextFor({ meta: { attachments: [attachment] } });
+  await runAgent({
+    task: stubTask({ attachments: () => [] }),
+    request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'no image' } },
+    context: emptyContext,
+    gateway: {
+      async invoke(_profile, modelInput) {
+        empty = modelInput.user.attachments;
+        return { text: 'ok', toolCalls: [] };
+      },
+    },
+    tools: [],
+  });
+  assert.equal(empty, undefined);
+});
+
+test('an empty memoryCategories means no memories at all, not every category', async () => {
+  let seen = [];
+  const context = contextFor({
+    memories: [{ id: 'm1', category: 'preference', value: { unit: 'kg' }, scope: WORKSPACES.serverOwner }],
+  });
+  await runAgent({
+    task: stubTask({ memoryCategories: [] }),
+    request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'memory' } },
+    context,
+    gateway: {
+      async invoke(_profile, modelInput) {
+        seen = modelInput.memories;
+        return { text: 'ok', toolCalls: [] };
+      },
+    },
+    tools: [],
+  });
+  assert.deepEqual(seen, []);
+});
+
+test('validateInput and dynamic capabilities reject before the model is called', async () => {
+  let modeled = 0;
+  const context = contextFor();
+  await assert.rejects(
+    runAgent({
+      task: stubTask({ validateInput: () => { throw new AgentError('invalid_request', 'nope'); } }),
+      request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'hi' } },
+      context,
+      gateway: { async invoke() { modeled++; return { text: 'x' }; } },
+      tools: [],
+    }),
+    error => error.code === 'invalid_request',
+  );
+  assert.equal(modeled, 0);
+
+  const imageContext = contextFor({ profileRef: profile({ text: true, image: false, tools: false }) });
+  await assert.rejects(
+    runAgent({
+      task: stubTask({ capabilities: () => ['text', 'image'] }),
+      request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'photo' } },
+      context: imageContext,
+      gateway: { async invoke() { modeled++; return { text: 'x' }; } },
+      tools: [],
+    }),
+    error => error.code === 'profile_capability_missing',
+  );
+  assert.equal(modeled, 0);
+});
+
+test('an invalid sessionMode is rejected by the shared orchestrator', async () => {
+  await assert.rejects(
+    runAgent({
+      task: stubTask(),
+      request: {
+        taskId: 'stub.v1',
+        requestId: 'req_12345678',
+        profileId: 'profile-1',
+        input: { prompt: 'x' },
+        sessionMode: 'sideways',
+      },
+      context: contextFor(),
+      gateway: { async invoke() { return { text: 'x' }; } },
+      tools: [],
+    }),
+    error => error.code === 'invalid_request',
+  );
+});

@@ -1,5 +1,6 @@
 // The local stub task reads the current workspace snapshot, including records
 // that have not reached a server yet.
+import { createExerciseSearchTask } from './shared';
 import type { LocalState } from '../storage';
 import type { AgentTask, AgentTool } from './shared';
 
@@ -82,6 +83,29 @@ export function createLocalTask(data: LocalState, options: { targetVersion?: Tar
       return typeof input.fixtureCase === 'string' ? input.fixtureCase : undefined;
     },
   };
+}
+
+/** One registered local task plus the tools its steps may call. */
+export type LocalTaskEntry = {
+  task: AgentTask;
+  tools: AgentTool[];
+};
+
+/**
+ * The local task registry. `stub.local.v1` keeps its proved behaviour; the AI
+ * exercise search is the shared `exercise-search.v1` task with no tools.
+ */
+export function createTaskRegistry(
+  data: LocalState,
+  options: { targetVersion?: TargetVersionReader } = {},
+): Map<string, LocalTaskEntry> {
+  const stub = createLocalTask(data, options);
+  const tools = createLocalTools(data, options);
+  const ai = createExerciseSearchTask() as unknown as AgentTask;
+  return new Map<string, LocalTaskEntry>([
+    [stub.id, { task: stub, tools: tools.tools }],
+    [ai.id, { task: ai, tools: [] }],
+  ]);
 }
 
 export function createLocalTools(data: LocalState, options: { targetVersion?: TargetVersionReader } = {}) {

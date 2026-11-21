@@ -19,7 +19,7 @@ export interface EncryptedSecret {
 
 export interface AgentStoredProfile {
   id: string;
-  provider: 'fixture' | 'openai';
+  provider: 'fixture' | 'openai' | 'opencode';
   model: string;
   capabilities: AgentCapabilities;
   secret?: EncryptedSecret;
@@ -42,6 +42,14 @@ export interface AgentProfilePublic {
   reason?: string;
 }
 
+export interface AgentProfileSummary {
+  id: string;
+  label: string;
+  provider: string;
+  model: string;
+  version: number;
+}
+
 export interface AgentRunResult {
   runId: string;
   status: string;
@@ -50,6 +58,7 @@ export interface AgentRunResult {
   proposal?: AgentProposal;
   evidence?: Array<{ evidenceId: string; objectId: string; version?: string | number }>;
   usage?: { rounds: number; toolCalls: number };
+  profile?: AgentProfileSummary;
 }
 
 export interface AgentStoredRun {
@@ -67,6 +76,7 @@ export interface AgentStoredRun {
   dataVersion?: string | number;
   sessionId?: string;
   sessionVersion?: number;
+  profile?: AgentProfileSummary;
   result?: AgentRunResult;
   proposalId?: string;
   error?: { code: string; message: string };
@@ -79,6 +89,7 @@ export interface AgentSessionSummary {
   createdAt: number;
   updatedAt: number;
   messageCount: number;
+  taskId?: string;
 }
 
 export interface AgentMessage {
@@ -87,6 +98,7 @@ export interface AgentMessage {
   content: string;
   createdAt: number;
   runId?: string;
+  meta?: Record<string, unknown>;
 }
 
 export interface AgentStoredSession {
@@ -95,6 +107,9 @@ export interface AgentStoredSession {
   version: number;
   createdAt: number;
   updatedAt: number;
+  taskId?: string;
+  executionLocation?: 'local' | 'server';
+  meta?: Record<string, unknown>;
   deletedAt?: number;
   messages: AgentMessage[];
   summary?: { text: string; updatedAt: number };
@@ -155,5 +170,6 @@ export interface AgentStartBody {
   profileId: string;
   input: Record<string, unknown>;
   sessionId?: string;
+  sessionMode?: 'new' | 'continue';
   attachmentIds?: string[];
 }

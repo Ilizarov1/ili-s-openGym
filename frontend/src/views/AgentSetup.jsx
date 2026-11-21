@@ -7,7 +7,7 @@ import { useAgent } from '../agent/store.js'
 import { agentApi } from '../agent/api.js'
 import '../agent/agent.css'
 
-const PROVIDERS = ['fixture', 'openai']
+const PROVIDERS = ['fixture', 'openai', 'opencode']
 
 export default function AgentSetup() {
   const nav = useNavigate()
@@ -24,6 +24,7 @@ export default function AgentSetup() {
   const [provider, setProvider] = useState('openai')
   const [model, setModel] = useState('')
   const [apiKey, setApiKey] = useState('')
+  const [imageCapable, setImageCapable] = useState(false)
   const [busy, setBusy] = useState(false)
   const enabled = config?.agent?.enabled !== false
 
@@ -46,13 +47,15 @@ export default function AgentSetup() {
     setProvider('openai')
     setModel('')
     setApiKey('')
+    setImageCapable(false)
   }
 
   const beginEdit = profile => {
     setEditing(profile)
-    setProvider(profile.provider === 'fixture' ? 'fixture' : 'openai')
+    setProvider(profile.provider === 'fixture' ? 'fixture' : profile.provider === 'opencode' ? 'opencode' : 'openai')
     setModel(profile.model || '')
     setApiKey('')
+    setImageCapable(profile.capabilities?.image === true)
   }
 
   const save = async event => {
@@ -63,6 +66,7 @@ export default function AgentSetup() {
         await agentApi.updateProfile(editing.id, {
           provider,
           model: model.trim(),
+          capabilities: { image: imageCapable },
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         })
         toast(t('Configuration updated'))
@@ -70,6 +74,7 @@ export default function AgentSetup() {
         await agentApi.createProfile({
           provider,
           model: model.trim(),
+          capabilities: { image: imageCapable },
           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
         })
         toast(t('Configuration saved'))
@@ -145,15 +150,22 @@ export default function AgentSetup() {
           </div>
           <div className="agent-field">
             <label htmlFor="agent-model">{t('Model')}</label>
-            <input id="agent-model" value={model} onChange={event => setModel(event.target.value)} placeholder={provider === 'fixture' ? 'fixture' : 'gpt-5.6'} required />
+            <input id="agent-model" value={model} onChange={event => setModel(event.target.value)} placeholder={provider === 'fixture' ? 'fixture' : provider === 'opencode' ? 'deepseek-v4.1-flash-1017' : 'gpt-5.6'} required />
           </div>
-          {provider === 'openai' ? <div className="agent-field">
+          {provider !== 'fixture' ? <div className="agent-field">
             <label htmlFor="agent-key">{editing ? t('Replace API key (leave blank to keep it)') : t('API key')}</label>
             <input id="agent-key" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} autoComplete="off" required={!editing} />
           </div> : null}
+          <div className="agent-field">
+            <label htmlFor="agent-image" style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--label)', fontSize: '14.5px' }}>
+              <input id="agent-image" type="checkbox" checked={imageCapable} onChange={event => setImageCapable(event.target.checked)} />
+              {t('该模型可读取图片')}
+            </label>
+            <p className="agent-note">{t('勾选后，这份配置会声明可以读取图片；不勾选则按仅文本处理。')}</p>
+          </div>
           <p className="agent-note">{t('The key is encrypted on the server and only its last four characters are shown again.')}</p>
           <div className="agent-actions" style={{ marginTop: 12 }}>
-            <button type="submit" className="btn tinted" disabled={busy || !model.trim() || (provider === 'openai' && !editing && apiKey.trim().length < 8)}>{busy ? t('Saving…') : t('Save')}</button>
+            <button type="submit" className="btn tinted" disabled={busy || !model.trim() || (provider !== 'fixture' && !editing && apiKey.trim().length < 8)}>{busy ? t('Saving…') : t('Save')}</button>
             {editing ? <button type="button" className="btn" onClick={reset}>{t('Cancel')}</button> : null}
           </div>
         </form>

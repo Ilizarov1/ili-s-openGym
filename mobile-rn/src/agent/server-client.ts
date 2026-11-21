@@ -2,11 +2,52 @@
 // the paired connection's Bearer token.
 import type { Connection } from '../server';
 import type {
-  AgentMemory, AgentProfileInput, AgentProfilePublic, AgentProposal, AgentRunRow, AgentSession,
+  AgentMemory, AgentProfileInput, AgentProfilePublic, AgentProfileSummary, AgentProposal, AgentRunRow, AgentSession,
   AgentSessionSummary, AgentStartInput,
 } from './types';
 
 const POLL_MS = 2000;
+
+function summaryOf(value: unknown): AgentProfileSummary | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.id !== 'string' || !raw.id) return undefined;
+  return {
+    id: raw.id,
+    label: String(raw.label || raw.provider || raw.id),
+    provider: String(raw.provider || ''),
+    model: String(raw.model || ''),
+    version: Number(raw.version || 1),
+  };
+}
+
+/** The server returns only the stored run; give it the local row shape. */
+function runOf(value: unknown): AgentRunRow {
+  const raw = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const profile = summaryOf(raw.profile);
+  return {
+    scope: '',
+    runId: String(raw.runId || ''),
+    requestId: String(raw.requestId || ''),
+    requestHash: String(raw.requestHash || ''),
+    taskId: String(raw.taskId || ''),
+    profileId: String(raw.profileId || ''),
+    status: String(raw.status || 'accepted') as AgentRunRow['status'],
+    createdAt: Number(raw.createdAt || Date.now()),
+    ...(raw.startedAt == null ? {} : { startedAt: Number(raw.startedAt) }),
+    ...(raw.finishedAt == null ? {} : { finishedAt: Number(raw.finishedAt) }),
+    ...(raw.durationMs == null ? {} : { durationMs: Number(raw.durationMs) }),
+    execution: 'server',
+    ...(raw.dataVersion == null ? {} : { dataVersion: raw.dataVersion as string | number }),
+    ...(raw.sessionId ? { sessionId: String(raw.sessionId) } : {}),
+    ...(profile ? { profile } : {}),
+    ...(raw.result === undefined ? {} : { result: raw.result }),
+    ...(raw.proposalId ? { proposalId: String(raw.proposalId) } : {}),
+    ...(raw.error && typeof raw.error === 'object'
+      ? { error: raw.error as { code: string; message: string } }
+      : {}),
+  };
+}
 
 async function request<T>(connection: Connection, path: string, method = 'GET', body?: unknown): Promise<T> {
   const controller = new AbortController();
@@ -56,9 +97,29 @@ export function createServerAgent(connection: Connection) {
     updateProfile: (id: string, input: AgentProfileInput) => request<AgentProfilePublic>(connection, `/configs/${encodeURIComponent(id)}`, 'PATCH', input),
     removeProfile: (id: string) => request<{ ok: boolean }>(connection, `/configs/${encodeURIComponent(id)}`, 'DELETE'),
 
-    startRun: (input: AgentStartInput) => request<{ runId: string; status: string }>(connection, '/runs', 'POST', { taskId: 'stub.v1', ...input }),
-    getRun: (runId: string) => request<AgentRunRow>(connection, `/runs/${encodeURIComponent(runId)}`),
-    cancelRun: (runId: string) => request<AgentRunRow>(connection, `/runs/${encodeURIComponent(runId)}/cancel`, 'POST'),
+    async startRun(input: AgentStartInput): Promise<AgentRunRow & { profile?: AgentProfileSummary }> {
+      const data = await request<Record<string, unknown>>(connection, '/runs', 'POST', {
+        ...(input.taskId ? { taskId: input.taskId } : {}),
+        requestId: input.requestId,
+        profileId: input.profileId,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.sessionMode ? { sessionMode: input.sessionMode } : {}),
+        input: input.input,
+        ...(input.attachmentIds ? { attachmentIds: input.attachmentIds } : {}),
+      });
+      return {
+        ...runOf({ ...data, status: data.status || 'accepted' }),
+        ...(summaryOf(data.profile) ? { profile: summaryOf(data.profile) } : {}),
+      };
+    },
+    async getRun(runId: string): Promise<AgentRunRow> {
+      // Re-querying by run id is the disconnect path: the server keeps the run
+      // for its polling window, so a dropped connection can always resume.
+      return runOf(await request<unknown>(connection, `/runs/${encodeURIComponent(runId)}`));
+    },
+    async cancelRun(runId: string): Promise<AgentRunRow> {
+      return runOf(await request<unknown>(connection, `/runs/${encodeURIComponent(runId)}/cancel`, 'POST'));
+    },
 
     sessions: () => request<{ sessions: AgentSessionSummary[] }>(connection, '/sessions').then(data => data.sessions || []),
     session: (id: string) => request<AgentSession>(connection, `/sessions/${encodeURIComponent(id)}`),
@@ -89,14 +150,32 @@ export function createServerAgent(connection: Connection) {
     },
 
     async pollRun(runId: string, onRun: (run: AgentRunRow) => void, signal?: AbortSignal): Promise<AgentRunRow> {
+      let failures = 0;
       for (;;) {
         if (signal?.aborted) throw new Error('cancelled');
-        const run = await this.getRun(runId);
-        onRun(run);
-        if (['completed', 'failed', 'cancelled', 'interrupted'].includes(run.status)) return run;
+        try {
+          const run = await this.getRun(runId);
+          failures = 0;
+          onRun(run);
+          if (['completed', 'failed', 'cancelled', 'interrupted'].includes(run.status)) return run;
+        } catch (error) {
+          // A dropped connection is not a dropped run: the server keeps it for
+          // the polling window, so re-query the same id before giving up.
+          const status = (error as { status?: number }).status;
+          if (status === 401 || status === 403) throw error;
+          failures += 1;
+          if (failures >= 5) throw error;
+        }
         await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, POLL_MS);
-          if (signal) signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('cancelled')); }, { once: true });
+          const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', abort);
+            resolve();
+          }, POLL_MS);
+          const abort = () => {
+            clearTimeout(timer);
+            reject(new Error('cancelled'));
+          };
+          signal?.addEventListener('abort', abort, { once: true });
         });
       }
     },

@@ -11,6 +11,9 @@ export type SearchFieldProps = {
   onClear?: () => void;
   resultCount?: number;
   autoFocus?: boolean;
+  /** Renders a 44×44 sparkles entry only when this callback is passed. */
+  onAiPress?: () => void;
+  editable?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   returnKeyType?: TextInputProps['returnKeyType'];
@@ -36,6 +39,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: -12,
   },
+  ai: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   clearDisc: {
     width: 24,
     height: 24,
@@ -51,6 +60,8 @@ export function SearchField({
   onClear,
   resultCount,
   autoFocus = false,
+  onAiPress,
+  editable = true,
   style,
   testID,
   returnKeyType,
@@ -80,6 +91,7 @@ export function SearchField({
         accessibilityLabel={placeholder ?? '搜索'}
         autoCorrect={false}
         autoFocus={autoFocus}
+        editable={editable}
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={theme.colors.label3}
@@ -89,7 +101,19 @@ export function SearchField({
         underlineColorAndroid="transparent"
         value={value}
       />
-      {value.length > 0 ? (
+      {onAiPress ? (
+        <Pressable
+          accessibilityLabel="AI 检索动作"
+          accessibilityRole="button"
+          hitSlop={4}
+          onPress={onAiPress}
+          style={styles.ai}
+          testID={testID ? `${testID}-ai` : 'search-ai'}
+        >
+          <Icon color={theme.colors.accent} name="sparkles" size={22} />
+        </Pressable>
+      ) : null}
+      {value.length > 0 && editable ? (
         <Pressable
           accessibilityLabel="清除"
           accessibilityRole="button"

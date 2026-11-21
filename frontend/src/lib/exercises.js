@@ -4,6 +4,7 @@ import V13_IDS from './catalogue-v13-ids.json' with { type: 'json' }
 import { t, getVersion, exerciseNameSearchText } from './i18n-core.js'
 import { exerciseAliases, aliasSnapshot } from './exercise-aliases.js'
 import { createExerciseSearch, isOneLimbExercise, normalizeStr } from './exercise-search.js'
+import { createExerciseAiSearch } from './exercise-ai-search.js'
 
 export { EXDB }
 
@@ -319,4 +320,15 @@ const webSearch = createExerciseSearch({
 export { normalizeStr }
 export const matchExercise = webSearch.matchExercise
 export const searchExercises = webSearch.searchExercises
+export const searchScored = webSearch.searchScored
 export const similarExercises = webSearch.similarExercises
+
+// AI candidates are matched against every exercise the account can pick (own
+// exercises included), never against the Library's current chips.
+export const EQUIPMENTS = equipmentOf(CATALOGUE)
+export const createWebAiSearch = state => createExerciseAiSearch({
+  searchScored,
+  list: allExercises(state),
+  bodyPartValues: BODYPARTS,
+  equipmentValues: EQUIPMENTS,
+})

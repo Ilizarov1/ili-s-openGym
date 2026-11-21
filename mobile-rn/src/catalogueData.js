@@ -79,8 +79,14 @@ export const EQUIPMENT = [
   'skierg machine',
   'hammer',
   'stepmill machine',
-  'other',
 ];
+
+/**
+ * The library filter also offers `other` for custom exercises, which are
+ * created with that placeholder equipment. It is not a catalogue equipment
+ * value, so it stays out of `EQUIPMENT` (the shared vocabulary snapshot).
+ */
+export const EQUIPMENT_OPTIONS = [...EQUIPMENT, 'other'];
 
 // Target muscles plus the secondary-muscle vocabulary the catalogue uses, so a
 // Chinese label finds an exercise through either field the same way Web does.

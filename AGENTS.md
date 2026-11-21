@@ -21,8 +21,11 @@ frontend/ios/        上游 iOS、Apple Watch 和小组件
 api/                 NestJS 路由、认证、设备配对、JSON 存储和同步；server.js 加载 dist
 api/coach/           AI Coach 服务与共用逻辑
 api/agent-runtime/   共享 Agent 运行核心（契约、围栏、编排、提供商）
+api/agent-runtime/tasks/ 共享业务任务：exercise-search.v1、系统提示词与词表快照
 api/src/agent/       NestJS Agent 模块、按账号存储、配置与作业
 frontend/src/agent/  Web 服务端 Agent 客户端与 Zustand 状态
+frontend/src/lib/exercise-ai-search.js  双端 AI 候选匹配（searchScored + CJK 回退）
+frontend/src/components/ExerciseAiSearch.jsx  Web 动作库/选择器共用识别态
 mobile-rn/src/agent/ RN 本机执行、SQLite、SecureStore 和服务端客户端
 api/integrations/    外部集成和投递队列
 web/                 Web 镜像构建和 Nginx 配置
@@ -85,6 +88,9 @@ docs/
   ai-exercise-search/
     REQUIREMENTS.md                      多模态动作检索的范围、入口、交互和验收条件
     DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
+    EXECUTION.md                         阶段 0–7 实施清单、命令矩阵与记录
+    ACCEPTANCE.md                        A1–A16 离线/设备证据与真实模型 smoke 状态
+    test_pic/                            真实器械照片 smoke 素材
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
     progress/

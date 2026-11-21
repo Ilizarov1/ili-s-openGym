@@ -10,6 +10,7 @@ import {
   validRequestId,
   validTaskId,
   isMemoryCategory,
+  isSessionMode,
 } from './contracts.js';
 import {
   addEvidence,
@@ -45,6 +46,37 @@ function assertRequest(task, request) {
   if (!request.input || typeof request.input !== 'object' || Array.isArray(request.input)) {
     throw new AgentError('invalid_request', 'input must be an object');
   }
+  if (request.sessionMode !== undefined && !isSessionMode(request.sessionMode)) {
+    throw new AgentError('invalid_request', 'sessionMode must be new or continue');
+  }
+}
+
+/**
+ * The host owns the session store; the shared core only checks the shape and
+ * lets the task validate what the schema subset cannot express.
+ */
+function validateTaskInput(task, input, context) {
+  if (typeof task.validateInput !== 'function') return;
+  task.validateInput(input, context);
+}
+
+async function taskAttachments(task, input, context) {
+  if (typeof task.attachments !== 'function') {
+    return Array.isArray(context.meta.attachments) ? context.meta.attachments : [];
+  }
+  const raw = await task.attachments(input, context);
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) throw new AgentError('invalid_request', 'task attachments must return an array');
+  return raw;
+}
+
+function requiredCapabilities(task, input) {
+  if (typeof task.capabilities === 'function') {
+    const value = task.capabilities(input);
+    if (!Array.isArray(value)) throw new AgentError('invalid_request', 'task capabilities must return an array');
+    return value;
+  }
+  return Array.isArray(task.requiredCapabilities) ? task.requiredCapabilities : [];
 }
 
 async function resolveTargets(task, input, context) {
@@ -181,9 +213,11 @@ export async function runAgent(options) {
       return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
     }
     if (task.inputSchema) assertValid(task.inputSchema, request.input, '$.input', 'invalid_request');
+    validateTaskInput(task, request.input, context);
     await resolveTargets(task, request.input, context);
-    if (context.profileRef?.capabilities && task.requiredCapabilities) {
-      assertCapabilities(context.profileRef, task.requiredCapabilities);
+    const capabilities = requiredCapabilities(task, request.input);
+    if (context.profileRef?.capabilities && capabilities.length) {
+      assertCapabilities(context.profileRef, capabilities);
     }
     if (state) state.start();
     await readFacts(task, request.input, context);
@@ -197,9 +231,10 @@ export async function runAgent(options) {
       maxCalls: step.maxToolCalls ?? budgets.toolCalls,
       signal,
     });
-    const attachments = Array.isArray(context.meta.attachments) ? context.meta.attachments : [];
+    const attachments = await taskAttachments(task, request.input, context);
     const history = [...(context.history || [])];
-    const memories = projectMemories(context.memories || []);
+    const noMemories = Array.isArray(task.memoryCategories) && task.memoryCategories.length === 0;
+    const memories = noMemories ? [] : projectMemories(context.memories || []);
     const toolResults = [];
     let rounds = 0;
     let lastOutput = null;
@@ -213,17 +248,19 @@ export async function runAgent(options) {
         throw new AgentError('model_timeout', 'the run deadline passed');
       }
       rounds++;
+      const fixtureCase = typeof task.fixtureCase === 'function'
+        ? task.fixtureCase(request.input, context)
+        : undefined;
       const modelInput = trimContext({
         instructions: typeof task.instructions === 'function'
           ? task.instructions(request.input, context)
           : (task.instructions || DEFAULT_INSTRUCTIONS),
+        ...(task.outputFormat === 'json' ? { responseFormat: 'json' } : {}),
         user: {
           text: typeof task.userText === 'function'
             ? task.userText(request.input, context)
             : String(request.input.prompt || ''),
-          ...(typeof task.fixtureCase === 'function' && task.fixtureCase(request.input)
-            ? { fixtureCase: task.fixtureCase(request.input) }
-            : {}),
+          ...(fixtureCase ? { fixtureCase } : {}),
           ...(attachments.length ? { attachments } : {}),
         },
         facts: evidenceFacts(context),

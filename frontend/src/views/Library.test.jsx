@@ -13,8 +13,19 @@ import { CASED_NAME_LANGS, EXERCISE_NAME_LANGS, _setLangState } from '../lib/i18
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => {
-  const state = { S: null }
-  state.snapshot = () => ({ S: state.S, user: null, update: mut => { const next = structuredClone(state.S); mut(next); state.S = next } })
+  const state = {
+    S: null,
+    USER: { id: 'u1' },
+    CONFIG: { agent: { enabled: true } },
+    ai: {
+      interrupted: null,
+      reopen: vi.fn(),
+      clear: vi.fn(),
+      getRun: vi.fn(),
+      cancelRun: vi.fn(),
+    },
+  }
+  state.snapshot = () => ({ S: state.S, config: state.CONFIG, user: state.USER, update: mut => { const next = structuredClone(state.S); mut(next); state.S = next } })
   return state
 })
 vi.mock('../store/useStore.js', () => {
@@ -24,6 +35,28 @@ vi.mock('../store/useStore.js', () => {
 })
 vi.mock('react-router-dom', () => ({ useNavigate: () => () => {} }))
 vi.mock('../sheets.jsx', () => ({ exerciseDetailSheet: vi.fn(), addToRoutineSheet: vi.fn(), customExSheet: vi.fn() }))
+vi.mock('../agent/api.js', () => ({
+  agentApi: {
+    getRun: (...args) => mocks.ai.getRun(...args),
+    cancelRun: (...args) => mocks.ai.cancelRun(...args),
+  },
+}))
+vi.mock('../components/ExerciseAiSearch.jsx', async () => {
+  const React = await import('react')
+  const { forwardRef, useImperativeHandle } = React
+  return {
+    default: forwardRef(function AiStub(props, ref) {
+      useImperativeHandle(ref, () => ({ reopen: mocks.ai.reopen }))
+      return <div data-testid="ai-state">
+        <button type="button" onClick={() => props.onExit()}>ai-exit</button>
+        <button type="button" onClick={() => props.onFallbackPick('bodyPart', 'chest')}>ai-body-part</button>
+        <button type="button" onClick={() => props.onFallbackPick('equipment', 'barbell')}>ai-equipment</button>
+      </div>
+    }),
+    readInterrupted: () => mocks.ai.interrupted,
+    clearInterrupted: (...args) => mocks.ai.clear(...args),
+  }
+})
 
 const mounted = []
 function render() {
@@ -39,9 +72,30 @@ const cssSource = readFileSync(resolve(process.cwd(), 'src/index.css'), 'utf8')
 
 beforeEach(() => {
   mocks.S = { unit: 'kg', lang: 'en', routines: [], workouts: [], customEx: [], exWeights: {}, equipProfiles: [], activeEquipId: null, equipFilterOn: false }
+  mocks.CONFIG = { agent: { enabled: true } }
+  mocks.USER = { id: 'u1' }
+  mocks.ai.interrupted = null
+  mocks.ai.reopen = vi.fn()
+  mocks.ai.clear = vi.fn()
+  mocks.ai.getRun = vi.fn(async () => ({ status: 'running' }))
+  mocks.ai.cancelRun = vi.fn(async () => ({}))
+  localStorage.clear()
   document.body.innerHTML = ''
 })
 afterEach(() => { act(() => { mounted.splice(0).forEach(root => root.unmount()) }) })
+
+async function flush() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+}
+function setSearch(host, value) {
+  const input = host.querySelector('.search input')
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+  act(() => { setter.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })) })
+}
+const sparkle = host => host.querySelector('[aria-label="AI 检索动作"]')
 
 describe('Library favourites', () => {
   it('puts favourites first, marked with a star, and leaves the rest in catalogue order', () => {
@@ -185,5 +239,84 @@ describe('Library similar exercises', () => {
     expect(label(host)).toBe('Similar exercises')
     const all = names(host)
     expect(new Set(all).size).toBe(all.length)
+  })
+})
+
+// A2/A4/A5/A14/A12 Web paths: AI mode owns the list, restores the exact snapshot on x,
+// applies only the fallback chip's dimension, and reopens the launcher from the sparkle.
+describe('Library AI search entry', () => {
+  it('hides chips and disables the text field while AI is open', async () => {
+    const host = render()
+    setSearch(host, 'press')
+    act(() => sparkle(host).click())
+    expect(host.querySelector('[data-testid="ai-state"]')).toBeTruthy()
+    expect(host.querySelector('.search input').disabled).toBe(true)
+    expect(host.querySelector('.lib-filters')).toBeNull()
+    expect(host.querySelector('.list')).toBeNull()
+  })
+
+  it('restores the exact text, body part and page size snapshot on x', async () => {
+    const host = render()
+    setSearch(host, 'press')
+    const chest = [...host.querySelectorAll('.chips .chip')].find(b => b.textContent === 'chest')
+    act(() => chest.click())
+    const before = host.querySelectorAll('.list .item').length
+    if (before < 45) {
+      const more = [...host.querySelectorAll('button')].find(b => b.textContent === 'Show more')
+      if (more) act(() => more.click())
+    }
+    const shownBefore = host.querySelectorAll('.list .item').length
+    act(() => sparkle(host).click())
+    act(() => [...host.querySelectorAll('button')].find(b => b.textContent === 'ai-exit').click())
+    expect(host.querySelector('.search input').value).toBe('press')
+    expect([...host.querySelectorAll('.chips .chip')].find(b => b.textContent === 'chest').getAttribute('aria-pressed')).toBe('true')
+    expect(host.querySelectorAll('.list .item').length).toBe(shownBefore)
+  })
+
+  it('applies only the fallback dimension and never restores the snapshot', async () => {
+    const host = render()
+    setSearch(host, 'press')
+    act(() => [...host.querySelectorAll('.chips .chip')].find(b => b.textContent === 'chest').click())
+    act(() => sparkle(host).click())
+    await act(async () => { [...host.querySelectorAll('button')].find(b => b.textContent === 'ai-equipment').click() })
+    expect(host.querySelector('.search input').value).toBe('')
+    expect([...host.querySelectorAll('.chips .chip')].find(b => b.textContent === 'chest').getAttribute('aria-pressed')).toBe('false')
+    const equipment = [...host.querySelectorAll('.lib-filters .chip')].find(b => b.textContent === 'barbell')
+    expect(equipment).toBeTruthy()
+    expect(equipment.classList.contains('on')).toBe(true)
+  })
+
+  it('reopens the launcher from the sparkle while AI mode is active', async () => {
+    const host = render()
+    act(() => sparkle(host).click())
+    act(() => sparkle(host).click())
+    expect(mocks.ai.reopen).toHaveBeenCalledOnce()
+  })
+
+  it('does not render the sparkle when the instance disabled the agent runtime', () => {
+    mocks.CONFIG = { agent: { enabled: false } }
+    const host = render()
+    expect(sparkle(host)).toBeNull()
+  })
+
+  it('shows the interrupted notice for an open run and cancels it', async () => {
+    mocks.ai.interrupted = { runId: 'old-run', sessionId: 'old-session', accountId: 'u1' }
+    mocks.ai.getRun = vi.fn(async () => ({ status: 'running' }))
+    const host = render()
+    await flush()
+    expect(host.textContent).toContain('上次检索未完成')
+    expect(mocks.ai.cancelRun).toHaveBeenCalledWith('old-run')
+    expect(mocks.ai.clear).toHaveBeenCalledWith('u1', 'old-run')
+    act(() => [...host.querySelectorAll('button')].find(b => b.textContent === '重新发起').click())
+    expect(host.querySelector('[data-testid="ai-state"]')).toBeTruthy()
+  })
+
+  it('does not show the interrupted notice for a terminal run', async () => {
+    mocks.ai.interrupted = { runId: 'old-run', sessionId: 'old-session', accountId: 'u1' }
+    mocks.ai.getRun = vi.fn(async () => ({ status: 'completed' }))
+    const host = render()
+    await flush()
+    expect(host.textContent).not.toContain('上次检索未完成')
+    expect(mocks.ai.clear).toHaveBeenCalledWith('u1', 'old-run')
   })
 })

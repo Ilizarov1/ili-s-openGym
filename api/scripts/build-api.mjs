@@ -65,6 +65,8 @@ const required = [
   'integrations/index.js',
   'agent-runtime/index.js',
   'agent-runtime/contracts.d.ts',
+  'agent-runtime/tasks/exercise-search.js',
+  'agent-runtime/tasks/exercise-search-vocabulary.json',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));

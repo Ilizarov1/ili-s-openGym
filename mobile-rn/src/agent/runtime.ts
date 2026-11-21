@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import { randomUUID } from 'expo-crypto';
 import {
   AgentError,
+  assertCapabilities,
   assertValid,
   bindContext,
   createIds,
@@ -14,20 +15,28 @@ import {
   selectMemories,
   validRequestId,
   withRunDefaults,
+  EXERCISE_SEARCH_TASK_ID,
 } from './shared';
+import type { AgentTask, AgentTool } from './shared';
 import type {
-  AgentAttachment, AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionSummary, AgentStartInput,
+  AgentAttachment, AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionMode,
+  AgentSessionSummary, AgentStartInput,
 } from './types';
 import { readAttachment } from './media';
 import type { Connection } from '../server';
 import type { LocalState } from '../storage';
 import { workspaceScope } from '../storage';
-import { AgentConfig } from './config';
+import { AgentConfig, summaryOf } from './config';
 import { AgentGateway } from './gateway';
 import { AgentStore } from './store';
-import { createLocalTask, createLocalTools, LOCAL_PROFILE } from './tasks';
+import { createTaskRegistry, LOCAL_PROFILE, LOCAL_TASK_ID } from './tasks';
+import { rememberAiRun, settleAiRun } from './recovery';
 
 const ids = createIds(randomUUID);
+const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+const AI_TASK_ID = EXERCISE_SEARCH_TASK_ID;
+/** First turn plus five follow-ups. */
+const AI_MAX_RUNS = 6;
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -49,7 +58,7 @@ function rowOf(record: Record<string, unknown>, scope: string): AgentRunRow {
     runId: String(record.runId),
     requestId: String(record.requestId),
     requestHash: String(record.requestHash || ''),
-    taskId: String(record.taskId || 'stub.local.v1'),
+    taskId: String(record.taskId || LOCAL_TASK_ID),
     profileId: String(record.profileId || ''),
     status: String(record.status || 'accepted') as AgentRunRow['status'],
     createdAt: Number(record.createdAt || Date.now()),
@@ -59,9 +68,59 @@ function rowOf(record: Record<string, unknown>, scope: string): AgentRunRow {
     ...(record.execution === 'server' ? { execution: 'server' as const } : record.execution === 'local' ? { execution: 'local' as const } : {}),
     ...(record.dataVersion == null ? {} : { dataVersion: record.dataVersion as string | number }),
     ...(record.sessionId ? { sessionId: String(record.sessionId) } : {}),
+    ...(record.profile && typeof record.profile === 'object'
+      ? { profile: record.profile as AgentRunRow['profile'] }
+      : {}),
     ...(record.result === undefined ? {} : { result: record.result }),
     ...(record.proposalId ? { proposalId: String(record.proposalId) } : {}),
     ...(record.error ? { error: record.error as { code: string; message: string } } : {}),
+  };
+}
+
+function sessionTitle(task: AgentTask, input: Record<string, unknown>): string {
+  if (task.id === AI_TASK_ID) {
+    const hint = typeof input.hintText === 'string' ? input.hintText.trim() : '';
+    return hint ? hint.slice(0, 40) : 'AI 动作检索';
+  }
+  return 'Agent session';
+}
+
+/** The session messages one completed run projects through its task hooks. */
+function messagesOf(
+  task: AgentTask,
+  input: Record<string, unknown>,
+  record: Record<string, unknown>,
+): { user: { content: string; meta?: Record<string, unknown> }; assistant: { content: string; meta?: Record<string, unknown> } } {
+  const userContent = typeof task.userMessage === 'function'
+    ? task.userMessage(input)
+    : String(input.prompt || '');
+  let assistantContent = '';
+  let assistantMeta: Record<string, unknown> | undefined;
+  if (typeof task.assistantMessage === 'function') {
+    const projection = task.assistantMessage(record, input);
+    assistantContent = typeof projection?.content === 'string' ? projection.content : '';
+    assistantMeta = projection?.meta && typeof projection.meta === 'object' ? { ...projection.meta } : undefined;
+  } else {
+    const payload = record.result as { text?: unknown; structured?: unknown } | undefined;
+    assistantContent = typeof payload?.text === 'string'
+      ? payload.text
+      : payload?.structured
+        ? JSON.stringify(payload.structured)
+        : '';
+  }
+  // The task hook reports image metadata with the assistant projection; the
+  // design keeps it on the user message and never stores a data URL.
+  const images = assistantMeta && Array.isArray(assistantMeta.images) ? assistantMeta.images : [];
+  if (assistantMeta) delete assistantMeta.images;
+  return {
+    user: {
+      content: userContent,
+      ...(images.length ? { meta: { images } } : {}),
+    },
+    assistant: {
+      content: assistantContent,
+      ...(assistantMeta ? { meta: assistantMeta } : {}),
+    },
   };
 }
 
@@ -82,6 +141,24 @@ export function activeRunIds(): Set<string> {
   return new Set(activeRuns.keys());
 }
 
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new AgentError('run_cancelled', 'cancelled'));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, Math.max(0, ms));
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new AgentError('run_cancelled', 'cancelled'));
+    };
+    signal?.addEventListener('abort', abort, { once: true });
+  });
+}
+
 export function createLocalRuntime(connection: Connection | null, data: LocalState) {
   const scope = workspaceScope(connection);
   const store = new AgentStore();
@@ -92,8 +169,15 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
   });
   const targetVersion = (id: string): number =>
     store.readKv<{ version: number }>(scope, `target:${id}`)?.version ?? 1;
-  const task = createLocalTask(data, { targetVersion });
-  const tools = createLocalTools(data, { targetVersion });
+  const registry = createTaskRegistry(data, { targetVersion });
+
+  function taskEntry(taskId: string): { task: AgentTask; tools: AgentTool[] } {
+    const entry = registry.get(taskId);
+    if (!entry) {
+      throw new AgentError('invalid_request', 'unknown task', { details: { taskId } });
+    }
+    return entry;
+  }
 
   function assertMemoryInput(input: { category?: string; value?: unknown }): void {
     if (input.category !== undefined && !isMemoryCategory(input.category)) {
@@ -152,8 +236,12 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
   }
 
   async function execute(
+    task: AgentTask,
+    tools: AgentTool[],
+    sessionMode: AgentSessionMode | undefined,
     run: AgentRunRow,
     profileRef: Record<string, unknown>,
+    sessionVersion: number | undefined,
     state: ReturnType<typeof createRunState>,
     controller: AbortController,
     attachments: AgentAttachment[],
@@ -164,34 +252,42 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       const session = run.sessionId ? store.getSession(scope, run.sessionId) : null;
       if (run.sessionId && !session) {
         state.failed({ code: 'session_deleted', message: 'the conversation was deleted' });
-        store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope));
+        const failed = rowOf(state.record() as unknown as Record<string, unknown>, scope);
+        store.finishRun(failed);
+        if (task.id === AI_TASK_ID) settleAiRun(scope, failed);
         return;
       }
       const budgets = withRunDefaults(task.budgets);
       const taskCategories = task.memoryCategories;
+      const noMemories = Array.isArray(taskCategories) && taskCategories.length === 0;
+      const memories = noMemories
+        ? []
+        : selectMemories(store.listMemories(scope), {
+          scope,
+          ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
+          limit: budgets.memoryItems,
+          maxChars: 4000,
+        });
       const history = (session?.messages || []).slice(-budgets.historyItems).map(message => ({
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
       }));
-      const memories = selectMemories(store.listMemories(scope), {
-        scope,
-        ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
-        limit: budgets.memoryItems,
-        maxChars: 4000,
-      });
       const input = (run as AgentRunRow & { input?: Record<string, unknown> }).input || {};
       const prompt = String(input.prompt || '');
+      const request = {
+        taskId: task.id,
+        requestId: run.requestId,
+        profileId: run.profileId,
+        input,
+        ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+        ...(sessionMode ? { sessionMode } : {}),
+      };
       const context = bindContext({
         scope,
         runId: run.runId,
-        request: {
-          taskId: task.id,
-          requestId: run.requestId,
-          profileId: run.profileId,
-          input,
-        },
+        request,
         execution: 'local',
         profileRef,
         dataVersion: 1,
@@ -199,41 +295,41 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         signal: controller.signal,
         memories,
         history,
-        meta: { connection, prompt, ...(attachments.length ? { attachments } : {}) },
+        meta: {
+          connection,
+          prompt,
+          ...(run.sessionId ? { sessionId: run.sessionId } : {}),
+          ...(attachments.length ? { attachments } : {}),
+        },
         ids,
       });
-      const result = await runAgent({
+      await runAgent({
         task,
-        request: {
-          taskId: task.id,
-          requestId: run.requestId,
-          profileId: run.profileId,
-          input,
-        },
+        request,
         context,
         gateway: gateway.forScope(scope),
-        tools: tools.tools,
+        tools,
         proposals: proposalCreator(run.runId),
         state,
         signal: controller.signal,
       });
       if (session && state.status() === 'completed') {
-        const payload = result?.result;
-        const assistant = typeof payload?.text === 'string'
-          ? payload.text
-          : payload?.structured
-            ? JSON.stringify(payload.structured)
-            : '';
+        const projection = messagesOf(task, input, state.record() as unknown as Record<string, unknown>);
         try {
           store.appendMessages(scope, session.id, [
-            { id: randomUUID(), role: 'user', content: prompt, createdAt: Date.now(), runId: run.runId },
-            { id: randomUUID(), role: 'assistant', content: assistant, createdAt: Date.now(), runId: run.runId },
-          ]);
+            { id: randomUUID(), role: 'user', content: projection.user.content, createdAt: Date.now(), runId: run.runId, ...(projection.user.meta ? { meta: projection.user.meta } : {}) },
+            { id: randomUUID(), role: 'assistant', content: projection.assistant.content, createdAt: Date.now(), runId: run.runId, ...(projection.assistant.meta ? { meta: projection.assistant.meta } : {}) },
+          ], sessionVersion);
         } catch (error) {
-          if (!(error instanceof AgentError) || error.code !== 'session_deleted') throw error;
+          // A late run must not recreate a deleted session, and a version
+          // conflict means another writer won; the run itself already ended.
+          if (!(error instanceof AgentError)
+            || (error.code !== 'session_deleted' && error.code !== 'session_conflict')) throw error;
         }
       }
-      store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope));
+      const finished = rowOf(state.record() as unknown as Record<string, unknown>, scope);
+      store.finishRun(finished);
+      if (task.id === AI_TASK_ID) settleAiRun(scope, finished);
     } catch (error) {
       if (!state.isTerminal()) {
         state.failed({
@@ -241,7 +337,9 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
           message: error instanceof Error ? error.message : 'run failed',
         });
       }
-      try { store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope)); } catch { /* already gone */ }
+      const failed = rowOf(state.record() as unknown as Record<string, unknown>, scope);
+      try { store.finishRun(failed); } catch { /* already gone */ }
+      if (task.id === AI_TASK_ID) settleAiRun(scope, failed);
     } finally {
       activeRuns.delete(state.runId);
     }
@@ -265,22 +363,79 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       if ((input.attachmentIds?.length || 0) > 4) {
         throw new AgentError('invalid_request', 'at most four attachments are allowed');
       }
+      const taskId = input.taskId || LOCAL_TASK_ID;
+      const { task, tools } = taskEntry(taskId);
+      const sessionMode = input.sessionMode;
+      if (sessionMode !== undefined && sessionMode !== 'new' && sessionMode !== 'continue') {
+        throw new AgentError('invalid_request', 'sessionMode must be new or continue');
+      }
+      if (sessionMode === 'continue' && !input.sessionId) {
+        throw new AgentError('invalid_request', 'sessionMode continue needs a sessionId');
+      }
+      if (task.id === AI_TASK_ID && !input.sessionId) {
+        throw new AgentError('invalid_request', 'the exercise search needs a sessionId');
+      }
+      // Task-level validation comes before the request hash, so invalid input
+      // does not consume a requestId or count as a turn.
       if (task.inputSchema) assertValid(task.inputSchema, input.input, '$.input', 'invalid_request');
+      if (typeof task.validateInput === 'function') task.validateInput(input.input);
       const hash = await fingerprint({
         taskId: task.id,
         profileId: input.profileId,
         input: input.input,
         sessionId: input.sessionId,
+        sessionMode,
         attachmentIds: input.attachmentIds,
       });
       // Idempotency comes before profile, session or attachment work: a retry
       // must still find its original run if any of them changed in between.
       const known = store.findRun(scope, input.requestId, hash);
       if (known) return known;
+
+      let session: { id: string; version: number; taskId?: string } | null = null;
+      const ensureOptions = { taskId, ...(task.id === AI_TASK_ID ? { executionLocation: 'local' as const } : {}) };
+      if (input.sessionId) {
+        if (sessionMode === 'continue') {
+          session = store.getSession(scope, input.sessionId);
+          if (!session) throw new AgentError('session_deleted', undefined, { details: { sessionId: input.sessionId } });
+          if (session.taskId && session.taskId !== task.id) {
+            throw new AgentError('session_conflict', 'this session belongs to another task', {
+              details: { sessionId: input.sessionId, taskId: session.taskId },
+            });
+          }
+        } else {
+          session = store.ensureSession(
+            scope,
+            input.sessionId,
+            sessionTitle(task, input.input),
+            ensureOptions,
+          );
+        }
+      }
+
+      if (task.id === AI_TASK_ID && session) {
+        const active = store.activeRunForSession(scope, session.id);
+        if (active) {
+          throw new AgentError('session_busy', 'this search already has a running turn', {
+            details: { runId: active.runId },
+          });
+        }
+        const submitted = store.countRunsForSession(scope, session.id, AI_TASK_ID);
+        if (submitted >= AI_MAX_RUNS) {
+          throw new AgentError('turn_limit', 'this search has reached its follow-up limit', {
+            details: { limit: AI_MAX_RUNS },
+          });
+        }
+      }
+
       const resolved = await config.resolve(scope, input.profileId);
+      const required = typeof task.capabilities === 'function'
+        ? task.capabilities(input.input)
+        : (task.requiredCapabilities || []);
+      assertCapabilities({ capabilities: resolved.profile.capabilities }, required);
       const attachments = await resolveAttachments(input.attachmentIds);
-      const session = input.sessionId ? store.ensureSession(scope, input.sessionId) : null;
       const runId = ids.run();
+      const profileSummary = summaryOf(resolved.profile);
       const run: AgentRunRow & {
         input?: Record<string, unknown>;
         attachments?: AgentAttachment[];
@@ -298,11 +453,39 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         execution: 'local',
         dataVersion: 1,
         ...(session ? { sessionId: session.id } : {}),
+        profile: profileSummary,
         input: input.input,
         ...(attachments.length ? { attachments } : {}),
       };
+      // Re-check synchronously right before the insert: two starts that both
+      // passed the first guard while awaiting the profile/attachments cannot
+      // both create a run for one session.
+      if (task.id === AI_TASK_ID && session) {
+        const active = store.activeRunForSession(scope, session.id);
+        if (active) {
+          throw new AgentError('session_busy', 'this search already has a running turn', {
+            details: { runId: active.runId },
+          });
+        }
+        const submitted = store.countRunsForSession(scope, session.id, AI_TASK_ID);
+        if (submitted >= AI_MAX_RUNS) {
+          throw new AgentError('turn_limit', 'this search has reached its follow-up limit', {
+            details: { limit: AI_MAX_RUNS },
+          });
+        }
+      }
       const begun = store.beginRun(run);
       if (!begun.created) return begun.run;
+      if (task.id === AI_TASK_ID) {
+        rememberAiRun(scope, {
+          runId,
+          ...(session ? { sessionId: session.id } : {}),
+          location: 'local',
+          taskId: task.id,
+          status: 'accepted',
+          createdAt: run.createdAt,
+        });
+      }
       const controller = new AbortController();
       const state = createRunState(
         { ...rowOf(begun.run as unknown as Record<string, unknown>, scope), execution: 'local' },
@@ -313,13 +496,41 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         },
       );
       activeRuns.set(runId, { scope, controller, state });
-      execute(begun.run, resolved.profile as unknown as Record<string, unknown>, state, controller, attachments)
-        .catch(() => undefined);
+      execute(
+        task,
+        tools,
+        sessionMode,
+        begun.run,
+        resolved.profile as unknown as Record<string, unknown>,
+        session?.version,
+        state,
+        controller,
+        attachments,
+      ).catch(() => undefined);
       return run;
     },
 
     get(runId: string): AgentRunRow | null {
       return store.getRun(scope, runId);
+    },
+
+    /**
+     * Poll the local SQLite run until it reaches a terminal state. The AI
+     * recognition view uses this instead of a second server round trip.
+     */
+    async waitForRun(
+      runId: string,
+      options: { signal?: AbortSignal; intervalMs?: number; onRun?: (run: AgentRunRow) => void } = {},
+    ): Promise<AgentRunRow> {
+      const interval = Math.max(50, options.intervalMs ?? 250);
+      for (;;) {
+        if (options.signal?.aborted) throw new AgentError('run_cancelled', 'cancelled');
+        const run = store.getRun(scope, runId);
+        if (!run) throw new AgentError('run_not_found', undefined, { details: { runId } });
+        options.onRun?.(run);
+        if (TERMINAL.has(run.status)) return run;
+        await delay(interval, options.signal);
+      }
     },
 
     cancel(runId: string): AgentRunRow | null {
@@ -329,18 +540,19 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       const running = activeRuns.get(runId);
       const finished = running
         ? (() => {
-            running.state.cancel('cancelled by the user');
-            running.controller.abort();
-            return store.finishRun(rowOf(running.state.record() as unknown as Record<string, unknown>, scope));
-          })()
+          running.state.cancel('cancelled by the user');
+          running.controller.abort();
+          return store.finishRun(rowOf(running.state.record() as unknown as Record<string, unknown>, scope));
+        })()
         : store.finishRun({
-            ...current,
-            status: 'cancelled' as const,
-            finishedAt: Date.now(),
-            durationMs: Math.max(0, Date.now() - (current.startedAt || current.createdAt || Date.now())),
-            error: { code: 'run_cancelled', message: 'cancelled by the user' },
-          });
+          ...current,
+          status: 'cancelled' as const,
+          finishedAt: Date.now(),
+          durationMs: Math.max(0, Date.now() - (current.startedAt || current.createdAt || Date.now())),
+          error: { code: 'run_cancelled', message: 'cancelled by the user' },
+        });
       try { store.expireProposalsForRun(scope, runId); } catch { /* confirm gate remains */ }
+      if (current.taskId === AI_TASK_ID) settleAiRun(scope, finished);
       return finished;
     },
 
@@ -358,6 +570,11 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
     },
 
     deleteSession(id: string): boolean {
+      const active = store.activeRunForSession(scope, id);
+      if (active) {
+        try { runtime.cancel(active.runId); } catch { /* deleting the session still wins */ }
+      }
+      store.deleteAiImages(scope, id);
       return store.deleteSession(scope, id);
     },
 

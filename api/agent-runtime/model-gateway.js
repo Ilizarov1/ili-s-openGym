@@ -127,6 +127,7 @@ export function providerCapabilities(provider) {
       return { text: true, image: true, tools: true };
     case 'openai':
     case 'compatible':
+    case 'opencode':
       return { text: true, image: true, tools: true };
     default:
       return { text: true, image: false, tools: false };

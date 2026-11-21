@@ -548,6 +548,7 @@ function AppScreen() {
         onFavorite={onFavorite}
         onPick={startWithExercise}
         onCustom={onCustom}
+        onOpenAgentProfiles={() => setPanel({ kind: 'agentProfile' })}
       />}
       {draft ? (
         <RestTimer
@@ -681,6 +682,7 @@ function AppScreen() {
           onFavorite={onFavorite}
           onBack={closePanel}
           onPick={target => { pickForWorkout(target, panel.replaceIndex); closePanel(); }}
+          onOpenAgentProfiles={() => setPanel({ kind: 'agentProfile' })}
           registerClose={registerLibraryClose}
           replacing={panel.replaceIndex != null}
         />}

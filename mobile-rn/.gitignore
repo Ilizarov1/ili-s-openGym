@@ -8,6 +8,7 @@ node_modules/
 dist/
 web-build/
 .expo-agent-export/
+.expo-ai-search-export/
 expo-env.d.ts
 
 # Native

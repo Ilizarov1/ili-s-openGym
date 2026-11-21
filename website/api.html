@@ -3053,6 +3053,14 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
   </div>
   <div class="prow rrow">
+    <span class="r-code s4">413</span>
+    <span class="p-desc">The request body exceeds the 5 MiB reader cap, or the task rejected an oversized attachment.<span class="r-sig"><code>{&quot;error&quot;:&quot;The attachment is larger than the runtime accepts.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">429</span>
+    <span class="p-desc">The conversation has already used its six submitted runs.<span class="r-sig"><code>{&quot;error&quot;:&quot;This conversation has used all its follow-up turns. Start a new search.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
     <span class="r-code s5">503</span>
     <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
   </div>
@@ -4914,7 +4922,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   </div>
   <div class="prow">
     <span class="p-name">code<em class="p-req" title="required">required</em></span>
-    <span class="p-type">&quot;invalid_request&quot; | &quot;scope_denied&quot; | &quot;profile_not_found&quot; | &quot;profile_capability_missing&quot; | &quot;context_budget_exceeded&quot; | &quot;fact_missing&quot; | &quot;tool_not_allowed&quot; | &quot;tool_args_invalid&quot; | &quot;tool_target_out_of_scope&quot; | &quot;tool_budget_exceeded&quot; | &quot;proposal_not_found&quot; | &quot;proposal_conflict&quot; | &quot;proposal_consumed&quot; | &quot;run_not_found&quot; | &quot;run_terminal&quot; | &quot;run_cancelled&quot; | &quot;run_interrupted&quot; | &quot;request_conflict&quot; | &quot;model_unavailable&quot; | &quot;model_timeout&quot; | &quot;model_response_too_large&quot; | &quot;session_deleted&quot; | &quot;memory_not_found&quot; | &quot;agent_disabled&quot; | &quot;agent_config_disabled&quot; | &quot;agent_config_corrupt&quot; | &quot;agent_store_corrupt&quot; | &quot;agent_media_invalid&quot; | &quot;agent_media_too_large&quot;</span>
+    <span class="p-type">&quot;invalid_request&quot; | &quot;scope_denied&quot; | &quot;profile_not_found&quot; | &quot;profile_capability_missing&quot; | &quot;context_budget_exceeded&quot; | &quot;fact_missing&quot; | &quot;tool_not_allowed&quot; | &quot;tool_args_invalid&quot; | &quot;tool_target_out_of_scope&quot; | &quot;tool_budget_exceeded&quot; | &quot;proposal_not_found&quot; | &quot;proposal_conflict&quot; | &quot;proposal_consumed&quot; | &quot;run_not_found&quot; | &quot;run_terminal&quot; | &quot;run_cancelled&quot; | &quot;run_interrupted&quot; | &quot;request_conflict&quot; | &quot;model_unavailable&quot; | &quot;model_timeout&quot; | &quot;model_response_too_large&quot; | &quot;session_deleted&quot; | &quot;session_busy&quot; | &quot;session_conflict&quot; | &quot;turn_limit&quot; | &quot;memory_not_found&quot; | &quot;agent_disabled&quot; | &quot;agent_config_disabled&quot; | &quot;agent_config_corrupt&quot; | &quot;agent_store_corrupt&quot; | &quot;agent_media_invalid&quot; | &quot;agent_media_too_large&quot;</span>
     <span class="p-desc"></span>
   </div>
   <div class="prow">
@@ -4937,8 +4945,8 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
 <div class="ptab">
   <div class="prow">
     <span class="p-name">taskId</span>
-    <span class="p-type">string <span class="p-hint">(default &quot;stub.v1&quot;)</span></span>
-    <span class="p-desc">The registered task. v1 serves stub.v1 only.</span>
+    <span class="p-type">&quot;stub.v1&quot; | &quot;exercise-search.v1&quot;</span>
+    <span class="p-desc">The registered task.</span>
   </div>
   <div class="prow">
     <span class="p-name">requestId<em class="p-req" title="required">required</em></span>
@@ -4953,12 +4961,17 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <div class="prow">
     <span class="p-name">input<em class="p-req" title="required">required</em></span>
     <span class="p-type">object</span>
-    <span class="p-desc">Task input. <code>stub.v1</code> takes <code>{ prompt, fixtureCase? }</code>.</span>
+    <span class="p-desc">Task input. <code>stub.v1</code> takes <code>{ prompt, fixtureCase? }</code>. <code>exercise-search.v1</code> takes <code>{ hintText?, images?, fixtureCase? }</code>; text or at least one inline image is required, with at most two images as base64 data URLs.</span>
   </div>
   <div class="prow">
     <span class="p-name">sessionId</span>
     <span class="p-type">string</span>
     <span class="p-desc">Optional conversation to append to.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">sessionMode</span>
+    <span class="p-type">&quot;new&quot; | &quot;continue&quot;</span>
+    <span class="p-desc"><code>new</code> creates the session (a different task id on the same session is a conflict); <code>continue</code> reads it without creating an empty one. Defaults to <code>new</code> when sessionId is present.</span>
   </div>
   <div class="prow">
     <span class="p-name">attachmentIds</span>
@@ -4987,6 +5000,11 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-name">status<em class="p-req" title="required">required</em></span>
     <span class="p-type">&quot;accepted&quot; | &quot;running&quot; | &quot;completed&quot; | &quot;failed&quot; | &quot;cancelled&quot; | &quot;interrupted&quot;</span>
     <span class="p-desc"><code>accepted</code> for a new run; the original status for a repeated request id.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">profile</span>
+    <span class="p-type"><a href="#schema-AgentProfileSummary">AgentProfileSummary</a></span>
+    <span class="p-desc"></span>
   </div>
 </div>
   </div>
@@ -5062,6 +5080,11 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-desc"></span>
   </div>
   <div class="prow">
+    <span class="p-name">profile</span>
+    <span class="p-type"><a href="#schema-AgentProfileSummary">AgentProfileSummary</a></span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
     <span class="p-name">result</span>
     <span class="p-type">object</span>
     <span class="p-desc">The validated task result, evidence ids and usage.</span>
@@ -5090,6 +5113,44 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   </div>
 </details>
 
+<details class="ep sch" id="schema-AgentProfileSummary">
+  <summary>
+    <span class="sch-name"><code>AgentProfileSummary</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">The desensitised configuration a run used.</span>
+  </summary>
+  <div class="ep-body">
+<p>Never contains a key or key hint.</p>
+<div class="ptab">
+  <div class="prow">
+    <span class="p-name">id<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">label<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">provider<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">model<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">version<em class="p-req" title="required">required</em></span>
+    <span class="p-type">integer</span>
+    <span class="p-desc"></span>
+  </div>
+</div>
+  </div>
+</details>
+
 <details class="ep sch" id="schema-AgentProfile">
   <summary>
     <span class="sch-name"><code>AgentProfile</code></span>
@@ -5111,7 +5172,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   </div>
   <div class="prow">
     <span class="p-name">provider<em class="p-req" title="required">required</em></span>
-    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot; | &quot;none&quot;</span>
+    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot; | &quot;opencode&quot; | &quot;none&quot;</span>
     <span class="p-desc"></span>
   </div>
   <div class="prow">
@@ -5179,7 +5240,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
 <div class="ptab">
   <div class="prow">
     <span class="p-name">provider<em class="p-req" title="required">required</em></span>
-    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot;</span>
+    <span class="p-type">&quot;fixture&quot; | &quot;openai&quot; | &quot;opencode&quot;</span>
     <span class="p-desc"></span>
   </div>
   <div class="prow">
@@ -5190,7 +5251,17 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <div class="prow">
     <span class="p-name">apiKey</span>
     <span class="p-type">string</span>
-    <span class="p-desc">Write-only. Required for openai; sealed with an account-derived key. Never returned.</span>
+    <span class="p-desc">Write-only. Required for openai and opencode; sealed with an account-derived key. Never returned.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities</span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">capabilities.image</span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc">Explicit vision override for this profile.</span>
   </div>
   <div class="prow">
     <span class="p-name">baseUrl</span>
@@ -5240,6 +5311,11 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-type">integer</span>
     <span class="p-desc"></span>
   </div>
+  <div class="prow">
+    <span class="p-name">taskId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
 </div>
   </div>
 </details>
@@ -5279,6 +5355,21 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-desc"></span>
   </div>
   <div class="prow">
+    <span class="p-name">taskId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">executionLocation</span>
+    <span class="p-type">&quot;local&quot; | &quot;server&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">meta</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Internal counters such as submitted turns.</span>
+  </div>
+  <div class="prow">
     <span class="p-name">messages</span>
     <span class="p-type">object[]</span>
     <span class="p-desc"></span>
@@ -5307,6 +5398,11 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-name">messages[].runId</span>
     <span class="p-type">string</span>
     <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">messages[].meta</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Image count/bytes/MIME/size and candidate counts; never payloads.</span>
   </div>
 </div>
   </div>

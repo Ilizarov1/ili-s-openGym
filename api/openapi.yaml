@@ -3858,6 +3858,18 @@ paths:
         '400': { $ref: '#/components/responses/AgentBadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/AgentConflict' }
+        '413':
+          description: The request body exceeds the 5 MiB reader cap, or the task rejected an oversized attachment.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentError' }
+              example: { error: "The attachment is larger than the runtime accepts.", code: agent_media_too_large }
+        '429':
+          description: The conversation has already used its six submitted runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentError' }
+              example: { error: "This conversation has used all its follow-up turns. Start a new search.", code: turn_limit }
         '503': { $ref: '#/components/responses/AgentDisabled' }
 
   /api/agent/runs/{runId}:
@@ -4412,6 +4424,9 @@ components:
             - model_timeout
             - model_response_too_large
             - session_deleted
+            - session_busy
+            - session_conflict
+            - turn_limit
             - memory_not_found
             - agent_disabled
             - agent_config_disabled
@@ -4429,7 +4444,11 @@ components:
       type: object
       required: [requestId, profileId, input]
       properties:
-        taskId: { type: string, default: stub.v1, description: The registered task. v1 serves stub.v1 only. }
+        taskId:
+          type: string
+          default: stub.v1
+          enum: [stub.v1, exercise-search.v1]
+          description: The registered task.
         requestId:
           type: string
           pattern: '^[A-Za-z0-9_-]{8,128}$'
@@ -4438,8 +4457,18 @@ components:
         input:
           type: object
           additionalProperties: true
-          description: Task input. `stub.v1` takes `{ prompt, fixtureCase? }`.
+          description: |
+            Task input. `stub.v1` takes `{ prompt, fixtureCase? }`.
+            `exercise-search.v1` takes `{ hintText?, images?, fixtureCase? }`; text or at
+            least one inline image is required, with at most two images as base64 data URLs.
         sessionId: { type: string, description: Optional conversation to append to. }
+        sessionMode:
+          type: string
+          enum: [new, continue]
+          description: >-
+            `new` creates the session (a different task id on the same session is a
+            conflict); `continue` reads it without creating an empty one. Defaults to
+            `new` when sessionId is present.
         attachmentIds:
           type: array
           maxItems: 4
@@ -4455,6 +4484,7 @@ components:
           type: string
           enum: [accepted, running, completed, failed, cancelled, interrupted]
           description: "`accepted` for a new run; the original status for a repeated request id."
+        profile: { $ref: '#/components/schemas/AgentProfileSummary' }
 
     AgentRun:
       type: object
@@ -4474,6 +4504,7 @@ components:
         durationMs: { type: integer }
         dataVersion: { oneOf: [{ type: string }, { type: number }] }
         sessionId: { type: string }
+        profile: { $ref: '#/components/schemas/AgentProfileSummary' }
         result:
           type: object
           additionalProperties: true
@@ -4485,13 +4516,24 @@ components:
             code: { type: string }
             message: { type: string }
 
+    AgentProfileSummary:
+      type: object
+      required: [id, label, provider, model, version]
+      description: The desensitised configuration a run used. Never contains a key or key hint.
+      properties:
+        id: { type: string }
+        label: { type: string }
+        provider: { type: string }
+        model: { type: string }
+        version: { type: integer }
+
     AgentProfile:
       type: object
       required: [id, source, provider, model, capabilities, version, label, available]
       properties:
         id: { type: string, example: default }
         source: { type: string, enum: [default, user] }
-        provider: { type: string, enum: [fixture, openai, none] }
+        provider: { type: string, enum: [fixture, openai, opencode, none] }
         model: { type: string }
         capabilities:
           type: object
@@ -4509,11 +4551,15 @@ components:
       type: object
       required: [provider, model]
       properties:
-        provider: { type: string, enum: [fixture, openai] }
+        provider: { type: string, enum: [fixture, openai, opencode] }
         model: { type: string, maxLength: 200 }
         apiKey:
           type: string
-          description: Write-only. Required for openai; sealed with an account-derived key. Never returned.
+          description: Write-only. Required for openai and opencode; sealed with an account-derived key. Never returned.
+        capabilities:
+          type: object
+          properties:
+            image: { type: boolean, description: Explicit vision override for this profile. }
         baseUrl:
           type: string
           description: Refused by the server; outbound endpoints are administrator-controlled.
@@ -4527,6 +4573,7 @@ components:
         createdAt: { type: integer }
         updatedAt: { type: integer }
         messageCount: { type: integer }
+        taskId: { type: string }
 
     AgentSession:
       type: object
@@ -4536,6 +4583,12 @@ components:
         version: { type: integer }
         createdAt: { type: integer }
         updatedAt: { type: integer }
+        taskId: { type: string }
+        executionLocation: { type: string, enum: [local, server] }
+        meta:
+          type: object
+          additionalProperties: true
+          description: Internal counters such as submitted turns.
         messages:
           type: array
           items:
@@ -4546,6 +4599,10 @@ components:
               content: { type: string }
               createdAt: { type: integer }
               runId: { type: string }
+              meta:
+                type: object
+                additionalProperties: true
+                description: Image count/bytes/MIME/size and candidate counts; never payloads.
 
     AgentMemory:
       type: object

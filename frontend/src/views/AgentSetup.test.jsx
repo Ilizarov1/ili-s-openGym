@@ -118,8 +118,62 @@ describe('AgentSetup', () => {
     expect(agentApi.createProfile).toHaveBeenCalledWith({
       provider: 'openai',
       model: 'gpt-new',
+      capabilities: { image: false },
       apiKey: 'sk-new-1234',
     })
+  })
+
+  it('writes the image capability on create and edits it back from the profile', async () => {
+    await act(async () => { root.render(<AgentSetup />) })
+    await flush()
+    await act(async () => {
+      typeInto(host.querySelector('#agent-model'), 'gpt-vision')
+      typeInto(host.querySelector('#agent-key'), 'sk-vision-1234')
+    })
+    const image = host.querySelector('#agent-image')
+    expect(image.checked).toBe(false)
+    await act(async () => { image.click() })
+    await act(async () => { host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    const { agentApi } = await import('../agent/api.js')
+    expect(agentApi.createProfile).toHaveBeenLastCalledWith({
+      provider: 'openai',
+      model: 'gpt-vision',
+      capabilities: { image: true },
+      apiKey: 'sk-vision-1234',
+    })
+
+    mocks.profiles = [{
+      id: 'vision', source: 'user', provider: 'openai', model: 'gpt-vision',
+      capabilities: { text: true, image: true, tools: false }, keyHint: '1234', version: 1, label: 'OpenAI', available: true,
+    }]
+    await act(async () => { await useAgent.getState().loadProfiles() })
+    await act(async () => { button(host, 'Edit').click() })
+    const imageEdit = host.querySelector('#agent-image')
+    expect(imageEdit.checked).toBe(true)
+    await act(async () => { imageEdit.click() })
+    await act(async () => { host.querySelector('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(agentApi.updateProfile).toHaveBeenLastCalledWith('vision', {
+      provider: 'openai',
+      model: 'gpt-vision',
+      capabilities: { image: false },
+    })
+  })
+
+  it('offers opencode and requires a key for it', async () => {
+    await act(async () => { root.render(<AgentSetup />) })
+    await flush()
+    const select = host.querySelector('#agent-provider')
+    expect([...select.options].map(option => option.value)).toContain('opencode')
+    await act(async () => {
+      select.value = 'opencode'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      typeInto(host.querySelector('#agent-model'), 'deepseek-v4.1-flash-1017')
+    })
+    expect(host.querySelector('#agent-key')).toBeTruthy()
+    const save = button(host, 'Save')
+    expect(save.disabled).toBe(true)
   })
 
   it('shows the disabled state from /api/config', async () => {

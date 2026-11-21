@@ -135,6 +135,7 @@ function joinedOf(name) {
  * @returns {{
  *   matchExercise: (exercise: object, query?: string) => boolean,
  *   searchExercises: <T extends object>(list: T[], query?: string) => T[],
+ *   searchScored: <T extends object>(list: T[], query?: string) => { exercise: T, score: number }[],
  *   similarExercises: <T extends object>(list: T[], query?: string, exclude?: T[], limit?: number) => T[],
  * }}
  */
@@ -265,7 +266,19 @@ export function createExerciseSearch({
     if (!tokens.length) return list
     resetNearCache()
     const fuzzy = new Set(tokens.filter(tok => !list.some(e => hits(corpusOf(e), tok))))
+    return rankByRelevance(list.filter(e => matchTokens(e, tokens, fuzzy)), tokens).map(x => x.e)
+  }
+
+  // The same ordering as searchExercises, with the score each exercise got.
+  // AI name matching needs the number, not just the order: it accepts a hit
+  // only above BASE_FLOOR and can compare competing candidates.
+  function searchScored(list, query) {
+    const tokens = queryTokens(query)
+    if (!tokens.length) return []
+    resetNearCache()
+    const fuzzy = new Set(tokens.filter(tok => !list.some(e => hits(corpusOf(e), tok))))
     return rankByRelevance(list.filter(e => matchTokens(e, tokens, fuzzy)), tokens)
+      .map(({ e, score }) => ({ exercise: e, score }))
   }
 
   // Per search, for each form of each query word: the vocabulary words it starts, the ones within
@@ -362,7 +375,7 @@ export function createExerciseSearch({
       return { e, i, score: tokens.reduce((sum, tok) => sum + tokenScore(entry, tok, ctx), 0) + priorOf(e) + whole - extra, len: entry.nameWords.length }
     })
     scored.sort((a, b) => b.score - a.score || a.len - b.len || a.i - b.i)
-    return scored.map(x => x.e)
+    return scored
   }
 
   // Exercises that come close to a query without matching all of it: most of the words found, or
@@ -402,5 +415,5 @@ export function createExerciseSearch({
     return out.slice(0, limit).map(x => x.e)
   }
 
-  return { matchExercise, searchExercises, similarExercises }
+  return { matchExercise, searchExercises, searchScored, similarExercises }
 }

@@ -1,0 +1,132 @@
+{
+  "date": "2026-11-21",
+  "provider": "opencode",
+  "model": "deepseek-v4.1-flash",
+  "serverLogHasKey": false,
+  "results": [
+    {
+      "photo": "微信图片_20261121172209_120_66.jpg",
+      "bytes": 375631,
+      "widthHeight": null,
+      "hintText": "这是一台坐姿推胸器械，我想找胸部推举动作",
+      "expected": [
+        "lever chest press",
+        "machine chest press",
+        "seated chest press"
+      ],
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "durationMs": 2642,
+      "status": "failed",
+      "structured": null,
+      "error": {
+        "code": "model_unavailable",
+        "message": "provider answered HTTP 402"
+      }
+    },
+    {
+      "photo": "微信图片_20261121172210_121_66.jpg",
+      "bytes": 104892,
+      "widthHeight": null,
+      "hintText": "这是一台斜躺的腿举器械，我想找腿部推蹬动作",
+      "expected": [
+        "sled 45° leg press",
+        "leg press",
+        "sled hack squat"
+      ],
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "durationMs": 535,
+      "status": "failed",
+      "structured": null,
+      "error": {
+        "code": "model_unavailable",
+        "message": "provider answered HTTP 402"
+      }
+    },
+    {
+      "photo": "微信图片_20261121172211_122_66.jpg",
+      "bytes": 394506,
+      "widthHeight": null,
+      "hintText": "这是一台坐姿腿屈伸器械，我想找大腿前侧的训练动作",
+      "expected": [
+        "lever leg extension",
+        "leg extension"
+      ],
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "durationMs": 1066,
+      "status": "failed",
+      "structured": null,
+      "error": {
+        "code": "model_unavailable",
+        "message": "provider answered HTTP 402"
+      }
+    },
+    {
+      "photo": "微信图片_20261121172211_123_66.jpg",
+      "bytes": 300852,
+      "widthHeight": null,
+      "hintText": "这是一台挂片式坐姿上推器械，我想找肩部推举动作",
+      "expected": [
+        "lever shoulder press",
+        "seated shoulder press",
+        "plate loaded shoulder press"
+      ],
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "durationMs": 536,
+      "status": "failed",
+      "structured": null,
+      "error": {
+        "code": "model_unavailable",
+        "message": "provider answered HTTP 402"
+      }
+    },
+    {
+      "photo": "微信图片_20261121172212_124_66.jpg",
+      "bytes": 222326,
+      "widthHeight": null,
+      "hintText": "这是一台斜板哈克深蹲/腿举器械，我想找深蹲或腿举动作",
+      "expected": [
+        "sled hack squat",
+        "hack squat",
+        "leg press"
+      ],
+      "profile": {
+        "id": "default",
+        "label": "OpenCode (instance)",
+        "provider": "opencode",
+        "model": "deepseek-v4.1-flash",
+        "version": 1
+      },
+      "durationMs": 1060,
+      "status": "failed",
+      "structured": null,
+      "error": {
+        "code": "model_unavailable",
+        "message": "provider answered HTTP 402"
+      }
+    }
+  ]
+}

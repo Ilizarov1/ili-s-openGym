@@ -61,7 +61,7 @@
 | 受控词表 | `bodyPart`（11 项）和 `equipment`（34 项）的现有 slug 写入 prompt；使用共享 `exercise-search-vocabulary.json`，测试对照目录。`targetMuscle` 不进入本任务输出，因为 Web `Library` 没有该筛选，避免双端行为不一致。 |
 | 能力 | `capabilities(input)` 返回 `['text']` 或 `['text','image']`；执行前按本轮输入校验，缺失返回 `profile_capability_missing`。任务不声明静态 `requiredCapabilities: ['text','image']`，否则纯文字请求会被误拒。 |
 | 记忆 | `memoryCategories: []` 明确表示“不读任何长期记忆”；宿主不得把空数组解释为“全选”。输出 schema 不含 proposal，模型无法发起记忆提案。 |
-| fixture | `input.fixtureCase` 仅在 `profileRef.provider === 'fixture'` 时生效：`candidates`、`fallback-only`、`error`。真实配置忽略该字段。 |
+| fixture | `input.fixtureCase` 仅在 `profileRef.provider === 'fixture'` 时生效：`candidates`、`fallback-only`、`error`；省略时默认 `candidates`，让 fixture 配置的 Web/RN 交互验收无需额外测试参数。真实配置忽略该字段。 |
 
 **系统提示词。** 本仓库把提示词当一等产物维护（先例：`api/coach/prompts/*.md`）。`exercise-search.v1` 的提示词全文如下，实施时作为 `exercise-search.js` 内的 `PROMPT` 常量落地，测试断言不变量（JSON-only 指令、禁止输出目录 ID、词表注入段、图片标注）；组装时把词表 slug 清单追加为提示词末段，图片块标注"当前图片/上一轮图片"。
 
@@ -132,9 +132,10 @@ or gym slang; a brand or slang mention can go in the rationale instead.
 | `TaskDefinition.attachments(input, context)` | 可选异步函数，返回 `AttachmentReference[]`（可含 `dataUrl`/`mime`/`size`）。`run.js` 在 `readFacts` 后、组装 `ModelInput` 前调用；任务声明钩子时以返回值（包括空数组）为准，不与宿主 `context.meta.attachments` 合并；未声明时才使用宿主附件。随后统一走 `trimContext` 的媒体预算，避免宿主附件和任务附件叠加。 |
 | `TaskDefinition.capabilities(input)` | 可选，返回本轮所需能力。`run.js` 在启动前校验；宿主在解析配置时使用同一函数，避免“解析时跳过、运行时又失败”。缺省回退 `requiredCapabilities`。 |
 | `TaskDefinition.userMessage(input)` | 可选，返回写入会话的用户可见文本。AI 任务用 `hintText`；纯图时为 `[图片]`。缺省回退 `input.prompt`，保持桩任务行为。 |
-| `TaskDefinition.assistantMessage(result)` | 可选，返回 `{ content, meta? }`。AI 任务写 `candidates/fallback` 的 JSON 文本，`meta` 只含张数/字节/MIME/尺寸，不含 data URL。缺省回退当前 `structured` JSON。 |
-| `memoryCategories: []` | 表示不读长期记忆。服务端和 RN 宿主在传给 `selectMemories` 前直接使用空数组，不把空数组转成“不过滤”。 |
-| `TaskDefinition.fixtureCase(input, context)` | 增加 `context` 参数（实现已可传，类型补齐）；任务据此判断是否 fixture 配置。 |
+| `TaskDefinition.assistantMessage(result, input)` | 可选，返回 `{ content, meta? }`。AI 任务写 `candidates/fallback` 的 JSON 文本，`meta` 只含候选数/兜底标志与张数/字节/MIME/尺寸，不含 data URL。第二个参数是本轮输入，供图片元数据使用；缺省回退当前 `structured` JSON。 |
+| `TaskDefinition.outputFormat` | 可选，`'text' \| 'json'`；`json` 时 `run.js` 在 `ModelInput.responseFormat` 标注，provider 在支持时请求 JSON 模式。 |
+| `memoryCategories: []` | 表示不读长期记忆。服务端和 RN 宿主在传给 `selectMemories` 前直接使用空数组，不把空数组转成“不过滤”；`run.js` 对空数组再做一次兜底清空。 |
+| `TaskDefinition.fixtureCase(input, context)` | 增加 `context` 参数；任务据此判断是否 fixture 配置。 |
 
 **任务注册。** 服务端 `api/src/agent/tasks/index.ts` 提供 `createTaskRegistry({ store, media })`，返回 `Map<taskId, { task, tools, messageOf }>`；`AgentService` 不再持有单一 `this.task`：
 - `parseStart` 先按 `taskId` 取任务，未知任务返回 `invalid_request`。
@@ -144,7 +145,7 @@ or gym slang; a brand or slang mention can go in the rationale instead.
 
 RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；`AgentStartInput` 增加 `taskId`，`server-client.startRun` 不再硬编码 `stub.v1`。
 
-**命名提供商 `opencode`。** OpenAI 兼容的预设端点（`https://opencode.ai/inference/openai/v1`），注册进共享 `providers/index.js` 后可被三类配置选用：RN 本机（密钥 SecureStore）、服务端用户（密钥按账号加密）、服务端默认（管理员经 `.env` 的 `OPENCODE_API_KEY` 配置）。baseUrl 固定在提供商实现内、不进入用户输入，因此不构成服务端自定义端点的开口。验收 smoke 指定模型 `deepseek-v4.1-flash-1017`（模型 ID 以服务端模型列表为准），能力开关按模型实际声明。密钥纪律：真实密钥只存 SecureStore、按账号密文或 git 忽略的 `api/.env`；`.env.example` 只留空占位；日志、OpenAPI 与配置响应排除密钥（沿用 agent-runtime R1）。
+**命名提供商 `opencode`。** OpenAI 兼容的预设端点（`https://opencode.ai/inference/openai/v1`），注册进共享 `providers/index.js` 后可被三类配置选用：RN 本机（密钥 SecureStore）、服务端用户（密钥按账号加密）、服务端默认（管理员经 `.env` 的 `OPENCODE_API_KEY` 配置）。baseUrl 固定在提供商实现内、不进入用户输入，因此不构成服务端自定义端点的开口。验收 smoke 指定模型 `deepseek-v4.1-flash-1017`（2026-11-21 服务端模型列表把该版本暴露为 id `deepseek-v4.1-flash`，显示名 `DeepSeek V4.1 Flash 1017`，以列表为准；实测输入支持 text/jpeg/png/gif/webp），能力开关按模型实际声明。密钥纪律：真实密钥只存 SecureStore、按账号密文或 git 忽略的 `api/.env`；`.env.example` 只留空占位；日志、OpenAPI 与配置响应排除密钥（沿用 agent-runtime R1）。
 
 ## 4. 执行位置与配置解析
 
@@ -155,7 +156,7 @@ RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；
 | RN（练习模式） | 仅本机配置 | 同一本机 |
 
 - **首轮固定执行位置**：客户端在创建 AI 会话时记录 `executionLocation`（`local`/`server`）；服务端会话也记录 `executionLocation: 'server'` 和 `taskId`。追问只在该执行位置内解析配置；任何能力不足都返回错误，不自动换端。
-- **`sessionMode`**：`new` 时执行方 `ensure` 会话，若已有同 ID 会话且 `taskId` 不同则 `session_conflict`；`continue` 时只读取已有会话，缺失/已删除返回 `session_deleted`，**不自动创建空会话**。这防止本地会话 ID 被发到服务端后静默丢历史。
+- **`sessionMode`**：`new` 时执行方 `ensure` 会话，若已有同 ID 会话且 `taskId` 不同则 `session_conflict`；`continue` 时只读取已有会话，缺失/已删除返回 `session_deleted`，**不自动创建空会话**。这防止本地会话 ID 被发到服务端后静默丢历史。会话存储由宿主持有，`run.js` 只校验 `sessionMode` 取值；`new/continue` 的 ensure/只读分派在 `AgentService` 与 RN `runtime.start` 完成。
 - **配置能力**：`AgentProfileInput.capabilities.image` 可显式覆盖服务端/本机配置的默认能力；服务端默认配置由管理员 `agentVision` 控制；fixture 验收配置可声明 `image:false`。能力不准确时 A10 无法复现。
 - **配置摘要**：`AgentRunStart` 和 `AgentRun` 返回 `profile: { id, label, provider, model, version }`；不返回密钥，`keyHint` 仍只回尾号。客户端摘要卡显示 `经 <label> 检索`。
 - **配置变更**：配置在运行中删除或版本变化，模型网关按 agent-runtime R1 以明确错误结束；追问可在同一执行位置重新解析，但不得换端。
@@ -169,7 +170,7 @@ RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；
 - **客户端持有**：RN 识别态存 SQLite `agent_ai_images`（会话内 ≤2 张，新图逐出旧图；只存当前 scope/session），Web 存识别态内存；离开页面或刷新即随会话删除。启动时清理已删除/过期会话的孤儿 blob。
 - **请求时内联**：发起与每轮追问提交运行时，客户端把本轮模型输入所需图片（≤2 张，当前新图在前）放进 `input.images`；共享任务 `attachments` 钩子校验并转成 `ModelInput.user.attachments`，执行方只保留在运行内临时上下文，终态释放，**服务端不落盘**。
 - **归一化**（RN 与 Web 同参数，选图时执行）：长边 ≤1280px、JPEG 质量 0.8；采用多档尝试（1280/0.85、1280/0.7、1200/0.7、960/0.6）直到解码后 ≤1MB；原始文件/解码尺寸设上限，解码失败即拒绝。RN 复用 `mobile-rn/src/body/photos.ts` 的压缩与 EXIF 处理方式，但不写入进度照片目录。
-- **执行方校验**（共享任务内实现，不信任客户端）：data URL 前缀、MIME 与 magic bytes、base64 解码后字节数、像素尺寸、张数（≤2）；非法或超限返回 `agent_media_invalid` / `agent_media_too_large`。请求整体超过 `readBody` 5 MiB 上限时 413 兜底（[body-reader.ts](../../api/src/common/http/body-reader.ts)）；Nginx 已配 5m（[nginx.conf.template](../../web/nginx.conf.template)）。
+- **执行方校验**（共享任务内实现，不信任客户端）：data URL 前缀、MIME 与 magic bytes、base64 解码后字节数、像素尺寸（单边 ≤4096、长短边比 ≤16）、张数（≤2）；非法或超限返回 `agent_media_invalid` / `agent_media_too_large`。请求整体超过 `readBody` 5 MiB 上限时 413 兜底（[body-reader.ts](../../api/src/common/http/body-reader.ts)）；Nginx 已配 5m（[nginx.conf.template](../../web/nginx.conf.template)）。
 - **会话与日志**：会话消息只含文本和图片元数据（张数、字节、MIME、尺寸）；运行记录不保存 `input.images`；日志沿用“只记元数据、排除请求正文”约定。幂等指纹对含大 base64 的输入取哈希，不做原文比较。
 - **大小核算**：2 张 1MB 图片 base64 约 2.7MB，加文字和 JSON 外壳低于 5MiB；若未来提高图片预算，必须同步 API body limit、Nginx 和 provider 限制。
 
@@ -181,9 +182,10 @@ RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；
 输入：RunResult.structured.candidates + fallback + 注入的候选池与检索器
   1. 逐候选取分：name（含 CJK 时先试 nameEn）在候选池上 searchScored，
      取最高分动作为该候选的命中。
-  2. 命中不足：零命中或分数 < BASE_FLOOR、且候选名含 CJK → 字符级回退：
-     对池内每个动作名计算 bigram Dice 与最长公共子串；两项同时过阈的进入排序，
-     top1 − top2 ≥ CJK_MARGIN 视为唯一最优（等级降 low），否则歧义丢弃。
+   2. 命中不足：零命中、非精确名、或分数 < BASE_FLOOR 且候选名含 CJK → 字符级回退：
+      对池内每个动作名计算 bigram Dice 与最长公共子串；两项同时过阈的进入排序，
+      top1 − top2 ≥ CJK_MARGIN 视为唯一最优（等级降 low），否则歧义丢弃；字符
+      回退歧义时，只有名称证据成立的关键词命中可保留。
   3. 提示调整：命中动作 eq 与候选 equipment 提示一致 → +EQ_BONUS；
      bp 与 bodyPart 提示一致 → +BP_BONUS；器械明显冲突（如 machine 提示
      命中 bodyweight 动作）→ 丢弃该候选。
@@ -193,16 +195,18 @@ RN 同样在 `mobile-rn/src/agent/tasks.ts` 暴露 `createTaskRegistry(data)`；
 兜底：understanding 直显；bodyParts/equipment slug → 现有筛选值（非法 slug 丢弃）
 ```
 
-| 常量 | 初值 | 说明 |
-|---|---|---|
-| `BASE_FLOOR` | 40 | `searchScored` 接受下限。引擎 token 得分约 0..200（`STAPLES` 与器械先验计入），初值按 fixture 校准后固化 |
-| `EQ_BONUS` | +25 | equipment 提示与命中动作 `eq` 一致 |
-| `BP_BONUS` | +15 | bodyPart 提示与命中动作 `bp` 一致 |
-| `CJK_DICE_MIN` | 0.45 | 二元组 Dice 系数阈值 |
-| `CJK_LCS_MIN` | 2 | 最长公共子串字符数阈值 |
-| `CJK_MARGIN` | 0.10 | 唯一最优判定：top1 − top2 最小差，不足视为歧义丢弃 |
+| 常量 | 初值 | 终值（golden 校准） | 说明 |
+|---|---:|---:|---|
+| `BASE_FLOOR` | 40 | **60** | `searchScored` 接受下限；低于该值且非精确名/别名时丢弃 |
+| `EQ_BONUS` | +25 | **+25** | equipment 提示与命中动作 `eq` 一致 |
+| `BP_BONUS` | +15 | **+15** | bodyPart 提示与命中动作 `bp` 一致 |
+| `CJK_DICE_MIN` | 0.45 | **0.60** | 二元组 Dice 系数阈值 |
+| `CJK_LCS_MIN` | 2 | **3** | 最长公共子串字符数阈值 |
+| `CJK_MARGIN` | 0.10 | **0.12** | 唯一最优判定：top1 − top2 最小差，不足视为歧义丢弃 |
 
-常量为共享模块的命名导出；fixture 校准后由测试断言终值（判据在[执行计划](EXECUTION.md) 3.3）。
+常量为共享模块的命名导出；88 条 golden 集校准后由 `exercise-ai-search.test.js` 断言终值。校准使用"最小常量过门槛"：`0.75/4/0.15` 与 floor 140 也通过，但正好卡在 `坐姿推举` 边界或会拒绝 `dip`/`curl` 等常见单词，故保留上述终值。**校准后仍不得放宽门槛**（判据在[执行计划](EXECUTION.md) 3.3/3.4）。
+
+**精确名判定。** 等级合成中的“精确”指候选 `name`/`nameEn` 与动作名或已保存别名归一化后相等，不是 `searchScored` 分数 ≥100：`bnech press` 这类拼写近似可以高分命中，但必须降为“中”。CJK 候选在名称非精确相等时进入字符回退，不依赖分数是否低于 `BASE_FLOOR`；字符回退歧义时，只有带名称证据的关键词命中才保留，否则丢弃。
 
 - **注入式**：`createExerciseAiSearch({ searchScored, list, translate })`。Web 用 `exercises.js` 的全局引擎与完整 `allExercises(S)`；RN 用 `createLibrarySearch` 的同一候选池（含自建动作和用户别名）。禁止直接 import Web 全局数据到 RN。
 - **CJK 回退**：现有 `createExerciseSearch` 按空格切词，中文候选名（如“坐姿推举”）对“杠铃坐姿军事推举”不会精确命中。共享管道对 CJK 使用字符级相似度，常量见上表；英文仍走现有分词/纠错。
@@ -321,3 +325,5 @@ sequenceDiagram
 | 检索效果评测补全 | §6 效果评测与执行计划 3.4 增加 golden 集：覆盖矩阵、双语池、初始命中率门槛与"最小常量过门槛"校准闭环；7.2 扩为实物照片手工 smoke 协议。 |
 | 边界场景补全 | 评测矩阵增加边界子集（无关节输出、幻觉请求、全景多器械、五候选同动作、语言错配、追问矛盾轮，100% 门槛）；任务测试补长度/图片/至少一项边界；7.2 引用 `test_pic/` 实物照片并加 EXIF 方向校验。 |
 | 命名提供商 opencode | 注册 OpenAI 兼容预设端点（固定 baseUrl，不开服务端自定义口）与 smoke 模型 `deepseek-v4.1-flash-1017`；RN 本机、服务端用户/默认三类配置可选；真实密钥只进 SecureStore、按账号密文或 git 忽略的 `.env`。 |
+| 执行计划落地澄清 | 会话存储由宿主持有，`run.js` 只校验 `sessionMode`，ensure/只读分派在服务端与 RN；`assistantMessage` 增加本轮输入参数以写图片元数据；任务用 `outputFormat: 'json'` 触发 provider JSON 模式；图片单边 ≤4096、长短边比 ≤16。 |
+| golden 校准与精确名 | 88 条 golden 全部达标后把常量固化为 `BASE_FLOOR=60`、`EQ_BONUS=25`、`BP_BONUS=15`、`CJK_DICE_MIN=0.60`、`CJK_LCS_MIN=3`、`CJK_MARGIN=0.12`；“精确名”按名称/别名归一化相等判定，拼写近似不得标高；非精确 CJK 名进入字符回退，回退歧义时仅保留有名称证据的关键词命中。fixture 配置省略 `fixtureCase` 时默认 `candidates`，供双端交互验收。 |

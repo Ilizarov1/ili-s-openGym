@@ -148,6 +148,8 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
   const { mode, accent, setMode, setAccent } = useThemeController();
   const [range, setRange] = useState('week');
   const [search, setSearch] = useState('');
+  const [aiSearch, setAiSearch] = useState('');
+  const [aiSearchNote, setAiSearchNote] = useState('未触发');
   const [sheetOpen, setSheetOpen] = useState(false);
   const [serverAddress, setServerAddress] = useState('');
   const [restAlerts, setRestAlerts] = useState(true);
@@ -448,6 +450,33 @@ export function DesignGallery({ onClose }: DesignGalleryProps): React.ReactEleme
         <View style={styles.searchResults}>
           <Text variant="footnote" tone="secondary">
             {searchResults.length ? searchResults.join(' · ') : '没有匹配的动作'}
+          </Text>
+        </View>
+      </GallerySection>
+
+      <GallerySection
+        title="搜索 · AI 入口与禁用态"
+        description="传入 onAiPress 才渲染 44×44 sparkles 入口；识别态下文字输入禁用，sparkle 仍可用。"
+        testID="gallery-search-ai"
+      >
+        <View style={styles.formStack}>
+          <SearchField
+            value={aiSearch}
+            onChangeText={setAiSearch}
+            placeholder="搜索动作，或点 ✨ 用 AI 检索"
+            onAiPress={() => setAiSearchNote('已触发 AI 检索入口')}
+            testID="gallery-search-ai-field"
+          />
+          <SearchField
+            value="识别结果中，文字输入禁用"
+            onChangeText={() => {}}
+            placeholder="AI 检索中"
+            editable={false}
+            onAiPress={() => setAiSearchNote('识别态 sparkles 仍可点')}
+            testID="gallery-search-ai-disabled"
+          />
+          <Text variant="footnote" tone="secondary">
+            {aiSearchNote}
           </Text>
         </View>
       </GallerySection>

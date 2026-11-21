@@ -18,6 +18,7 @@ export type ProfileReference = {
 };
 export type ModelInput = {
   instructions: string;
+  responseFormat?: 'json';
   user: { text: string; fixtureCase?: string; attachments?: AgentAttachment[] };
   facts: unknown[];
   memories: unknown[];
@@ -29,11 +30,15 @@ export type ModelOutput = { text?: string; structured?: unknown; toolCalls?: Age
 export type AgentToolCall = { id: string; name: string; arguments: Record<string, unknown> };
 export type AgentAttachment = {
   id: string;
-  kind: 'image';
+  kind: 'image' | 'file';
   mime: string;
   name: string;
   size: number;
   dataUrl: string;
+  width?: number;
+  height?: number;
+  /** Rendered next to the image block, e.g. 当前图片 / 上一轮图片. */
+  label?: string;
 };
 export type AgentEvidence = {
   evidenceId: string;
@@ -113,6 +118,8 @@ export type AgentRunResult = {
   proposal?: AgentProposal;
   evidence?: { evidenceId: string; objectId: string; version?: string | number }[];
   usage?: { rounds: number; toolCalls: number };
+  /** Desensitised configuration summary returned by the server host. */
+  profile?: { id: string; label: string; provider: string; model: string; version: number };
 };
 
 export type AgentTask = {
@@ -123,12 +130,21 @@ export type AgentTask = {
   requiredCapabilities?: ('text' | 'image' | 'tools')[];
   budgets?: Record<string, number>;
   memoryCategories?: string[];
+  outputFormat?: 'text' | 'json';
   steps: { id: string; tools?: string[]; maxToolCalls?: number }[];
   targetScope(input: Record<string, unknown>, context: unknown): string[] | Promise<string[]>;
+  validateInput?(input: Record<string, unknown>, context?: unknown): void;
+  attachments?(input: Record<string, unknown>, context: unknown): AgentAttachment[] | Promise<AgentAttachment[]>;
+  capabilities?(input: Record<string, unknown>): ('text' | 'image' | 'tools')[];
   readFacts?(input: Record<string, unknown>, context: unknown): unknown[] | Promise<unknown[]>;
   instructions?(input: Record<string, unknown>, context: unknown): string;
   userText?(input: Record<string, unknown>, context: unknown): string;
-  fixtureCase?(input: Record<string, unknown>): string | undefined;
+  userMessage?(input: Record<string, unknown>): string;
+  assistantMessage?(
+    result: unknown,
+    input?: Record<string, unknown>,
+  ): { content: string; meta?: Record<string, unknown> };
+  fixtureCase?(input: Record<string, unknown>, context?: unknown): string | undefined;
   parseOutput?(output: ModelOutput, context: unknown): unknown;
 };
 
@@ -215,3 +231,12 @@ export function isMemoryCategory(value: string): boolean;
 export function isTerminalStatus(value: string): boolean;
 export function validRequestId(value: string): boolean;
 export function withRunDefaults(budgets?: Record<string, number>): Required<Record<string, number>>;
+
+export const EXERCISE_SEARCH_TASK_ID: string;
+export const EXERCISE_SEARCH_MAX_IMAGES: number;
+export const EXERCISE_SEARCH_MAX_IMAGE_BYTES: number;
+export const EXERCISE_SEARCH_MAX_HINT: number;
+export function createExerciseSearchTask(): AgentTask;
+export function validateExerciseSearchInput(input: Record<string, unknown>): void;
+export function validateExerciseImages(input: Record<string, unknown>): AgentAttachment[];
+export function cleanExerciseSearchOutput(raw: unknown, input?: Record<string, unknown>): unknown;

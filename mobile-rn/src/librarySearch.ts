@@ -3,6 +3,8 @@ import { createExerciseSearch, isOneLimbExercise } from '../../frontend/src/lib/
 import V13_IDS from '../../frontend/src/lib/catalogue-v13-ids.json';
 import {
   BODY_PART_NAMES,
+  BODY_PARTS,
+  EQUIPMENT,
   EQUIPMENT_NAMES,
   SEARCH_LIMIT,
   TARGET_MUSCLE_NAMES,
@@ -81,6 +83,17 @@ export type SuggestionIndex = {
 /** Builds the fallback index lazily; RN supplies Fuse, tests can supply a stub. */
 export type SuggestionIndexFactory = (pool: LibraryExercise[]) => SuggestionIndex;
 
+/**
+ * The unfiltered candidate source the AI matcher injects. The library's
+ * current chips never narrow this pool: an AI search ignores the old filters.
+ */
+export type AiSearchSource = {
+  pool: LibraryExercise[];
+  searchScored: (query: string) => { exercise: LibraryExercise; score: number }[];
+  bodyPartValues: string[];
+  equipmentValues: string[];
+};
+
 /** The search engine and suggestion index for one profile snapshot. */
 export type LibrarySearch = {
   search: (
@@ -88,6 +101,7 @@ export type LibrarySearch = {
     filters: LibraryFilters,
     limit?: number,
   ) => LibrarySearchResult;
+  aiSearch: AiSearchSource;
 };
 
 const MAX_SUGGESTIONS = 3;
@@ -222,6 +236,12 @@ export function createLibrarySearch(
   };
 
   return {
+    aiSearch: {
+      pool: candidates,
+      searchScored: query => engine.searchScored(candidates, query),
+      bodyPartValues: [...BODY_PARTS],
+      equipmentValues: [...EQUIPMENT],
+    },
     search(query, filters, limit = SEARCH_LIMIT) {
       const pool = filterPool(filters);
       const effectiveQuery = query.trim();

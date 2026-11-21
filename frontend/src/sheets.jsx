@@ -39,6 +39,7 @@ import { glyphOf, GLYPH_GROUPS, DEFAULT_GLYPH } from './lib/glyphs.js'
 import BodyMap from './components/BodyMap.jsx'
 import MuscleExplorer from './components/MuscleExplorer.jsx'
 import ExerciseViewToggle from './components/ExerciseViewToggle.jsx'
+import ExerciseAiSearch from './components/ExerciseAiSearch.jsx'
 import { sameMuscleFirst, swapMuscleOf } from './lib/similar-exercises.js'
 import { suggestedSubstitutes, relatedSubstitutes } from './lib/exercise-substitutes.js'
 import { exerciseMuscleSnapshot, loadOfWorkouts, MUSCLES, MUSCLE_NAME, muscleWeightsOf, muscleGroupsOf, hasExplicitMuscleMetadata, inMuscleOrder } from './lib/muscles.js'
@@ -1702,6 +1703,8 @@ function usageMap(st) {
 const SAME = '≈'
 function ExercisePicker({ onPick, title, close, like, actionIcon, backups }) {
   const st = useStore(s => s.S)
+  const config = useStore(s => s.config)
+  const aiEnabled = config?.agent?.enabled !== false
   const isSwap = !!like || title === t('Swap exercise') || title === t('Replace exercise') || title === 'Swap exercise' || title === 'Replace exercise'
   const quickIcon = actionIcon || (isSwap ? 'swap' : 'plus')
   const quickLabel = e => isSwap
@@ -1709,6 +1712,42 @@ function ExercisePicker({ onPick, title, close, like, actionIcon, backups }) {
     : t('Add “{0}”', exerciseNameText(e))
   const usage = usageMap(st)
   const [q, setQ] = useState('')
+  const [aiOn, setAiOn] = useState(false)
+  const aiRef = useRef(null)
+  const aiSnapshot = useRef(null)
+  const enterAi = () => {
+    if (!aiEnabled) return
+    aiSnapshot.current = { q, bp, eq, cat, shown, gym }
+    setQ('')
+    setAiOn(true)
+  }
+  const exitAi = () => {
+    const saved = aiSnapshot.current
+    if (saved) {
+      setQ(saved.q)
+      setBp(saved.bp)
+      setEq(saved.eq)
+      setCat(saved.cat)
+      setShown(saved.shown)
+      setGym(saved.gym)
+    }
+    aiSnapshot.current = null
+    setAiOn(false)
+  }
+  const applyAiFallback = (kind, value) => {
+    aiSnapshot.current = null
+    setAiOn(false)
+    setQ('')
+    setCat('')
+    setGym(null)
+    setShown(50)
+    if (kind === 'bodyPart') { setBp(value); setEq('') }
+    else { setEq(value); setBp('') }
+  }
+  const openAi = () => {
+    if (aiOn) { aiRef.current?.reopen(); return }
+    enterAi()
+  }
   const backupList = (Array.isArray(backups) ? backups : []).map(id => EXIDX[id]).filter(Boolean)
   // What a swap is away from: the picker opens on what trains the same muscle, if anything you
   // can use does, and "All" is one tap back to everything. Suggested substitutes (#674) lead
@@ -1797,6 +1836,18 @@ function ExercisePicker({ onPick, title, close, like, actionIcon, backups }) {
     </div>
     <MuscleExplorer onPick={onPick} pickIcon={quickIcon} />
   </>
+  // The AI recognition state replaces the picker's list but keeps the picker's own header and
+  // search row. It is an overlay inside this sheet, never a second sheet on top of it.
+  if (aiOn) return <>
+    <div className="row between" style={{ marginBottom: 10 }}><h3>{title || t('Add exercise')}</h3></div>
+    <div className="picker-search"><div className="search-row"><div className="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>
+      <input className="input" placeholder={t('Search {0} exercises…', all.length)} value={q} disabled /></div>
+      <button type="button" className="iconbtn ai-search-btn on" aria-label={t('AI 检索动作')} title={t('AI 检索动作')} onClick={openAi}><Icon name="sparkles" /></button>
+    </div></div>
+    {likeEx && <p className="small dim" style={{ margin: '0 0 12px' }}>{t('Replacing {0}', exerciseNameFor(likeEx))}</p>}
+    <ExerciseAiSearch ref={aiRef} onExit={exitAi} onFallbackPick={applyAiFallback}
+      onPick={(ex, quick) => onPick(ex, quick)} closeOnPick quick={{ icon: quickIcon, label: quickLabel }} />
+  </>
 
   return <>
     <div className="row between" style={{ marginBottom: 10 }}><h3>{title || t('Add exercise')}</h3>
@@ -1815,6 +1866,7 @@ function ExercisePicker({ onPick, title, close, like, actionIcon, backups }) {
       <input ref={searchRef} className="input" placeholder={t('Search {0} exercises…', all.length)} value={q} onFocus={onSearchFocus} onChange={e => { setQ(e.target.value); setShown(50) }} />
       {narrowed && <span className="search-count" role="status" aria-label={exCount(f.length)}>{fmtNum(f.length)}</span>}
       {q && <button className="clear" onClick={() => { setQ(''); setShown(50) }} aria-label={t('Clear')}><Icon name="xmark" /></button>}</div>
+      {aiEnabled && <button type="button" className="iconbtn ai-search-btn" aria-label={t('AI 检索动作')} title={t('AI 检索动作')} onClick={openAi}><Icon name="sparkles" /></button>}
       <ExerciseViewToggle /></div></div>
     {profile && !(like && profiles.length) && <div className="small dim row" style={{ margin: '8px 0 2px', gap: 6, alignItems: 'center' }}>
       <Icon name="kettlebell" style={{ fontSize: 'var(--fs-footnote)' }} />

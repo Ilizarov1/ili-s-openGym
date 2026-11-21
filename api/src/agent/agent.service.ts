@@ -6,14 +6,18 @@ import {
   bindContext,
   createIds,
   createRunState,
+  isSessionMode,
   runAgent,
   selectMemories,
   validRequestId,
   withRunDefaults,
 } from '../../agent-runtime/index.js';
-import type { ProposalService, RunContext, RunRecord, TaskDefinition } from '../../agent-runtime/contracts.js';
+import type { ProposalService, RunContext, RunRecord } from '../../agent-runtime/contracts.js';
 import { AccountStore } from '../common/persistence/account-store.js';
-import type { AgentMemory, AgentProfilePublic, AgentProposal, AgentRunResult, AgentSessionSummary, AgentStoredRun } from './agent.types.js';
+import type {
+  AgentMemory, AgentProfilePublic, AgentProfileSummary, AgentProposal, AgentRunResult,
+  AgentSessionSummary, AgentStoredRun,
+} from './agent.types.js';
 import { AgentConfigStore } from './agent-config.store.js';
 import { AgentGateway } from './agent-gateway.js';
 import { AgentMedia } from './agent-media.js';
@@ -24,8 +28,7 @@ import { AgentRunStore, requestFingerprint } from './agent-run.store.js';
 import { AgentSessionStore } from './agent-session.store.js';
 import { AgentStore } from './agent.store.js';
 import { agentEnabled } from './agent.flags.js';
-import { createStubTask, STUB_TASK_ID } from './tasks/stub-task.js';
-import { createStubTools } from './tools/stub-tools.js';
+import { createTaskRegistry, EXERCISE_SEARCH_TASK_ID, type RegisteredTask } from './tasks/index.js';
 
 interface ActiveRun {
   uid: string;
@@ -35,9 +38,22 @@ interface ActiveRun {
 
 const ids = createIds(randomUUID);
 
+const AI_MAX_RUNS_PER_SESSION = 6;
+
+function profileSummary(profile: {
+  id: string; label?: string; provider: string; model: string; version: number;
+}): AgentProfileSummary {
+  return {
+    id: profile.id,
+    label: profile.label || profile.provider,
+    provider: profile.provider,
+    model: profile.model,
+    version: profile.version,
+  };
+}
+
 function parseStart(body: Record<string, unknown>) {
-  const taskId = body.taskId === undefined ? STUB_TASK_ID : String(body.taskId);
-  if (taskId !== STUB_TASK_ID) throw new AgentError('invalid_request', 'unknown task');
+  const taskId = body.taskId === undefined ? 'stub.v1' : String(body.taskId);
   const requestId = String(body.requestId || '');
   if (!validRequestId(requestId)) throw new AgentError('invalid_request', 'requestId is invalid');
   const profileId = String(body.profileId || '');
@@ -48,6 +64,15 @@ function parseStart(body: Record<string, unknown>) {
   const sessionId = body.sessionId === undefined ? undefined : String(body.sessionId);
   if (sessionId !== undefined && !/^[A-Za-z0-9_-]{1,80}$/.test(sessionId)) {
     throw new AgentError('invalid_request', 'sessionId is invalid');
+  }
+  const sessionMode = (body.sessionMode === undefined
+    ? (sessionId ? 'new' : undefined)
+    : body.sessionMode) as 'new' | 'continue' | undefined;
+  if (sessionMode !== undefined && !isSessionMode(sessionMode)) {
+    throw new AgentError('invalid_request', 'sessionMode must be new or continue');
+  }
+  if (sessionMode === 'continue' && !sessionId) {
+    throw new AgentError('invalid_request', 'sessionMode continue needs a sessionId');
   }
   const rawAttachments = body.attachmentIds;
   if (rawAttachments !== undefined && !Array.isArray(rawAttachments)) {
@@ -61,6 +86,7 @@ function parseStart(body: Record<string, unknown>) {
     profileId,
     input: body.input as Record<string, unknown>,
     ...(sessionId ? { sessionId } : {}),
+    ...(sessionMode ? { sessionMode } : {}),
     ...(attachmentIds.length ? { attachmentIds } : {}),
   };
 }
@@ -68,8 +94,7 @@ function parseStart(body: Record<string, unknown>) {
 @Injectable()
 export class AgentService implements OnModuleInit {
   private readonly active = new Map<string, ActiveRun>();
-  private readonly task;
-  private readonly tools;
+  private readonly tasks;
 
   constructor(
     private readonly accounts: AccountStore,
@@ -83,8 +108,7 @@ export class AgentService implements OnModuleInit {
     private readonly gateway: AgentGateway,
     private readonly media: AgentMedia,
   ) {
-    this.task = createStubTask(this.store);
-    this.tools = createStubTools(this.store);
+    this.tasks = createTaskRegistry({ store: this.store });
   }
 
   async onModuleInit(): Promise<void> {
@@ -107,6 +131,12 @@ export class AgentService implements OnModuleInit {
           /* boot must not fail on one account */
         }
       }
+      try {
+        await this.sessions.purgeExpired(user.id);
+        await this.runs.purgeExpired(user.id);
+      } catch {
+        /* cleanup must not block boot */
+      }
     }
   }
 
@@ -114,25 +144,56 @@ export class AgentService implements OnModuleInit {
     if (!agentEnabled()) throw new AgentError('agent_disabled');
   }
 
-  async start(uid: string, body: Record<string, unknown>): Promise<{ runId: string; status: string }> {
+  async start(uid: string, body: Record<string, unknown>): Promise<{
+    runId: string;
+    status: string;
+    profile?: AgentProfileSummary;
+  }> {
     this.enabled();
     const request = parseStart(body);
-    if (this.task.inputSchema) {
-      // Rejected synchronously: a too-long prompt must not burn a request id
-      // on a run that is destined to fail.
-      assertValid(this.task.inputSchema, request.input, '$.input', 'invalid_request');
+    const registered = this.tasks.get(request.taskId);
+    if (!registered) {
+      throw new AgentError('invalid_request', 'unknown task', { details: { taskId: request.taskId } });
     }
+    const { task } = registered;
+    if (task.inputSchema) assertValid(task.inputSchema, request.input, '$.input', 'invalid_request');
+    if (typeof task.validateInput === 'function') task.validateInput(request.input);
     const requestHash = requestFingerprint(request);
     // Idempotency comes before any profile or session work: a retry must
     // still find its original job even if the profile it named was deleted
     // or the session tombstoned between the two submissions.
     const known = this.runs.find(uid, request.requestId, requestHash);
-    if (known) return { runId: known.runId, status: known.status };
+    if (known) {
+      return {
+        runId: known.runId,
+        status: known.status,
+        ...(known.profile ? { profile: known.profile } : {}),
+      };
+    }
+    await this.sessions.purgeExpired(uid);
+    await this.runs.purgeExpired(uid);
     const resolved = await this.configs.resolve(uid, request.profileId);
     // Attachment references are validated with the request, not discovered as
     // a failed run after the fact.
     if (request.attachmentIds) await this.media.resolve(uid, request.attachmentIds);
-    const session = request.sessionId ? await this.sessions.ensure(uid, request.sessionId) : null;
+    let session = null;
+    if (request.sessionId) {
+      if (request.sessionMode === 'continue') {
+        session = await this.sessions.get(uid, request.sessionId);
+        if (!session) throw new AgentError('session_deleted', undefined, { details: { sessionId: request.sessionId } });
+        if (session.taskId && session.taskId !== request.taskId) {
+          throw new AgentError('session_conflict', 'this conversation belongs to another task', {
+            details: { sessionId: request.sessionId, taskId: session.taskId },
+          });
+        }
+      } else {
+        session = await this.sessions.ensure(uid, request.sessionId, {
+          taskId: request.taskId,
+          executionLocation: 'server',
+        });
+      }
+    }
+    const profile = profileSummary(resolved.profile);
     const run: AgentStoredRun = {
       runId: ids.run(),
       requestId: request.requestId,
@@ -143,11 +204,18 @@ export class AgentService implements OnModuleInit {
       status: 'accepted',
       createdAt: Date.now(),
       dataVersion: 1,
+      profile,
       ...(session ? { sessionId: session.id, sessionVersion: session.version } : {}),
     };
-    const begun = await this.runs.begin(uid, run);
+    const begun = await this.runs.begin(uid, run, {
+      ...(request.taskId === EXERCISE_SEARCH_TASK_ID ? { maxTurns: AI_MAX_RUNS_PER_SESSION } : {}),
+    });
     if (!begun.created) {
-      return { runId: begun.run.runId, status: begun.run.status };
+      return {
+        runId: begun.run.runId,
+        status: begun.run.status,
+        ...(begun.run.profile ? { profile: begun.run.profile } : {}),
+      };
     }
     const controller = new AbortController();
     const state = createRunState(begun.run as unknown as RunRecord, {
@@ -157,9 +225,9 @@ export class AgentService implements OnModuleInit {
     });
     this.active.set(run.runId, { uid, controller, state });
     queueMicrotask(() => {
-      void this.execute(uid, request, resolved, state, controller).catch(() => undefined);
+      void this.execute(uid, request, resolved, registered, state, controller).catch(() => undefined);
     });
-    return { runId: run.runId, status: 'accepted' };
+    return { runId: run.runId, status: 'accepted', profile };
   }
 
   private proposalCreator(uid: string, runId: string) {
@@ -193,11 +261,13 @@ export class AgentService implements OnModuleInit {
     uid: string,
     request: ReturnType<typeof parseStart>,
     resolved: Awaited<ReturnType<AgentConfigStore['resolve']>>,
+    registered: RegisteredTask,
     state: ReturnType<typeof createRunState>,
     controller: AbortController,
   ): Promise<void> {
     try {
       if (state.isTerminal()) return;
+      const { task } = registered;
       const run = state.record();
       if (run.status === 'accepted') state.start();
       const session = request.sessionId ? await this.sessions.get(uid, request.sessionId) : null;
@@ -209,10 +279,11 @@ export class AgentService implements OnModuleInit {
         return;
       }
       const attachments = request.attachmentIds ? await this.media.resolve(uid, request.attachmentIds) : [];
-      const budgets = withRunDefaults((this.task as TaskDefinition).budgets);
-      const taskCategories = (this.task as TaskDefinition).memoryCategories;
-      const allMemories = await this.memories.list(uid);
-      const memoryProjection = selectMemories(allMemories, {
+      const budgets = withRunDefaults(task.budgets);
+      const taskCategories = task.memoryCategories;
+      const noMemories = Array.isArray(taskCategories) && taskCategories.length === 0;
+      const allMemories = noMemories ? [] : await this.memories.list(uid);
+      const memoryProjection = noMemories ? [] : selectMemories(allMemories, {
         scope: uid,
         ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
         limit: budgets.memoryItems,
@@ -233,6 +304,7 @@ export class AgentService implements OnModuleInit {
           profileId: request.profileId,
           input: request.input,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+          ...(request.sessionMode ? { sessionMode: request.sessionMode } : {}),
           ...(request.attachmentIds ? { attachmentIds: request.attachmentIds } : {}),
         },
         execution: 'server',
@@ -246,40 +318,61 @@ export class AgentService implements OnModuleInit {
         ids,
       }) as unknown as RunContext;
       const result = await runAgent({
-        task: this.task as unknown as TaskDefinition,
+        task,
         request: {
           taskId: request.taskId,
           requestId: request.requestId,
           profileId: request.profileId,
           input: request.input,
           ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+          ...(request.sessionMode ? { sessionMode: request.sessionMode } : {}),
           ...(request.attachmentIds ? { attachmentIds: request.attachmentIds } : {}),
         },
         context,
         gateway: this.gateway.forAccount(uid),
-        tools: this.tools.tools,
+        tools: registered.tools as never,
         proposals: this.proposalCreator(uid, run.runId) as unknown as ProposalService,
         state,
         signal: controller.signal,
       });
       if (session && state.status() === 'completed') {
-        const payload = result && typeof result === 'object' && 'result' in result ? (result as { result?: AgentRunResult }).result : null;
-        const assistantText = typeof payload?.text === 'string'
-          ? payload.text
-          : payload?.structured
-            ? JSON.stringify(payload.structured)
-            : '';
+        const projection = registered.messageOf(request.input, result);
+        const images = projection.assistant.meta?.images;
         try {
           await this.sessions.append(uid, session.id, [
-            { id: randomUUID(), role: 'user', content: String(request.input.prompt || ''), createdAt: Date.now(), runId: run.runId },
-            { id: randomUUID(), role: 'assistant', content: assistantText, createdAt: Date.now(), runId: run.runId },
-          ]);
+            {
+              id: randomUUID(),
+              role: 'user',
+              content: projection.user.content,
+              createdAt: Date.now(),
+              runId: run.runId,
+              ...(Array.isArray(images) && images.length ? { meta: { images } } : {}),
+            },
+            {
+              id: randomUUID(),
+              role: 'assistant',
+              content: projection.assistant.content,
+              createdAt: Date.now(),
+              runId: run.runId,
+              ...(projection.assistant.meta ? { meta: projection.assistant.meta } : {}),
+            },
+          ], (run as unknown as AgentStoredRun).sessionVersion);
         } catch (error) {
-          // A deleted session must not be recreated by a late run.
-          if (!(error instanceof AgentError) || error.code !== 'session_deleted') throw error;
+          // A deleted session must not be recreated by a late run. A version
+          // conflict means another writer won; the run itself already ended.
+          if (!(error instanceof AgentError)
+            || (error.code !== 'session_deleted' && error.code !== 'session_conflict')) throw error;
         }
       }
-      await this.runs.finish(uid, run.runId, state.record() as unknown as Partial<AgentStoredRun>);
+      const record = state.record();
+      const payload = record.result && typeof record.result === 'object'
+        ? record.result as AgentRunResult
+        : null;
+      const resultWithProfile = payload ? { ...payload, profile: profileSummary(resolved.profile) } : payload;
+      await this.runs.finish(uid, run.runId, {
+        ...(record as unknown as Partial<AgentStoredRun>),
+        ...(resultWithProfile ? { result: resultWithProfile } : {}),
+      });
     } catch (error) {
       if (!state.isTerminal()) {
         state.failed({

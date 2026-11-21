@@ -31,6 +31,10 @@ export const MEMORY_CATEGORIES = Object.freeze([
 
 export const EXECUTION_LOCATIONS = Object.freeze(['local', 'server']);
 
+export const SESSION_MODES = Object.freeze(['new', 'continue']);
+
+export const isSessionMode = value => SESSION_MODES.includes(value);
+
 export const isTerminalStatus = status => TERMINAL_STATUSES.includes(status);
 
 export const isRunStatus = status => RUN_STATUSES.includes(status);

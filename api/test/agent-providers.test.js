@@ -7,8 +7,10 @@ import {
   createHttpClient,
   createModelGateway,
   createOpenAIProvider,
+  createProvider,
   buildOpenAIRequest,
   normalizeModelOutput,
+  OPENCODE_BASE_URL,
   assertCapabilities,
   validateBaseUrl,
   phoneMayCall,
@@ -53,6 +55,19 @@ test('the fixture provider never touches the network and covers every case', asy
 
   const late = await createFixtureProvider({ case: 'late', lateDelayMs: 5 }).invoke({});
   assert.match(late.text, /after cancellation/);
+
+  const candidates = await createFixtureProvider({ case: 'candidates' }).invoke({});
+  assert.ok(candidates.structured.candidates.length >= 1);
+  assert.ok(candidates.structured.fallback.understanding);
+
+  const fallbackOnly = await createFixtureProvider({ case: 'fallback-only' }).invoke({});
+  assert.deepEqual(fallbackOnly.structured.candidates, []);
+  assert.ok(fallbackOnly.structured.fallback.understanding);
+
+  await assert.rejects(
+    createFixtureProvider({ case: 'unknown-case' }).invoke({}),
+    error => error instanceof AgentError && error.code === 'invalid_request',
+  );
 });
 
 test('the HTTP client caps a response and reports a timeout', async () => {
@@ -159,6 +174,51 @@ test('the OpenAI request carries text, images and tool definitions', () => {
   assert.ok(body.messages[1].content.some(part => part.type === 'image_url'));
   assert.equal(body.tools[0].function.name, 'get_stub_fact');
   assert.equal(body.tool_choice, 'auto');
+});
+
+test('JSON mode and image labels are part of the provider request', () => {
+  const body = buildOpenAIRequest({
+    model: 'gpt-test',
+    modelInput: {
+      instructions: 'json please',
+      responseFormat: 'json',
+      user: {
+        text: 'find this',
+        attachments: [{ id: 'a1', dataUrl: 'data:image/png;base64,AAAA', label: '当前图片' }],
+      },
+      facts: [],
+      memories: [],
+      history: [],
+      tools: [],
+      toolResults: [],
+    },
+  });
+  assert.deepEqual(body.response_format, { type: 'json_object' });
+  assert.deepEqual(body.messages[1].content.slice(0, 2), [
+    { type: 'text', text: 'find this' },
+    { type: 'text', text: '[当前图片]' },
+  ]);
+});
+
+test('the named opencode provider always uses the fixed inference endpoint', async () => {
+  assert.equal(OPENCODE_BASE_URL, 'https://opencode.ai/inference/openai/v1');
+  assert.equal(createProvider('opencode', { model: 'fixture' }).id, 'opencode');
+  let seen = null;
+  const provider = createProvider('opencode', {
+    baseUrl: 'https://attacker.example/v1',
+    apiKey: 'sk-test',
+    model: 'deepseek-v4.1-flash-1017',
+    fetchImpl: async (url, init) => {
+      seen = { url: String(url), body: JSON.parse(String(init.body)) };
+      return jsonResponse({ choices: [{ message: { content: '{"candidates":[],"fallback":{"understanding":"x"}}' } }] });
+    },
+  });
+  await provider.invoke({
+    modelInput: { instructions: '', responseFormat: 'json', user: { text: 'x' }, facts: [], memories: [], history: [], tools: [], toolResults: [] },
+  });
+  assert.equal(seen.url, `${OPENCODE_BASE_URL}/chat/completions`);
+  assert.equal(seen.body.response_format.type, 'json_object');
+  assert.equal(JSON.stringify(seen).includes('attacker'), false);
 });
 
 test('the OpenAI provider normalizes text and tool calls', async () => {

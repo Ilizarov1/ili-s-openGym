@@ -1,0 +1,1001 @@
+{
+  "version": 1,
+  "description": "Offline retrieval-effect golden set for the shared AI exercise matcher (docs/ai-exercise-search/DESIGN.md §6, EXECUTION.md 3.4). Each case is a model-shaped structured output plus the catalogue ids it must resolve to. Pools: en = English catalogue names; zh = Chinese localized names plus English catalogue names (the RN/Web bilingual pool); custom = en plus three custom actions and saved aliases; zh-custom = zh plus one custom action.",
+  "cases": [
+    {
+      "id": "en-exact-bench-press",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, chest/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell bench press", "level": "high", "rationale": "杠铃卧推，胸部大肌群", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找杠铃卧推", "bodyParts": ["chest"], "equipment": ["barbell"] }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "high" } }
+    },
+    {
+      "id": "en-exact-incline-bench",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, chest/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell incline bench press", "level": "high", "rationale": "上斜卧推凳和杠铃", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找杠铃上斜卧推" }
+      },
+      "expect": { "top1": "0047", "levels": { "0047": "high" } }
+    },
+    {
+      "id": "en-exact-dumbbell-bench",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, chest/dumbbell",
+      "output": {
+        "candidates": [{ "name": "dumbbell bench press", "level": "high", "rationale": "两只哑铃在卧推凳上", "equipment": "dumbbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找哑铃卧推" }
+      },
+      "expect": { "top1": "0289", "levels": { "0289": "high" } }
+    },
+    {
+      "id": "en-exact-chest-dip",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, chest/bodyweight",
+      "output": {
+        "candidates": [{ "name": "chest dip", "level": "high", "rationale": "双杠上身体前倾下压", "equipment": "body weight", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找双杠臂屈伸" }
+      },
+      "expect": { "top1": "0251", "levels": { "0251": "high" } }
+    },
+    {
+      "id": "en-exact-pull-up",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, back/bodyweight",
+      "output": {
+        "candidates": [{ "name": "pull-up", "level": "high", "rationale": "单杠正握引体", "equipment": "body weight", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找引体向上" }
+      },
+      "expect": { "top1": "0652", "levels": { "0652": "high" } }
+    },
+    {
+      "id": "en-exact-cable-seated-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, back/cable",
+      "output": {
+        "candidates": [{ "name": "cable seated row", "level": "high", "rationale": "坐姿拉绳索划船", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找绳索坐姿划船" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "high" } }
+    },
+    {
+      "id": "en-exact-bent-over-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, back/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell bent over row", "level": "high", "rationale": "俯身杠铃划船", "equipment": "barbell", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找杠铃俯身划船" }
+      },
+      "expect": { "top1": "0027", "levels": { "0027": "high" } }
+    },
+    {
+      "id": "en-exact-cable-pulldown",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, back/cable",
+      "output": {
+        "candidates": [{ "name": "cable pulldown", "level": "high", "rationale": "高位下拉器械", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找高位下拉" }
+      },
+      "expect": { "top1": "0198", "levels": { "0198": "high" } }
+    },
+    {
+      "id": "en-exact-barbell-deadlift",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, legs/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell deadlift", "level": "high", "rationale": "地面杠铃硬拉", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找杠铃硬拉" }
+      },
+      "expect": { "top1": "0032", "levels": { "0032": "high" } }
+    },
+    {
+      "id": "en-exact-romanian-deadlift",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, legs/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell romanian deadlift", "level": "high", "rationale": "杠铃罗马尼亚硬拉", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找罗马尼亚硬拉" }
+      },
+      "expect": { "top1": "0085", "levels": { "0085": "high" } }
+    },
+    {
+      "id": "en-exact-barbell-squat",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, legs/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell squat", "level": "high", "rationale": "杠铃深蹲", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找杠铃深蹲" }
+      },
+      "expect": { "top1": "3593", "levels": { "3593": "high" } }
+    },
+    {
+      "id": "en-exact-leg-extension",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, legs/machine",
+      "output": {
+        "candidates": [{ "name": "lever leg extension", "level": "high", "rationale": "坐姿腿屈伸器械", "equipment": "leverage machine", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找腿屈伸" }
+      },
+      "expect": { "top1": "0585", "levels": { "0585": "high" } }
+    },
+    {
+      "id": "en-exact-standing-military-press",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, shoulders/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell standing military press", "level": "high", "rationale": "站姿杠铃推举", "equipment": "barbell", "bodyPart": "shoulders" }],
+        "fallback": { "understanding": "用户在找站姿杠铃推举" }
+      },
+      "expect": { "top1": "1162", "levels": { "1162": "high" } }
+    },
+    {
+      "id": "en-exact-seated-shoulder-press",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, shoulders/dumbbell",
+      "output": {
+        "candidates": [{ "name": "dumbbell seated shoulder press", "level": "high", "rationale": "坐姿哑铃肩推", "equipment": "dumbbell", "bodyPart": "shoulders" }],
+        "fallback": { "understanding": "用户在找坐姿哑铃肩推" }
+      },
+      "expect": { "top1": "0405", "levels": { "0405": "high" } }
+    },
+    {
+      "id": "en-exact-lateral-raise",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, shoulders/dumbbell",
+      "output": {
+        "candidates": [{ "name": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举", "equipment": "dumbbell", "bodyPart": "shoulders" }],
+        "fallback": { "understanding": "用户在找哑铃侧平举" }
+      },
+      "expect": { "top1": "0334", "levels": { "0334": "high" } }
+    },
+    {
+      "id": "en-exact-barbell-curl",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, arms/barbell",
+      "output": {
+        "candidates": [{ "name": "barbell curl", "level": "high", "rationale": "杠铃弯举", "equipment": "barbell", "bodyPart": "upper arms" }],
+        "fallback": { "understanding": "用户在找杠铃弯举" }
+      },
+      "expect": { "top1": "0031", "levels": { "0031": "high" } }
+    },
+    {
+      "id": "en-exact-hammer-curl",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, arms/dumbbell",
+      "output": {
+        "candidates": [{ "name": "dumbbell hammer curl", "level": "high", "rationale": "哑铃锤式弯举", "equipment": "dumbbell", "bodyPart": "upper arms" }],
+        "fallback": { "understanding": "用户在找哑铃锤式弯举" }
+      },
+      "expect": { "top1": "0313", "levels": { "0313": "high" } }
+    },
+    {
+      "id": "en-exact-front-plank",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, waist/bodyweight",
+      "output": {
+        "candidates": [{ "name": "front plank", "level": "high", "rationale": "前平板支撑", "equipment": "body weight", "bodyPart": "waist" }],
+        "fallback": { "understanding": "用户在找平板支撑" }
+      },
+      "expect": { "top1": "0463", "levels": { "0463": "high" } }
+    },
+    {
+      "id": "en-exact-one-arm-pulldown",
+      "subset": "english",
+      "pool": "en",
+      "note": "exact catalogue name, back/cable",
+      "output": {
+        "candidates": [{ "name": "cable one arm lat pulldown", "level": "high", "rationale": "单臂绳索高位下拉", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找单臂高位下拉" }
+      },
+      "expect": { "top1": "1204", "levels": { "1204": "high" } }
+    },
+    {
+      "id": "en-variant-bench-press",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name; a variant, not the exact catalogue title",
+      "output": {
+        "candidates": [{ "name": "bench press", "level": "high", "rationale": "卧推凳和杠铃", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找卧推" }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "medium" } }
+    },
+    {
+      "id": "en-variant-lat-pulldown",
+      "subset": "english",
+      "pool": "en",
+      "note": "everyday name for the cable pulldown",
+      "output": {
+        "candidates": [{ "name": "lat pulldown", "level": "high", "rationale": "高位下拉器械", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找高位下拉" }
+      },
+      "expect": { "top1": "0198", "levels": { "0198": "medium" } }
+    },
+    {
+      "id": "en-variant-seated-cable-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "word order differs from the catalogue",
+      "output": {
+        "candidates": [{ "name": "seated cable row", "level": "high", "rationale": "坐姿绳索划船", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找坐姿绳索划船" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "medium" } }
+    },
+    {
+      "id": "en-variant-overhead-press",
+      "subset": "english",
+      "pool": "en",
+      "note": "generic overhead press",
+      "output": {
+        "candidates": [{ "name": "overhead press", "level": "high", "rationale": "站立/坐姿上推", "equipment": "barbell", "bodyPart": "shoulders" }],
+        "fallback": { "understanding": "用户在找过头推举" }
+      },
+      "expect": { "top1": "0091", "levels": { "0091": "medium" } }
+    },
+    {
+      "id": "en-variant-front-squat",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "front squat", "level": "high", "rationale": "杠铃置于胸前深蹲", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找前蹲" }
+      },
+      "expect": { "top1": "0042", "levels": { "0042": "medium" } }
+    },
+    {
+      "id": "en-variant-sumo-deadlift",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "sumo deadlift", "level": "high", "rationale": "宽站距硬拉", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找相扑硬拉" }
+      },
+      "expect": { "top1": "0117", "levels": { "0117": "medium" } }
+    },
+    {
+      "id": "en-variant-inverted-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "inverted row", "level": "high", "rationale": "身体在杠下反向划船", "equipment": "body weight", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找反向划船" }
+      },
+      "expect": { "top1": "0499", "levels": { "0499": "high" } }
+    },
+    {
+      "id": "en-variant-t-bar-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "t bar row", "level": "high", "rationale": "T杠划船", "equipment": "leverage machine", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在找T杠划船" }
+      },
+      "expect": { "top1": "0606", "levels": { "0606": "medium" } }
+    },
+    {
+      "id": "en-variant-preacher-curl",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "preacher curl", "level": "high", "rationale": "牧师凳弯举", "equipment": "barbell", "bodyPart": "upper arms" }],
+        "fallback": { "understanding": "用户在找牧师凳弯举" }
+      },
+      "expect": { "top1": "0070", "levels": { "0070": "medium" } }
+    },
+    {
+      "id": "en-variant-face-pull",
+      "subset": "english",
+      "pool": "en",
+      "note": "shorter common name",
+      "output": {
+        "candidates": [{ "name": "face pull", "level": "high", "rationale": "绳索拉向面部", "equipment": "band", "bodyPart": "shoulders" }],
+        "fallback": { "understanding": "用户在找面拉" }
+      },
+      "expect": { "top1": "5607", "levels": { "5607": "medium" } }
+    },
+    {
+      "id": "en-spelling-bnech",
+      "subset": "english",
+      "pool": "en",
+      "note": "typed typo, name word only",
+      "output": {
+        "candidates": [{ "name": "bnech press", "level": "high", "rationale": "卧推，前两个字母打反", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户想找卧推，拼写有误" }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "medium" } }
+    },
+    {
+      "id": "en-spelling-dumbel",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing letter in dumbbell",
+      "output": {
+        "candidates": [{ "name": "dumbel bench press", "level": "high", "rationale": "哑铃卧推", "equipment": "dumbbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户想找哑铃卧推，拼写有误" }
+      },
+      "expect": { "top1": "0289", "levels": { "0289": "medium" } }
+    },
+    {
+      "id": "en-spelling-cabl-row",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing letter in cable",
+      "output": {
+        "candidates": [{ "name": "seated cabl row", "level": "high", "rationale": "坐姿绳索划船", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户想找绳索划船，拼写有误" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "medium" } }
+    },
+    {
+      "id": "en-spelling-incline-benc",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing letter in bench",
+      "output": {
+        "candidates": [{ "name": "incline benc press", "level": "high", "rationale": "上斜卧推", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户想找上斜卧推，拼写有误" }
+      },
+      "expect": { "top1": "0047", "levels": { "0047": "medium" } }
+    },
+    {
+      "id": "en-spelling-barbel-squat",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing l in barbell",
+      "output": {
+        "candidates": [{ "name": "barbel squat", "level": "high", "rationale": "杠铃深蹲", "equipment": "barbell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户想找杠铃深蹲，拼写有误" }
+      },
+      "expect": { "top1": "3593", "levels": { "3593": "medium" } }
+    },
+    {
+      "id": "en-spelling-kettlbell",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing e in kettlebell",
+      "output": {
+        "candidates": [{ "name": "kettlbell swing", "level": "high", "rationale": "壶铃摆荡", "equipment": "kettlebell", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户想找壶铃摆荡，拼写有误" }
+      },
+      "expect": { "top1": "0549", "levels": { "0549": "medium" } }
+    },
+    {
+      "id": "en-spelling-leg-pres",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing s in press",
+      "output": {
+        "candidates": [{ "name": "leg pres", "level": "high", "rationale": "45度腿举", "equipment": "sled machine", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户想找腿举，拼写有误" }
+      },
+      "expect": { "top1": "0739", "levels": { "0739": "medium" } }
+    },
+    {
+      "id": "en-spelling-lat-pulldwn",
+      "subset": "english",
+      "pool": "en",
+      "note": "missing o in pulldown",
+      "output": {
+        "candidates": [{ "name": "cable pulldwn", "level": "high", "rationale": "高位下拉", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户想找高位下拉，拼写有误" }
+      },
+      "expect": { "top1": "0198", "levels": { "0198": "medium" } }
+    },
+    {
+      "id": "en-alias-my-bench",
+      "subset": "english",
+      "pool": "custom",
+      "note": "saved alias on 0025",
+      "output": {
+        "candidates": [{ "name": "my bench", "level": "high", "rationale": "用户保存的别名", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在叫自己保存的卧推别名" }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "high" } }
+    },
+    {
+      "id": "en-alias-pulldown-king",
+      "subset": "english",
+      "pool": "custom",
+      "note": "saved alias on 0198",
+      "output": {
+        "candidates": [{ "name": "pulldown king", "level": "high", "rationale": "用户保存的别名", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "用户在叫自己保存的高位下拉别名" }
+      },
+      "expect": { "top1": "0198", "levels": { "0198": "high" } }
+    },
+    {
+      "id": "en-alias-chinese-lat-pulldown",
+      "subset": "english",
+      "pool": "custom",
+      "note": "saved Chinese alias on 1204; exact alias must keep a high level",
+      "output": {
+        "candidates": [{ "name": "我的高位下拉", "level": "high", "rationale": "用户保存的中文别名" }],
+        "fallback": { "understanding": "用户在叫自己保存的单臂高位下拉别名" }
+      },
+      "expect": { "top1": "1204", "levels": { "1204": "high" } }
+    },
+    {
+      "id": "custom-sled-drag-rope",
+      "subset": "english",
+      "pool": "custom",
+      "note": "user-created action not in the catalogue",
+      "output": {
+        "candidates": [{ "name": "sled drag rope", "level": "high", "rationale": "用户自建的拉雪橇动作", "equipment": "sled machine", "bodyPart": "upper legs" }],
+        "fallback": { "understanding": "用户在找自建的拉雪橇动作" }
+      },
+      "expect": { "top1": "custom-1", "levels": { "custom-1": "high" } }
+    },
+    {
+      "id": "custom-sandbag-toss",
+      "subset": "english",
+      "pool": "custom",
+      "note": "user-created action not in the catalogue",
+      "output": {
+        "candidates": [{ "name": "sandbag shoulder toss", "level": "high", "rationale": "用户自建的沙袋过肩", "equipment": "sandbag", "bodyPart": "full body" }],
+        "fallback": { "understanding": "用户在找自建的沙袋过肩" }
+      },
+      "expect": { "top1": "custom-2", "levels": { "custom-2": "high" } }
+    },
+    {
+      "id": "custom-trap-bar-carry",
+      "subset": "english",
+      "pool": "custom",
+      "note": "user-created action not in the catalogue",
+      "output": {
+        "candidates": [{ "name": "trap bar carry", "level": "high", "rationale": "用户自建的六角杠行走", "equipment": "trap bar", "bodyPart": "full body" }],
+        "fallback": { "understanding": "用户在找自建的六角杠行走" }
+      },
+      "expect": { "top1": "custom-3", "levels": { "custom-3": "high" } }
+    },
+    {
+      "id": "custom-alias-viking-row",
+      "subset": "english",
+      "pool": "custom",
+      "note": "saved alias on the user-created action",
+      "output": {
+        "candidates": [{ "name": "Viking row", "level": "high", "rationale": "用户给自建动作起的别名" }],
+        "fallback": { "understanding": "用户在叫自建动作的别名" }
+      },
+      "expect": { "top1": "custom-1", "levels": { "custom-1": "high" } }
+    },
+    {
+      "id": "hint-order-baseline",
+      "subset": "english",
+      "pool": "en",
+      "note": "without hints the dumbbell version wins on score",
+      "output": {
+        "candidates": [
+          { "name": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举" },
+          { "name": "cable lateral raise", "level": "high", "rationale": "绳索侧平举" }
+        ],
+        "fallback": { "understanding": "用户在比较哑铃和绳索侧平举" }
+      },
+      "expect": { "top1": "0334", "order": ["0334", "0178"], "levels": { "0334": "high", "0178": "high" } }
+    },
+    {
+      "id": "hint-order-equipment",
+      "subset": "english",
+      "pool": "en",
+      "note": "EQ_BONUS puts the cable version first when the hint matches its eq",
+      "output": {
+        "candidates": [
+          { "name": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举" },
+          { "name": "cable lateral raise", "level": "high", "rationale": "绳索侧平举", "equipment": "cable", "bodyPart": "shoulders" }
+        ],
+        "fallback": { "understanding": "用户看到的是绳索器械" }
+      },
+      "expect": { "top1": "0178", "order": ["0178", "0334"], "levels": { "0178": "high", "0334": "high" } }
+    },
+    {
+      "id": "hint-order-bodypart",
+      "subset": "english",
+      "pool": "en",
+      "note": "BP_BONUS alone flips the same pair when only the body part hint matches",
+      "output": {
+        "candidates": [
+          { "name": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举" },
+          { "name": "cable lateral raise", "level": "high", "rationale": "绳索侧平举", "bodyPart": "shoulders" }
+        ],
+        "fallback": { "understanding": "用户只说了练肩" }
+      },
+      "expect": { "top1": "0178", "order": ["0178", "0334"], "levels": { "0178": "high", "0334": "high" } }
+    },
+    {
+      "id": "conflict-push-up-smith",
+      "subset": "conflict",
+      "pool": "en",
+      "note": "machine hint contradicts a bodyweight hit: discard",
+      "output": {
+        "candidates": [{ "name": "push-up", "level": "high", "rationale": "地面俯卧撑", "equipment": "smith machine", "bodyPart": "chest" }],
+        "fallback": { "understanding": "描述里同时出现俯卧撑和史密斯机，无法确定" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "conflict-pull-up-cable",
+      "subset": "conflict",
+      "pool": "en",
+      "note": "cable hint contradicts a bodyweight hit: discard",
+      "output": {
+        "candidates": [{ "name": "pull-up", "level": "high", "rationale": "单杠引体", "equipment": "cable", "bodyPart": "back" }],
+        "fallback": { "understanding": "描述里同时出现引体和绳索，无法确定" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "conflict-dip-machine",
+      "subset": "conflict",
+      "pool": "en",
+      "note": "leverage machine hint contradicts a bodyweight hit: discard",
+      "output": {
+        "candidates": [{ "name": "chest dip", "level": "high", "rationale": "双杠臂屈伸", "equipment": "leverage machine", "bodyPart": "chest" }],
+        "fallback": { "understanding": "描述里同时出现双杠臂屈伸和器械，无法确定" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "zh-exact-bench-press",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name on the bilingual pool",
+      "output": {
+        "candidates": [{ "name": "杠铃卧推", "level": "high", "rationale": "杠铃卧推", "equipment": "barbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户在找杠铃卧推" }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "high" } }
+    },
+    {
+      "id": "zh-nameEn-bench-press",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn against the English pool",
+      "output": {
+        "candidates": [{ "name": "杠铃卧推", "nameEn": "barbell bench press", "level": "high", "rationale": "杠铃卧推" }],
+        "fallback": { "understanding": "用户在找杠铃卧推" }
+      },
+      "expect": { "top1": "0025", "levels": { "0025": "high" } }
+    },
+    {
+      "id": "zh-exact-squat",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "深蹲", "level": "high", "rationale": "自重深蹲" }],
+        "fallback": { "understanding": "用户在找深蹲" }
+      },
+      "expect": { "top1": "1197", "levels": { "1197": "high" } }
+    },
+    {
+      "id": "zh-nameEn-squat",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "深蹲", "nameEn": "squat", "level": "high", "rationale": "自重深蹲" }],
+        "fallback": { "understanding": "用户在找深蹲" }
+      },
+      "expect": { "top1": "1197", "levels": { "1197": "high" } }
+    },
+    {
+      "id": "zh-exact-pull-up",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "引体向上", "level": "high", "rationale": "单杠引体向上" }],
+        "fallback": { "understanding": "用户在找引体向上" }
+      },
+      "expect": { "top1": "0652", "levels": { "0652": "high" } }
+    },
+    {
+      "id": "zh-nameEn-pull-up",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "引体向上", "nameEn": "pull-up", "level": "high", "rationale": "单杠引体向上" }],
+        "fallback": { "understanding": "用户在找引体向上" }
+      },
+      "expect": { "top1": "0652", "levels": { "0652": "high" } }
+    },
+    {
+      "id": "zh-exact-seated-row",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "绳索坐姿划船", "level": "high", "rationale": "绳索坐姿划船" }],
+        "fallback": { "understanding": "用户在找绳索坐姿划船" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "high" } }
+    },
+    {
+      "id": "zh-nameEn-seated-row",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "绳索坐姿划船", "nameEn": "cable seated row", "level": "high", "rationale": "绳索坐姿划船" }],
+        "fallback": { "understanding": "用户在找绳索坐姿划船" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "high" } }
+    },
+    {
+      "id": "zh-exact-romanian-deadlift",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "杠铃罗马尼亚硬拉", "level": "high", "rationale": "杠铃罗马尼亚硬拉" }],
+        "fallback": { "understanding": "用户在找罗马尼亚硬拉" }
+      },
+      "expect": { "top1": "0085", "levels": { "0085": "high" } }
+    },
+    {
+      "id": "zh-nameEn-romanian-deadlift",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "杠铃罗马尼亚硬拉", "nameEn": "barbell romanian deadlift", "level": "high", "rationale": "杠铃罗马尼亚硬拉" }],
+        "fallback": { "understanding": "用户在找罗马尼亚硬拉" }
+      },
+      "expect": { "top1": "0085", "levels": { "0085": "high" } }
+    },
+    {
+      "id": "zh-exact-lateral-raise",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "哑铃侧平举", "level": "high", "rationale": "哑铃侧平举" }],
+        "fallback": { "understanding": "用户在找哑铃侧平举" }
+      },
+      "expect": { "top1": "0334", "levels": { "0334": "high" } }
+    },
+    {
+      "id": "zh-nameEn-lateral-raise",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "哑铃侧平举", "nameEn": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举" }],
+        "fallback": { "understanding": "用户在找哑铃侧平举" }
+      },
+      "expect": { "top1": "0334", "levels": { "0334": "high" } }
+    },
+    {
+      "id": "zh-exact-barbell-curl",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "杠铃弯举", "level": "high", "rationale": "杠铃弯举" }],
+        "fallback": { "understanding": "用户在找杠铃弯举" }
+      },
+      "expect": { "top1": "0031", "levels": { "0031": "high" } }
+    },
+    {
+      "id": "zh-nameEn-barbell-curl",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "杠铃弯举", "nameEn": "barbell curl", "level": "high", "rationale": "杠铃弯举" }],
+        "fallback": { "understanding": "用户在找杠铃弯举" }
+      },
+      "expect": { "top1": "0031", "levels": { "0031": "high" } }
+    },
+    {
+      "id": "zh-exact-front-plank",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "前平板支撑", "level": "high", "rationale": "前平板支撑" }],
+        "fallback": { "understanding": "用户在找前平板支撑" }
+      },
+      "expect": { "top1": "0463", "levels": { "0463": "high" } }
+    },
+    {
+      "id": "zh-nameEn-front-plank",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "前平板支撑", "nameEn": "front plank", "level": "high", "rationale": "前平板支撑" }],
+        "fallback": { "understanding": "用户在找前平板支撑" }
+      },
+      "expect": { "top1": "0463", "levels": { "0463": "high" } }
+    },
+    {
+      "id": "zh-exact-hip-thrust",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "杠铃臀推", "level": "high", "rationale": "杠铃臀推" }],
+        "fallback": { "understanding": "用户在找杠铃臀推" }
+      },
+      "expect": { "top1": "1060", "levels": { "1060": "high" } }
+    },
+    {
+      "id": "zh-nameEn-hip-thrust",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "杠铃臀推", "nameEn": "barbell hip thrust", "level": "high", "rationale": "杠铃臀推" }],
+        "fallback": { "understanding": "用户在找杠铃臀推" }
+      },
+      "expect": { "top1": "1060", "levels": { "1060": "high" } }
+    },
+    {
+      "id": "zh-exact-one-arm-pulldown",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "exact Chinese catalogue name",
+      "output": {
+        "candidates": [{ "name": "绳索单臂高位下拉", "level": "high", "rationale": "绳索单臂高位下拉" }],
+        "fallback": { "understanding": "用户在找单臂高位下拉" }
+      },
+      "expect": { "top1": "1204", "levels": { "1204": "high" } }
+    },
+    {
+      "id": "zh-nameEn-one-arm-pulldown",
+      "subset": "chinese",
+      "pool": "en",
+      "note": "Chinese name plus nameEn",
+      "output": {
+        "candidates": [{ "name": "绳索单臂高位下拉", "nameEn": "cable one arm lat pulldown", "level": "high", "rationale": "绳索单臂高位下拉" }],
+        "fallback": { "understanding": "用户在找单臂高位下拉" }
+      },
+      "expect": { "top1": "1204", "levels": { "1204": "high" } }
+    },
+    {
+      "id": "zh-cjk-fallback-seated-press",
+      "subset": "chinese",
+      "pool": "zh",
+      "note": "partial Chinese name; only the character fallback can resolve it",
+      "output": {
+        "candidates": [{ "name": "坐姿推举", "level": "high", "rationale": "坐姿向上推举" }],
+        "fallback": { "understanding": "用户在找坐姿推举，但没有说器械" }
+      },
+      "expect": { "top1": "0546", "levels": { "0546": "low" } }
+    },
+    {
+      "id": "zh-cjk-fallback-custom",
+      "subset": "chinese",
+      "pool": "zh-custom",
+      "note": "partial name of a user-created action; character fallback over the Chinese pool",
+      "output": {
+        "candidates": [{ "name": "自建划船", "level": "high", "rationale": "用户自建的划船机" }],
+        "fallback": { "understanding": "用户在找自建的划船动作" }
+      },
+      "expect": { "top1": "custom-zh-1", "levels": { "custom-zh-1": "low" } }
+    },
+    {
+      "id": "ambiguous-pulldown-family",
+      "subset": "ambiguous",
+      "pool": "zh",
+      "note": "generic Chinese movement; character fallback is a tie",
+      "output": {
+        "candidates": [{ "name": "高位下拉", "level": "high", "rationale": "高位下拉" }],
+        "fallback": { "understanding": "用户只说了高位下拉，没有说握法或器械" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "ambiguous-row-family",
+      "subset": "ambiguous",
+      "pool": "zh",
+      "note": "generic Chinese cable row; top two character scores are too close",
+      "output": {
+        "candidates": [{ "name": "绳索划船", "level": "high", "rationale": "绳索划船" }],
+        "fallback": { "understanding": "用户只说了绳索划船，无法确定具体握法" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "ambiguous-curl-family",
+      "subset": "ambiguous",
+      "pool": "zh",
+      "note": "generic curl; the character fallback cannot separate variants",
+      "output": {
+        "candidates": [{ "name": "弯举", "level": "high", "rationale": "弯举" }],
+        "fallback": { "understanding": "用户只说了弯举，没有说器械" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "ambiguous-broad-chest",
+      "subset": "ambiguous",
+      "pool": "zh",
+      "note": "broad goal phrase, not an exercise name",
+      "output": {
+        "candidates": [{ "name": "练胸的", "level": "high", "rationale": "想练胸" }],
+        "fallback": { "understanding": "用户说的是训练目标，不是具体动作" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "ambiguous-chest-exercise",
+      "subset": "ambiguous",
+      "pool": "en",
+      "note": "body part plus a broad word must not become a high-confidence exercise",
+      "output": {
+        "candidates": [{ "name": "chest exercise", "level": "high", "rationale": "something for the chest" }],
+        "fallback": { "understanding": "the input names a body part, not an exercise" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "ambiguous-back-workout",
+      "subset": "ambiguous",
+      "pool": "en",
+      "note": "body part plus a broad word",
+      "output": {
+        "candidates": [{ "name": "back workout", "level": "high", "rationale": "training the back" }],
+        "fallback": { "understanding": "the input names a body part, not an exercise" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-food-plate",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "unrelated model output; no candidates and an honest fallback",
+      "output": {
+        "candidates": [{ "name": "plate of pasta", "level": "high", "rationale": "food on a plate" }],
+        "fallback": { "understanding": "照片里是一盘食物，不是训练动作" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-landscape",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "unrelated model output; no candidates",
+      "output": {
+        "candidates": [{ "name": "mountain landscape at sunset", "level": "high", "rationale": "outdoor landscape" }],
+        "fallback": { "understanding": "照片是风景，不含器械或训练动作" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-selfie",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "unrelated model output; no candidates",
+      "output": {
+        "candidates": [{ "name": "mirror selfie in a gym", "level": "high", "rationale": "a person taking a photo" }],
+        "fallback": { "understanding": "照片是自拍，看不到可识别的训练动作" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-hallucinated-levitation",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "impossible exercise; no invented catalogue action",
+      "output": {
+        "candidates": [{ "name": "levitating barbell bench press", "level": "high", "rationale": "a barbell floating above a bench" }],
+        "fallback": { "understanding": "描述里包含现实中不存在的动作，不能编造" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-hallucinated-quantum",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "impossible machine; no invented catalogue action",
+      "output": {
+        "candidates": [{ "name": "quantum flux squat machine", "level": "high", "rationale": "a fictional machine" }],
+        "fallback": { "understanding": "没有这种器械或动作，请补充真实动作描述" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-panorama-many-machines",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "panorama with six plausible actions: truncate to five, distinct, each rationale present",
+      "output": {
+        "candidates": [
+          { "name": "barbell bench press", "level": "high", "rationale": "卧推凳和杠铃", "equipment": "barbell", "bodyPart": "chest" },
+          { "name": "cable seated row", "level": "high", "rationale": "坐姿绳索划船", "equipment": "cable", "bodyPart": "back" },
+          { "name": "dumbbell lateral raise", "level": "high", "rationale": "哑铃侧平举", "equipment": "dumbbell", "bodyPart": "shoulders" },
+          { "name": "barbell squat", "level": "high", "rationale": "深蹲架上的杠铃", "equipment": "barbell", "bodyPart": "upper legs" },
+          { "name": "barbell curl", "level": "high", "rationale": "站姿杠铃弯举", "equipment": "barbell", "bodyPart": "upper arms" },
+          { "name": "front plank", "level": "high", "rationale": "垫上平板支撑", "equipment": "body weight", "bodyPart": "waist" }
+        ],
+        "fallback": { "understanding": "全景里有卧推凳、绳索划船、哑铃、深蹲架等器械" }
+      },
+      "expect": {
+        "minItems": 5,
+        "maxItems": 5,
+        "allowed": ["0025", "0861", "0334", "3593", "0031", "0463"],
+        "rationale": true
+      }
+    },
+    {
+      "id": "boundary-dedupe-five-same-action",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "five model candidates for the same action dedupe to one row with at most two rationales",
+      "output": {
+        "candidates": [
+          { "name": "bench press", "level": "high", "rationale": "卧推凳", "equipment": "barbell", "bodyPart": "chest" },
+          { "name": "barbell bench press", "level": "high", "rationale": "杠铃卧推", "equipment": "barbell", "bodyPart": "chest" },
+          { "name": "barbell bench press", "level": "medium", "rationale": "平板卧推", "equipment": "barbell", "bodyPart": "chest" },
+          { "name": "bench press", "level": "medium", "rationale": "胸部推举", "equipment": "barbell", "bodyPart": "chest" },
+          { "name": "barbell bench press", "level": "low", "rationale": "卧推" }
+        ],
+        "fallback": { "understanding": "用户反复描述了同一个卧推动作" }
+      },
+      "expect": { "top1": "0025", "exactItems": 1, "maxRationaleParts": 2, "levels": { "0025": "high" } }
+    },
+    {
+      "id": "boundary-language-mismatch-english-on-zh",
+      "subset": "boundary",
+      "pool": "zh",
+      "note": "English model output against the bilingual Chinese pool still resolves",
+      "output": {
+        "candidates": [{ "name": "cable seated row", "level": "high", "rationale": "cable row" }],
+        "fallback": { "understanding": "用户在找绳索坐姿划船" }
+      },
+      "expect": { "top1": "0861", "levels": { "0861": "high" } }
+    },
+    {
+      "id": "boundary-language-mismatch-chinese-on-en",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "Chinese name with no nameEn against the English pool: honest empty result, not a guess",
+      "output": {
+        "candidates": [{ "name": "绳索坐姿划船", "level": "high", "rationale": "绳索坐姿划船" }],
+        "fallback": { "understanding": "当前目录没有匹配的中文名称，请补充英文名或器械" }
+      },
+      "expect": { "empty": true }
+    },
+    {
+      "id": "boundary-follow-up-newest-wins",
+      "subset": "boundary",
+      "pool": "en",
+      "note": "the follow-up corrects the first turn; the newest model output is what remains",
+      "output": {
+        "candidates": [{ "name": "dumbbell bench press", "level": "high", "rationale": "用户改口说哑铃", "equipment": "dumbbell", "bodyPart": "chest" }],
+        "fallback": { "understanding": "用户先说了卧推，随后纠正为哑铃卧推" }
+      },
+      "expect": { "top1": "0289", "absent": ["0025"], "levels": { "0289": "high" } }
+    }
+  ]
+}

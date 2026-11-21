@@ -35,8 +35,26 @@ export {
   providerCapabilities,
 } from './model-gateway.js';
 export { runAgent } from './run.js';
-export { createProvider, isProviderId, PROVIDER_IDS } from './providers/index.js';
+export { createProvider, isProviderId, PROVIDER_IDS, OPENCODE_BASE_URL } from './providers/index.js';
 export { createFixtureProvider } from './providers/fixture.js';
 export { createOpenAIProvider, buildOpenAIRequest } from './providers/openai.js';
 export { createHttpClient } from './providers/http.js';
 export { validateBaseUrl, phoneMayCall, isPrivateHost } from './providers/endpoint.js';
+export {
+  createExerciseSearchTask,
+  validateExerciseSearchInput,
+  validateExerciseImages,
+  cleanExerciseSearchOutput,
+  isExerciseSearchOutput,
+  PROMPT as EXERCISE_SEARCH_PROMPT,
+  EXERCISE_SEARCH_TASK_ID,
+  EXERCISE_SEARCH_INPUT_SCHEMA,
+  EXERCISE_SEARCH_OUTPUT_SCHEMA,
+  EXERCISE_SEARCH_MAX_IMAGES,
+  EXERCISE_SEARCH_MAX_IMAGE_BYTES,
+  EXERCISE_SEARCH_MAX_HINT,
+  EXERCISE_SEARCH_MAX_SIDE,
+  EXERCISE_SEARCH_MAX_ASPECT,
+  BODY_PART_SLUGS,
+  EQUIPMENT_SLUGS,
+} from './tasks/exercise-search.js';
