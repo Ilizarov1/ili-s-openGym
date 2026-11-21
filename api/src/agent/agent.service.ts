@@ -2,12 +2,14 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import {
   AgentError,
+  assertValid,
   bindContext,
   createIds,
   createRunState,
   runAgent,
   selectMemories,
   validRequestId,
+  withRunDefaults,
 } from '../../agent-runtime/index.js';
 import type { ProposalService, RunContext, RunRecord, TaskDefinition } from '../../agent-runtime/contracts.js';
 import { AccountStore } from '../common/persistence/account-store.js';
@@ -85,13 +87,25 @@ export class AgentService implements OnModuleInit {
     this.tools = createStubTools(this.store);
   }
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     // A process that died mid-run cannot finish it. Mark only accounts that
     // actually have an open run, so a fresh boot does not create empty files.
+    // Awaited: a client polling right after boot must not see a leftover
+    // `running` status that this pass is about to interrupt.
     for (const user of this.accounts.db.users) {
-      const data = this.store.read(user.id);
-      if (Object.values(data.runs).some(run => run.status === 'accepted' || run.status === 'running')) {
-        void this.runs.markInterrupted(user.id).catch(() => undefined);
+      let hasOpen = false;
+      try {
+        const data = this.store.read(user.id);
+        hasOpen = Object.values(data.runs).some(run => run.status === 'accepted' || run.status === 'running');
+      } catch {
+        continue; // one unreadable account must not block boot
+      }
+      if (hasOpen) {
+        try {
+          await this.runs.markInterrupted(user.id);
+        } catch {
+          /* boot must not fail on one account */
+        }
       }
     }
   }
@@ -103,9 +117,22 @@ export class AgentService implements OnModuleInit {
   async start(uid: string, body: Record<string, unknown>): Promise<{ runId: string; status: string }> {
     this.enabled();
     const request = parseStart(body);
-    const resolved = await this.configs.resolve(uid, request.profileId);
-    const session = request.sessionId ? await this.sessions.ensure(uid, request.sessionId) : null;
+    if (this.task.inputSchema) {
+      // Rejected synchronously: a too-long prompt must not burn a request id
+      // on a run that is destined to fail.
+      assertValid(this.task.inputSchema, request.input, '$.input', 'invalid_request');
+    }
     const requestHash = requestFingerprint(request);
+    // Idempotency comes before any profile or session work: a retry must
+    // still find its original job even if the profile it named was deleted
+    // or the session tombstoned between the two submissions.
+    const known = this.runs.find(uid, request.requestId, requestHash);
+    if (known) return { runId: known.runId, status: known.status };
+    const resolved = await this.configs.resolve(uid, request.profileId);
+    // Attachment references are validated with the request, not discovered as
+    // a failed run after the fact.
+    if (request.attachmentIds) await this.media.resolve(uid, request.attachmentIds);
+    const session = request.sessionId ? await this.sessions.ensure(uid, request.sessionId) : null;
     const run: AgentStoredRun = {
       runId: ids.run(),
       requestId: request.requestId,
@@ -167,14 +194,21 @@ export class AgentService implements OnModuleInit {
       const session = request.sessionId ? await this.sessions.get(uid, request.sessionId) : null;
       if (request.sessionId && !session) {
         // The session was deleted between start() ensuring it and execution.
-        state.cancel('the conversation was deleted');
+        // That is this run failing, not the user cancelling it.
+        state.failed({ code: 'session_deleted', message: 'the conversation was deleted' });
         await this.runs.finish(uid, run.runId, state.record() as unknown as Partial<AgentStoredRun>);
         return;
       }
       const attachments = request.attachmentIds ? await this.media.resolve(uid, request.attachmentIds) : [];
+      const budgets = withRunDefaults((this.task as TaskDefinition).budgets);
+      const taskCategories = (this.task as TaskDefinition).memoryCategories;
       const allMemories = await this.memories.list(uid);
-      const memoryProjection = selectMemories(allMemories, { limit: 8, maxChars: 4000 });
-      const history = (session?.messages || []).slice(-8).map(message => ({
+      const memoryProjection = selectMemories(allMemories, {
+        ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
+        limit: budgets.memoryItems,
+        maxChars: 4000,
+      });
+      const history = (session?.messages || []).slice(-budgets.historyItems).map(message => ({
         id: message.id,
         role: message.role,
         content: message.content,

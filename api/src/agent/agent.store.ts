@@ -40,28 +40,50 @@ function normalize(data: unknown): AgentAccountData {
     throw new AgentError('agent_store_corrupt', 'the agent document is not a JSON object');
   }
   const raw = data as Record<string, unknown>;
-  const base = emptyAgentData();
-  const asRecord = <T>(value: unknown): Record<string, T> =>
-    value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, T>) : {};
+  if (raw.schema !== SCHEMA) {
+    throw new AgentError('agent_store_corrupt', 'the agent document has an unknown schema', {
+      details: { schema: raw.schema, expected: SCHEMA },
+    });
+  }
+  // A structurally wrong document is corruption, not an empty account: this
+  // read must never silently drop a run history or the request-dedup index.
+  const asRecord = (value: unknown, name: string): Record<string, never> => {
+    if (value === undefined) return {};
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new AgentError('agent_store_corrupt', `the agent document's ${name} is invalid`);
+    }
+    return value as Record<string, never>;
+  };
   const stub = raw.stub && typeof raw.stub === 'object' && !Array.isArray(raw.stub)
     ? (raw.stub as Record<string, unknown>)
-    : {};
+    : null;
+  if (raw.stub !== undefined && !stub) {
+    throw new AgentError('agent_store_corrupt', "the agent document's stub is invalid");
+  }
+  if (stub && (stub.targets === undefined || stub.facts === undefined || !Array.isArray(stub.writes))) {
+    throw new AgentError('agent_store_corrupt', "the agent document's stub is incomplete");
+  }
+  if (stub && ((typeof stub.targets !== 'object' || stub.targets === null || Array.isArray(stub.targets))
+    || (typeof stub.facts !== 'object' || stub.facts === null || Array.isArray(stub.facts)))) {
+    throw new AgentError('agent_store_corrupt', "the agent document's stub targets or facts are invalid");
+  }
+  const base = emptyAgentData();
   return {
     schema: SCHEMA,
-    profiles: asRecord(raw.profiles),
-    runs: asRecord(raw.runs),
-    requestIndex: asRecord(raw.requestIndex),
-    sessions: asRecord(raw.sessions),
-    memories: asRecord(raw.memories),
-    proposals: asRecord(raw.proposals),
+    profiles: asRecord(raw.profiles, 'profiles'),
+    runs: asRecord(raw.runs, 'runs'),
+    requestIndex: asRecord(raw.requestIndex, 'requestIndex'),
+    sessions: asRecord(raw.sessions, 'sessions'),
+    memories: asRecord(raw.memories, 'memories'),
+    proposals: asRecord(raw.proposals, 'proposals'),
     stub: {
-      targets: stub.targets && typeof stub.targets === 'object' && !Array.isArray(stub.targets)
+      targets: stub?.targets
         ? { ...base.stub.targets, ...(stub.targets as Record<string, never>) }
         : base.stub.targets,
-      facts: stub.facts && typeof stub.facts === 'object' && !Array.isArray(stub.facts)
+      facts: stub?.facts
         ? { ...base.stub.facts, ...(stub.facts as Record<string, unknown>) }
         : base.stub.facts,
-      writes: Array.isArray(stub.writes) ? (stub.writes as AgentAccountData['stub']['writes']) : [],
+      writes: stub && Array.isArray(stub.writes) ? (stub.writes as AgentAccountData['stub']['writes']) : [],
     },
   };
 }

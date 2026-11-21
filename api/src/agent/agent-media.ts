@@ -8,6 +8,7 @@ import { Injectable } from '@nestjs/common';
 import fs from 'node:fs';
 import { AgentError } from '../../agent-runtime/errors.js';
 import { HASH_RE, sniffMedia } from '../../media.js';
+import { fixtureAllowed } from './agent.flags.js';
 import { MediaService } from '../media/media.service.js';
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -33,6 +34,9 @@ export class AgentMedia {
     const out: AgentAttachment[] = [];
     for (const id of ids || []) {
       if (id === 'fixture:image') {
+        if (!fixtureAllowed()) {
+          throw new AgentError('invalid_request', 'fixture attachments are not available on this instance');
+        }
         out.push({
           id,
           kind: 'image',

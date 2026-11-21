@@ -31,7 +31,10 @@ export function selectMemories(memories, options = {}) {
   const sorted = [...(memories || [])]
     .filter(memory => memory && typeof memory === 'object' && typeof memory.id === 'string')
     .filter(memory => {
-      if (scope !== undefined && memory.scope !== undefined && memory.scope !== scope) return false;
+      // Fail closed: a record without a scope is never selected once a scope
+      // filter is supplied. Hosts that pre-filter still work; a host that
+      // forgets cannot leak another scope's memories.
+      if (scope !== undefined && memory.scope !== scope) return false;
       return !wanted || wanted.has(memory.category);
     })
     .sort((left, right) => {

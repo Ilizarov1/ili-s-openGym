@@ -118,15 +118,15 @@ export function createDispatcher(options) {
       if (!allowed.has(toolId) || !tool) {
         deny(new AgentError('tool_not_allowed', 'tool is not open in this step', { details: { toolId } }));
       }
-      if (calls >= limit) {
-        deny(new AgentError('tool_budget_exceeded', 'tool call budget for this step is exhausted', {
-          details: { limit },
-        }));
-      }
       const argsResult = validate(tool.argsSchema, args ?? {});
       if (!argsResult.ok) {
         deny(new AgentError('tool_args_invalid', `${argsResult.path}: ${argsResult.message}`, {
           details: { toolId, path: argsResult.path, reason: argsResult.message },
+        }));
+      }
+      if (calls >= limit) {
+        deny(new AgentError('tool_budget_exceeded', 'tool call budget for this step is exhausted', {
+          details: { limit },
         }));
       }
       const targets = targetIdsOf(tool, args ?? {});

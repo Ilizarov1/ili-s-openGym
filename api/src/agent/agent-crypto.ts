@@ -52,14 +52,16 @@ export class AgentCrypto {
   }
 
   decrypt(uid: string, profileId: string, version: number, secret: EncryptedSecret): string {
-    if (!secret || secret.v !== 1) throw new AgentError('agent_config_disabled', 'unsupported credential envelope');
+    if (!secret || secret.v !== 1) throw new AgentError('agent_config_corrupt', 'unsupported credential envelope');
     try {
       const decipher = crypto.createDecipheriv('aes-256-gcm', this.key(), Buffer.from(secret.iv, 'base64'));
       decipher.setAAD(this.aad(uid, profileId, version));
       decipher.setAuthTag(Buffer.from(secret.tag, 'base64'));
       return Buffer.concat([decipher.update(Buffer.from(secret.data, 'base64')), decipher.final()]).toString('utf8');
     } catch (error) {
-      throw new AgentError('agent_config_disabled', 'the stored credential could not be decrypted', { cause: error });
+      // A tampered ciphertext or a rotated secret is corruption, not "this
+      // instance has no secret"; the user must re-enter the key either way.
+      throw new AgentError('agent_config_corrupt', 'the stored credential could not be decrypted', { cause: error });
     }
   }
 }

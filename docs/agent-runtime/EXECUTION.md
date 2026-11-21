@@ -429,7 +429,7 @@ npm.cmd run build
   - 文件：`mobile-rn/src/agent/tools.ts`（新）
   - 动作：只读工具从 `workspaceScope` 绑定的 `LocalState` 读取；`target(args)` 返回目标 ID；调用计数。
   - 判据：越界 ID 拒绝，计数 0。
-  - 记录：`get_workspace_fact`/`get_workspace_target` 只读并记录调用计数。
+  - 记录：`get_workspace_fact`/`get_workspace_target` 只读并记录调用计数。落点与文件地图不同：工具合并在 `mobile-rn/src/agent/tasks.ts` 的 `createLocalTools`，未单独建 `tools.ts`。
 
 - [x] **4.9 实现 RN 本机运行时**
   - 文件：`mobile-rn/src/agent/runtime.ts`（新）

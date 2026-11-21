@@ -249,14 +249,24 @@ export class AgentStore {
     return this.updateRun(run);
   }
 
-  markInterrupted(scope: string): number {
-    const result = this.db.runSync(
-      `UPDATE agent_runs SET status = 'interrupted', finishedAt = ?, durationMs = ?,
-       error = ? WHERE scope = ? AND (status = 'accepted' OR status = 'running')`,
-      Date.now(), Date.now(),
-      JSON.stringify({ code: 'run_terminal', message: 'the app restarted before the run finished' }),
-      scope,
-    );
+  markInterrupted(scope: string, excludeRunIds?: Set<string>): number {
+    const at = Date.now();
+    const error = JSON.stringify({ code: 'run_interrupted', message: 'the app restarted before the run finished' });
+    const exclude = [...(excludeRunIds ?? [])];
+    const result = exclude.length
+      ? this.db.runSync(
+        `UPDATE agent_runs SET status = 'interrupted', finishedAt = ?,
+         durationMs = ? - COALESCE(startedAt, createdAt), error = ?
+         WHERE scope = ? AND (status = 'accepted' OR status = 'running')
+         AND runId NOT IN (${exclude.map(() => '?').join(', ')})`,
+        at, at, error, scope, ...exclude,
+      )
+      : this.db.runSync(
+        `UPDATE agent_runs SET status = 'interrupted', finishedAt = ?,
+         durationMs = ? - COALESCE(startedAt, createdAt), error = ?
+         WHERE scope = ? AND (status = 'accepted' OR status = 'running')`,
+        at, at, error, scope,
+      );
     return result.changes;
   }
 

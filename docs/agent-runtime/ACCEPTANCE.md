@@ -75,3 +75,23 @@
 - 真实供应商兼容性：首期只用 fixture 和可控 HTTP 替身验证，真实 OpenAI 兼容端点单独记录。
 - Docker 镜像：本机没有 `docker` 命令，`docker build` 未执行；`api/dist/agent-runtime/index.js` 已由构建脚本验证。
 - Windows 检出上的 12 条 API 和 26 条 Web 基线失败：与 CRLF 生成文件、路径分隔符、app icon 和文件权限断言有关，未在本需求范围内修改。
+- 评审整改（见 [REVIEW.md](REVIEW.md)）后的 RN 设备复验：模块级运行注册表、requestId 重试语义和 kv 版本联动已由静态检查与 Metro 打包覆盖，模拟器上的取消/提案复跑待下一轮设备验收一并执行。
+
+## 评审整改
+
+2026-11-21，按 [REVIEW.md](REVIEW.md) 的 A–F 清单完成对提交 `3024072ff` 的整改。
+
+| 工作目录 | 命令 | 结果 |
+|---|---|---|
+| `api` | `npm.cmd run build` | `build: dist ready` |
+| `api` | `node --test test/agent-runtime.test.js test/agent-providers.test.js test/agent-portability.test.js` | 28 pass / 0 fail（含新增 shared.d.ts 守卫） |
+| `api` | `node --test test/agent-crypto.test.js`（dist） | 4 pass / 0 fail（EXECUTION 2.4 判据） |
+| `api` | `npm.cmd run test:nest -- test/nest/agent.test.js` | 4 pass / 0 fail（新增并发重试、附件越权、fixture:image、profile 删除后重试用例） |
+| `api` | `node --test test/openapi-routes.test.js test/nest/routes.test.js` | 5 pass / 0 fail |
+| 仓库根 | `node scripts/build-api-docs.mjs` | `website/api.html` 重生成（108 endpoints） |
+| `frontend` | `npx vitest run src/agent/api.test.js src/views/Agent.test.jsx src/views/AgentSetup.test.jsx` | 16 pass / 0 fail |
+| `frontend` | `npm.cmd run build` | Vite 构建成功，Agent 页面独立 chunk |
+| `mobile-rn` | `npm.cmd run check` | lint（仅 2 条既有警告）、lint:rules、typecheck、design:check 全过 |
+| `mobile-rn` | `npx.cmd expo export --platform android --output-dir .expo-agent-export` | `index-a2b568ac57c95eb848b11ac59a9f125f.hbc`，共享核心（含本轮修改）随包解析 |
+
+Windows 基线失败项与上一节记录一致，Agent 相关测试全部通过。

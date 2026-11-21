@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, View } from 'react-native';
 import { randomUUID } from 'expo-crypto';
 import {
@@ -6,7 +6,7 @@ import {
 } from '../design';
 import type { Connection } from '../server';
 import type { LocalState } from '../storage';
-import { createLocalRuntime, createServerAgent } from '../agent';
+import { createId, createLocalRuntime, createServerAgent } from '../agent';
 import type { AgentMemory, AgentProfilePublic, AgentProposal, AgentRunRow, AgentSessionSummary } from '../agent';
 
 type Mode = 'local' | 'server';
@@ -40,6 +40,10 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
   const [memoryCategory, setMemoryCategory] = useState('preference');
   const [memoryValue, setMemoryValue] = useState('');
   const [error, setError] = useState('');
+  const [handledProposal, setHandledProposal] = useState<string | null>(null);
+  // Reused only while the submission it names is still open (or its response
+  // was lost); a terminal run or a new conversation closes the window.
+  const requestRef = useRef<{ prompt: string; id: string }>({ prompt: '', id: '' });
 
   const modes: { value: Mode; label: string }[] = connection
     ? [{ value: 'local', label: '本机' }, { value: 'server', label: '服务器' }]
@@ -97,13 +101,22 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
     if (run?.status === 'completed') loadLists().catch(() => undefined);
   }, [run?.status, loadLists]);
 
+  useEffect(() => {
+    if (run && TERMINAL.has(run.status)) requestRef.current = { prompt: '', id: '' };
+  }, [run]);
+
   const start = async (fixtureCase?: string) => {
     if (!prompt.trim() || !profileId) return;
     setBusy(true);
     setError('');
     try {
-      const requestId = `req_${randomUUID()}`;
-      const input = { prompt: prompt.trim(), ...(fixtureCase ? { fixtureCase } : {}) };
+      const text = prompt.trim();
+      let requestId = requestRef.current.prompt === text ? requestRef.current.id : '';
+      if (!requestId) {
+        requestId = createId('req', randomUUID);
+        requestRef.current = { prompt: text, id: requestId };
+      }
+      const input = { prompt: text, ...(fixtureCase ? { fixtureCase } : {}) };
       if (mode === 'server' && server) {
         const started = await server.startRun({ requestId, profileId, sessionId, input });
         await refreshRun(started.runId);
@@ -134,6 +147,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
       const answer = mode === 'server' && server
         ? await server.confirmProposal(proposal.proposalId)
         : local.confirmProposal(proposal.proposalId);
+      setHandledProposal(proposal.proposalId);
       Alert.alert('已应用', JSON.stringify(answer.result ?? null));
       await refreshRun(run?.runId || '');
     } catch (failure) {
@@ -145,6 +159,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
     try {
       if (mode === 'server' && server) await server.rejectProposal(proposal.proposalId);
       else local.rejectProposal(proposal.proposalId);
+      setHandledProposal(proposal.proposalId);
       Alert.alert('已拒绝');
       await refreshRun(run?.runId || '');
     } catch (failure) {
@@ -180,7 +195,7 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
             <Button variant="secondary" onPress={() => { start('late').catch(() => undefined); }} disabled={busy || !prompt.trim()}>延迟</Button>
           </View>
           : null}
-        <Button variant="secondary" onPress={() => { setSessionId(`ses_${randomUUID()}`); setRun(null); }} disabled={busy}>新会话</Button>
+        <Button variant="secondary" onPress={() => { setSessionId(`ses_${randomUUID()}`); setRun(null); requestRef.current = { prompt: '', id: '' }; }} disabled={busy}>新会话</Button>
         {run && !TERMINAL.has(run.status) ? <Button variant="secondary" onPress={() => { cancel().catch(() => undefined); }}>取消</Button> : null}
       </View>
       {error ? <Text tone="danger" variant="footnote" style={{ marginTop: theme.space.sm }}>{error}</Text> : null}
@@ -198,8 +213,8 @@ export function AgentScreen({ connection, data, onClose, onOpenProfiles }: Agent
         <SectionHeader title="待确认改动" />
         <Text tone="secondary" variant="footnote">{JSON.stringify(proposal.changes)}</Text>
         <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.sm }}>
-          <Button size="sm" variant="primary" disabled={proposal.status !== 'pending'} onPress={() => { confirm(proposal).catch(() => undefined); }}>确认</Button>
-          <Button size="sm" variant="secondary" disabled={proposal.status !== 'pending'} onPress={() => { reject(proposal).catch(() => undefined); }}>拒绝</Button>
+          <Button size="sm" variant="primary" disabled={proposal.status !== 'pending' || handledProposal === proposal.proposalId} onPress={() => { confirm(proposal).catch(() => undefined); }}>{handledProposal === proposal.proposalId ? '已应用' : '确认'}</Button>
+          <Button size="sm" variant="secondary" disabled={proposal.status !== 'pending' || handledProposal === proposal.proposalId} onPress={() => { reject(proposal).catch(() => undefined); }}>拒绝</Button>
         </View>
       </View> : null}
     </Card> : null}

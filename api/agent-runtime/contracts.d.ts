@@ -114,6 +114,8 @@ export interface TaskDefinition {
   requiredCapabilities?: Array<'text' | 'image' | 'tools'>;
   budgets?: Budgets;
   steps: TaskStep[];
+  /** Memories the model may see; unfiltered when omitted. */
+  memoryCategories?: string[];
   targetScope(input: Record<string, unknown>, context: RunContext): string[] | Promise<string[]>;
   instructions?(input: Record<string, unknown>, context: RunContext): string;
   userText?(input: Record<string, unknown>, context: RunContext): string;
@@ -259,4 +261,4 @@ export const RUN_STATUSES: readonly RunStatus[];
 export const TERMINAL_STATUSES: readonly RunStatus[];
 export const MEMORY_CATEGORIES: readonly MemoryCategory[];
 export const EXECUTION_LOCATIONS: readonly ExecutionLocation[];
-export function withRunDefaults(budgets?: Budgets): Budgets;
+export function withRunDefaults(budgets?: Budgets): Required<Budgets>;

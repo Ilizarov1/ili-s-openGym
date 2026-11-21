@@ -196,10 +196,21 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
     assert.equal(sealed.body.secret, undefined);
     const agentText = fs.readFileSync(path.join(server.dir, `agent-${OWNER_ID}.json`), 'utf8');
     assert.equal(agentText.includes('sk-secret-1234'), false);
+    assert.equal(server.log().includes('sk-secret-1234'), false);
     const afterCreate = await call(server, owner, '/api/agent/configs');
     assert.equal(afterCreate.body.profiles.some(profile => profile.id === sealed.body.id && profile.keyHint === '1234'), true);
     const removedProfile = await call(server, owner, `/api/agent/configs/${sealed.body.id}`, { method: 'DELETE' });
     assert.equal(removedProfile.status, 200, removedProfile.text);
+
+    // B1/A6: a retry still finds its job after the profile it named is gone.
+    const goneBody = { requestId: 'req_profile_gone_1', profileId: profile.body.id, input: { prompt: 'user profile' } };
+    const goneFirst = await startRun(server, owner, goneBody);
+    const goneDone = await waitRun(server, owner, goneFirst.runId);
+    assert.equal(goneDone.status, 'completed', JSON.stringify(goneDone));
+    const profileDeleted = await call(server, owner, `/api/agent/configs/${profile.body.id}`, { method: 'DELETE' });
+    assert.equal(profileDeleted.status, 200, profileDeleted.text);
+    const goneRetry = await startRun(server, owner, goneBody);
+    assert.equal(goneRetry.runId, goneFirst.runId, 'the retry must return the original job, not a 404');
 
     // A4: two proposals made against version 1; the first consumes it, the second conflicts.
     const p1 = await startRun(server, owner, {
@@ -255,7 +266,8 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
     const deleted = await call(server, owner, `/api/agent/sessions/${sessionId}`, { method: 'DELETE' });
     assert.equal(deleted.status, 200, deleted.text);
     const lateRun = await waitRun(server, owner, late.runId);
-    assert.ok(['cancelled', 'completed'].includes(lateRun.status), JSON.stringify(lateRun));
+    assert.ok(['completed', 'failed'].includes(lateRun.status), JSON.stringify(lateRun));
+    if (lateRun.status === 'failed') assert.equal(lateRun.error.code, 'session_deleted');
     const gone = await call(server, owner, `/api/agent/sessions/${sessionId}`);
     assert.equal(gone.status, 409, gone.text);
 
@@ -272,6 +284,72 @@ test('agent runtime server: profiles, idempotency, proposals, memory, sessions a
     const still = await call(server, owner, `/api/agent/runs/${cancelledStart.runId}`);
     assert.equal(still.body.status, 'cancelled');
     assert.equal(still.body.result, undefined);
+
+    // A2/E1: attachment references are validated with the request. A foreign
+    // or unknown hash is rejected before a run exists; the fixture image path
+    // resolves end to end.
+    const badAttachment = await call(server, owner, '/api/agent/runs', {
+      method: 'POST',
+      body: JSON.stringify({
+        requestId: 'req_attach_bad_01',
+        profileId: 'default',
+        input: { prompt: 'look' },
+        attachmentIds: ['not-a-hash'],
+      }),
+    });
+    assert.equal(badAttachment.status, 400, badAttachment.text);
+    const foreignAttachment = await call(server, owner, '/api/agent/runs', {
+      method: 'POST',
+      body: JSON.stringify({
+        requestId: 'req_attach_foreign',
+        profileId: 'default',
+        input: { prompt: 'look' },
+        attachmentIds: ['a'.repeat(64)],
+      }),
+    });
+    assert.equal(foreignAttachment.status, 400, foreignAttachment.text);
+    assert.equal(foreignAttachment.body.code, 'invalid_request');
+    const withImage = await startRun(server, owner, {
+      requestId: 'req_attach_image_1',
+      profileId: 'default',
+      input: { prompt: 'look at this' },
+      attachmentIds: ['fixture:image'],
+    });
+    const imageRun = await waitRun(server, owner, withImage.runId);
+    assert.equal(imageRun.status, 'completed', JSON.stringify(imageRun));
+
+    // E2/A6: two concurrent submissions of the same request id settle on one job.
+    const concurrentBody = JSON.stringify({
+      requestId: 'req_concurrent_01',
+      profileId: 'default',
+      input: { prompt: 'concurrent' },
+    });
+    const [firstPost, secondPost] = await Promise.all([
+      call(server, owner, '/api/agent/runs', { method: 'POST', body: concurrentBody }),
+      call(server, owner, '/api/agent/runs', { method: 'POST', body: concurrentBody }),
+    ]);
+    assert.equal(firstPost.status, 202, firstPost.text);
+    assert.equal(secondPost.status, 202, secondPost.text);
+    assert.equal(firstPost.body.runId, secondPost.body.runId);
+    const concurrentRun = await waitRun(server, owner, firstPost.body.runId);
+    assert.equal(concurrentRun.status, 'completed', JSON.stringify(concurrentRun));
+    const replay = await startRun(server, owner, {
+      requestId: 'req_concurrent_01',
+      profileId: 'default',
+      input: { prompt: 'concurrent' },
+    });
+    assert.equal(replay.runId, firstPost.body.runId);
+
+    // E2/2.3: concurrent updates to one account document both land.
+    const [profileOne, profileTwo] = await Promise.all([
+      call(server, owner, '/api/agent/configs', { method: 'POST', body: JSON.stringify({ provider: 'fixture', model: 'fixture-a' }) }),
+      call(server, owner, '/api/agent/configs', { method: 'POST', body: JSON.stringify({ provider: 'fixture', model: 'fixture-b' }) }),
+    ]);
+    assert.equal(profileOne.status, 201, profileOne.text);
+    assert.equal(profileTwo.status, 201, profileTwo.text);
+    const afterConcurrent = await call(server, owner, '/api/agent/configs');
+    assert.equal(afterConcurrent.body.profiles.some(profile => profile.model === 'fixture-a'), true);
+    assert.equal(afterConcurrent.body.profiles.some(profile => profile.model === 'fixture-b'), true);
 
     // Cross-account reads are 404, not another profile's run.
     const foreign = await call(server, member, `/api/agent/runs/${first.runId}`);
@@ -364,7 +442,7 @@ test('an open run is interrupted on the next boot', { timeout: 20000 }, async ()
     const token = fixtureSession(seed.secret, MEMBER_ID, 'b');
     const run = await waitRun(server, token, 'run_open');
     assert.equal(run.status, 'interrupted');
-    assert.equal(run.error.code, 'run_terminal');
+    assert.equal(run.error.code, 'run_interrupted');
   } finally {
     await server.stop();
   }

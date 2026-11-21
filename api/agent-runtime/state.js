@@ -91,7 +91,7 @@ export function createRunState(initial, options = {}) {
     },
     interrupted(reason) {
       if (isTerminalStatus(current.status)) return cloneRecord(current);
-      return transition('interrupted', reason ? { error: { code: 'run_terminal', message: reason } } : {});
+      return transition('interrupted', reason ? { error: { code: 'run_interrupted', message: reason } } : {});
     },
     acceptResult() {
       return !isTerminalStatus(current.status);

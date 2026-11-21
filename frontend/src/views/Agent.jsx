@@ -49,10 +49,13 @@ export default function Agent() {
   const [sessionId, setSessionId] = useState(() => `ses_${globalThis.crypto?.randomUUID?.() || Date.now()}`)
   const [lastBody, setLastBody] = useState(null)
   const [confirmResult, setConfirmResult] = useState(null)
+  const [handledProposal, setHandledProposal] = useState(null)
   const [memoryCategory, setMemoryCategory] = useState('preference')
   const [memoryValue, setMemoryValue] = useState('')
   const requestRef = useRef({ prompt: '', id: '' })
   const enabled = config?.agent?.enabled !== false
+
+  const newRequestId = () => globalThis.crypto?.randomUUID?.() || `req_${Date.now()}_${Math.random().toString(36).slice(2)}`
 
   useEffect(() => {
     if (!user) return
@@ -84,6 +87,14 @@ export default function Agent() {
     if (runStatus === 'completed') void loadSessions()
   }, [runStatus, loadSessions])
 
+  // A terminal run closes the idempotency window: resubmitting the same text
+  // is a new task and must reach the server with a new request id. While a
+  // submission is still open (or its response was lost), the id is reused so
+  // the server deduplicates instead of running the model twice.
+  useEffect(() => {
+    if (runStatus && TERMINAL.has(runStatus)) requestRef.current = { prompt: '', id: '' }
+  }, [runStatus])
+
   if (!user) return null
 
   const submit = async (body) => {
@@ -98,12 +109,21 @@ export default function Agent() {
     if (!text || !profileId) return
     let id = requestRef.current.prompt === text ? requestRef.current.id : ''
     if (!id) {
-      id = globalThis.crypto?.randomUUID?.() || `req_${Date.now()}_${Math.random().toString(36).slice(2)}`
+      id = newRequestId()
       requestRef.current = { prompt: text, id }
     }
     const body = { requestId: id, profileId, sessionId, input: { prompt: text } }
     setLastBody(body)
     await submit(body)
+  }
+
+  const onRetry = () => {
+    if (!lastBody) return
+    // An explicit retry of a failed or cancelled run is a new attempt, so it
+    // needs a new request id; the server would otherwise return the old job.
+    const id = newRequestId()
+    requestRef.current = { prompt: lastBody.input.prompt, id }
+    void submit({ ...lastBody, requestId: id })
   }
 
   const canRun = enabled && !!profileId && !!prompt.trim() && !loading
@@ -139,9 +159,9 @@ export default function Agent() {
           <textarea className="agent-textarea" value={prompt} onChange={event => setPrompt(event.target.value)} placeholder={t('Ask the agent, or describe a change to prepare.')} disabled={!enabled} />
           <div className="agent-actions" style={{ marginTop: 12 }}>
             <button type="button" className="btn tinted" onClick={onRun} disabled={!canRun}>{loading ? t('Starting…') : t('Start run')}</button>
-            <button type="button" className="btn" onClick={() => { setSessionId(`ses_${globalThis.crypto?.randomUUID?.() || Date.now()}`); setConfirmResult(null) }}>{t('New conversation')}</button>
+            <button type="button" className="btn" onClick={() => { setSessionId(`ses_${globalThis.crypto?.randomUUID?.() || Date.now()}`); setConfirmResult(null); requestRef.current = { prompt: '', id: '' } }}>{t('New conversation')}</button>
             {activeRun && !TERMINAL.has(activeRun.status) ? <button type="button" className="btn" onClick={() => { void cancelRun(activeRun.runId) }}>{t('Cancel')}</button> : null}
-            {lastBody && activeRun && TERMINAL.has(activeRun.status) && activeRun.status !== 'completed' ? <button type="button" className="btn" onClick={() => { void submit(lastBody) }}>{t('Retry')}</button> : null}
+            {lastBody && activeRun && TERMINAL.has(activeRun.status) && activeRun.status !== 'completed' ? <button type="button" className="btn" onClick={onRetry}>{t('Retry')}</button> : null}
           </div>
           {!profiles.some(profile => profile.available) ? <p className="agent-note" style={{ marginTop: 10 }}>{t('Add a model configuration before starting a run.')} <button type="button" className="btn xs tinted" onClick={() => nav('/agent/setup')}>{t('Open setup')}</button></p> : null}
         </section>
@@ -162,16 +182,20 @@ export default function Agent() {
               {(proposal.changes || []).map((change, index) => <li key={index}><code>{JSON.stringify(change)}</code></li>)}
             </ul>
             <div className="agent-actions">
-              <button type="button" className="btn tinted" disabled={proposal.status !== 'pending'} onClick={async () => {
+              <button type="button" className="btn tinted" disabled={proposal.status !== 'pending' || handledProposal?.id === proposal.proposalId} onClick={async () => {
                 const answer = await confirmProposal(proposal.proposalId)
                 if (answer) {
                   setConfirmResult(answer)
+                  setHandledProposal({ id: proposal.proposalId, status: 'consumed' })
                   toast(t('Change applied'))
                 }
-              }}>{t('Confirm')}</button>
-              <button type="button" className="btn" disabled={proposal.status !== 'pending'} onClick={async () => {
+              }}>{handledProposal?.id === proposal.proposalId ? t('Applied') : t('Confirm')}</button>
+              <button type="button" className="btn" disabled={proposal.status !== 'pending' || handledProposal?.id === proposal.proposalId} onClick={async () => {
                 const answer = await rejectProposal(proposal.proposalId)
-                if (answer) toast(t('Proposal rejected'))
+                if (answer) {
+                  setHandledProposal({ id: proposal.proposalId, status: 'rejected' })
+                  toast(t('Proposal rejected'))
+                }
               }}>{t('Reject')}</button>
             </div>
             {confirmResult ? <pre className="agent-pre">{JSON.stringify(confirmResult, null, 2)}</pre> : null}

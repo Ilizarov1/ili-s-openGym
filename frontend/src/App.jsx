@@ -34,6 +34,7 @@ import { installViewportGuard } from './lib/viewport-guard.js'
 import { installChipDrag } from './lib/hchips.js'
 import { syncPushSubscription } from './lib/push.js'
 import { MOBILE, nativePlatform } from './lib/mobile.js'
+import { DEMO } from './lib/demo.js'
 import { isOn } from './lib/modules.js'
 import { useTour, tourState, openTour, readTour, shouldOffer, resumeAt } from './lib/tour.js'
 import { exitWorkoutEdit, startFlow, beginWorkout, bwSheet } from './sheets.jsx'
@@ -359,10 +360,10 @@ function Shell() {
       {isOn(S, 'coach') && <Route path="/coach/intake" element={<CoachIntake />} />}
       {isOn(S, 'coach') && <Route path="/coach/proposal" element={<Navigate to="/coach" replace />} />}
       {isOn(S, 'coach') && <Route path="/coach/setup" element={<CoachSetup />} />}
-      {/* The agent runtime is a signed-in Web feature; the phone app and a guest profile
-          have no server execution surface here. */}
-      <Route path="/agent" element={user && !MOBILE ? <Agent /> : <Navigate to="/home" replace />} />
-      <Route path="/agent/setup" element={user && !MOBILE ? <AgentSetup /> : <Navigate to="/home" replace />} />
+      {/* The agent runtime is a signed-in Web feature; the phone app, a guest
+          profile and the demo build have no server execution surface here. */}
+      <Route path="/agent" element={user && !MOBILE && !DEMO ? <Agent /> : <Navigate to="/home" replace />} />
+      <Route path="/agent/setup" element={user && !MOBILE && !DEMO ? <AgentSetup /> : <Navigate to="/home" replace />} />
       <Route path="/admin" element={user?.admin ? <Admin /> : <Navigate to="/home" replace />} />
       <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>

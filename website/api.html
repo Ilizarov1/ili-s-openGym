@@ -3347,10 +3347,6 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
     <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
   </div>
   <div class="prow rrow">
-    <span class="r-code s4">404</span>
-    <span class="p-desc">The run, profile, conversation, memory or proposal does not exist in this account.<span class="r-sig"><code>{&quot;error&quot;:&quot;That run does not exist.&quot;}</code></span></span>
-  </div>
-  <div class="prow rrow">
     <span class="r-code s4">409</span>
     <span class="p-desc">A stable conflict: a reused request id with different input, a proposal whose target changed, a deleted conversation, or a proposal that was already handled.<span class="r-sig"><code>{&quot;error&quot;:&quot;The target changed after this proposal was made. Generate it again.&quot;}</code></span></span>
   </div>
@@ -4918,7 +4914,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   </div>
   <div class="prow">
     <span class="p-name">code<em class="p-req" title="required">required</em></span>
-    <span class="p-type">&quot;invalid_request&quot; | &quot;scope_denied&quot; | &quot;profile_not_found&quot; | &quot;profile_capability_missing&quot; | &quot;context_budget_exceeded&quot; | &quot;fact_missing&quot; | &quot;tool_not_allowed&quot; | &quot;tool_args_invalid&quot; | &quot;tool_target_out_of_scope&quot; | &quot;tool_budget_exceeded&quot; | &quot;proposal_not_found&quot; | &quot;proposal_conflict&quot; | &quot;proposal_consumed&quot; | &quot;run_not_found&quot; | &quot;run_terminal&quot; | &quot;run_cancelled&quot; | &quot;request_conflict&quot; | &quot;model_unavailable&quot; | &quot;model_timeout&quot; | &quot;model_response_too_large&quot; | &quot;session_deleted&quot; | &quot;memory_not_found&quot; | &quot;agent_disabled&quot; | &quot;agent_config_disabled&quot; | &quot;agent_store_corrupt&quot; | &quot;agent_media_invalid&quot; | &quot;agent_media_too_large&quot;</span>
+    <span class="p-type">&quot;invalid_request&quot; | &quot;scope_denied&quot; | &quot;profile_not_found&quot; | &quot;profile_capability_missing&quot; | &quot;context_budget_exceeded&quot; | &quot;fact_missing&quot; | &quot;tool_not_allowed&quot; | &quot;tool_args_invalid&quot; | &quot;tool_target_out_of_scope&quot; | &quot;tool_budget_exceeded&quot; | &quot;proposal_not_found&quot; | &quot;proposal_conflict&quot; | &quot;proposal_consumed&quot; | &quot;run_not_found&quot; | &quot;run_terminal&quot; | &quot;run_cancelled&quot; | &quot;run_interrupted&quot; | &quot;request_conflict&quot; | &quot;model_unavailable&quot; | &quot;model_timeout&quot; | &quot;model_response_too_large&quot; | &quot;session_deleted&quot; | &quot;memory_not_found&quot; | &quot;agent_disabled&quot; | &quot;agent_config_disabled&quot; | &quot;agent_config_corrupt&quot; | &quot;agent_store_corrupt&quot; | &quot;agent_media_invalid&quot; | &quot;agent_media_too_large&quot;</span>
     <span class="p-desc"></span>
   </div>
   <div class="prow">

@@ -121,6 +121,7 @@ export type AgentTask = {
   outputSchema?: Record<string, unknown>;
   requiredCapabilities?: ('text' | 'image' | 'tools')[];
   budgets?: Record<string, number>;
+  memoryCategories?: string[];
   steps: { id: string; tools?: string[]; maxToolCalls?: number }[];
   targetScope(input: Record<string, unknown>, context: unknown): string[] | Promise<string[]>;
   readFacts?(input: Record<string, unknown>, context: unknown): unknown[] | Promise<unknown[]>;
@@ -205,3 +206,4 @@ export function phoneMayCall(url: string): boolean;
 export function isMemoryCategory(value: string): boolean;
 export function isTerminalStatus(value: string): boolean;
 export function validRequestId(value: string): boolean;
+export function withRunDefaults(budgets?: Record<string, number>): Required<Record<string, number>>;

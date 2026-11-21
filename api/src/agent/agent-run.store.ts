@@ -28,6 +28,23 @@ export class AgentRunStore {
     return this.store.read(uid).runs[runId] || null;
   }
 
+  /** The pre-check a retry hits before any profile or session work happens:
+   *  the original job if the fingerprint matches, a conflict if it does not.
+   *  begin() below stays authoritative for concurrent first submissions. */
+  find(uid: string, requestId: string, requestHash: string): AgentStoredRun | null {
+    const data = this.store.read(uid);
+    const knownId = data.requestIndex[requestId];
+    if (!knownId) return null;
+    const existing = data.runs[knownId];
+    if (!existing) return null;
+    if (existing.requestHash !== requestHash) {
+      throw new AgentError('request_conflict', 'this request id was already used with different input', {
+        details: { requestId, runId: existing.runId },
+      });
+    }
+    return existing;
+  }
+
   async begin(uid: string, run: AgentStoredRun): Promise<{ run: AgentStoredRun; created: boolean }> {
     return this.store.update(uid, data => {
       const knownId = data.requestIndex[run.requestId];
@@ -95,7 +112,7 @@ export class AgentRunStore {
         run.status = 'interrupted';
         run.finishedAt = at;
         run.durationMs = Math.max(0, at - (run.startedAt || run.createdAt || at));
-        run.error = { code: 'run_terminal', message: 'the server restarted before the run finished' };
+        run.error = { code: 'run_interrupted', message: 'the server restarted before the run finished' };
         count++;
       }
       return count;

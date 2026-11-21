@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 
 const mocks = vi.hoisted(() => ({
-  navs: [], toast: vi.fn(), profiles: [], start: null,
+  navs: [], toast: vi.fn(), profiles: [], start: null, starts: [], runStatus: 'completed',
   USER: { id: 'u1', name: 'Owner' },
   config: { agent: { enabled: true } },
 }))
@@ -30,10 +30,11 @@ vi.mock('../agent/api.js', () => ({
     listMemories: vi.fn(async () => ({ memories: [] })),
     startRun: vi.fn(async body => {
       mocks.start = body
+      mocks.starts.push(body)
       return { runId: 'run_1', status: 'accepted' }
     }),
     getRun: vi.fn(async () => ({
-      runId: 'run_1', status: 'completed', result: { text: 'fixture answer' },
+      runId: 'run_1', status: mocks.runStatus, result: { text: 'fixture answer' },
     })),
     cancelRun: vi.fn(async () => ({ runId: 'run_1', status: 'cancelled' })),
     confirmProposal: vi.fn(async () => ({ applied: true, result: { version: 2 } })),
@@ -68,6 +69,8 @@ beforeEach(() => {
   mocks.navs = []
   mocks.toast = vi.fn()
   mocks.start = null
+  mocks.starts = []
+  mocks.runStatus = 'completed'
   mocks.config = { agent: { enabled: true } }
   mocks.profiles = [{
     id: 'default', source: 'default', provider: 'fixture', model: 'fixture',
@@ -111,7 +114,7 @@ describe('Agent page', () => {
     await act(async () => { cancel.click() })
     await flush()
     expect(agentApi.cancelRun).toHaveBeenCalledWith('run_1')
-    useAgent.getState().stopPolling()
+    // No manual stopPolling() here: unmount below must clean the interval up.
   })
 
   it('confirms a stored proposal', async () => {
@@ -128,6 +131,79 @@ describe('Agent page', () => {
     await act(async () => { confirm.click() })
     await flush()
     expect(agentApi.confirmProposal).toHaveBeenCalledWith('prop_1')
+    // Handled locally: the buttons reflect it instead of staying 'pending'.
+    const applied = button(host, 'Applied')
+    expect(applied).toBeTruthy()
+    expect(applied.disabled).toBe(true)
+    expect(button(host, 'Reject').disabled).toBe(true)
+  })
+
+  it('shows a proposal confirmation conflict instead of failing silently', async () => {
+    useAgent.setState({
+      activeRun: {
+        runId: 'run_1', status: 'completed',
+        result: { text: 'ready', proposal: { proposalId: 'prop_9', status: 'pending', changes: [] } },
+      },
+    })
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    agentApi.confirmProposal.mockRejectedValueOnce(new Error('The target changed after this proposal was made. Generate it again.'))
+    const confirm = button(host, 'Confirm')
+    await act(async () => { confirm.click() })
+    await flush()
+    expect(host.textContent).toContain('The target changed after this proposal was made')
+    // Not applied: the buttons stay usable for another attempt.
+    expect(button(host, 'Confirm').disabled).toBe(false)
+  })
+
+  it('reuses the request id while a submission is open and closes the window at a terminal state', async () => {
+    mocks.runStatus = 'running'
+    await act(async () => { root.render(<Agent />) })
+    await flush()
+    const prompt = host.querySelector('textarea')
+    await act(async () => { typeInto(prompt, 'hello') })
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    const firstId = mocks.starts[0].requestId
+
+    // Same text while the run is still open: the id is reused, as after a
+    // lost response, so the server deduplicates instead of calling the model.
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    expect(mocks.starts[1].requestId).toBe(firstId)
+
+    // A terminal state closes the idempotency window.
+    const cancel = button(host, 'Cancel')
+    await act(async () => { cancel.click() })
+    await flush()
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    expect(mocks.starts[2].requestId).not.toBe(firstId)
+
+    // A new conversation never carries the old id forward.
+    await act(async () => { button(host, 'New conversation').click() })
+    await act(async () => { button(host, 'Start run').click() })
+    await flush()
+    expect(mocks.starts[3].requestId).not.toBe(firstId)
+    expect(mocks.starts[3].sessionId).not.toBe(mocks.starts[2].sessionId)
+  })
+
+  it('stops polling when the page unmounts', async () => {
+    mocks.runStatus = 'running'
+    useAgent.setState({ activeRun: { runId: 'run_1', status: 'running' } })
+    vi.useFakeTimers()
+    try {
+      await act(async () => { root.render(<Agent />) })
+      await act(async () => { await vi.advanceTimersByTimeAsync(1300) })
+      const polls = () => agentApi.getRun.mock.calls.filter(call => call[0] === 'run_1').length
+      expect(polls()).toBeGreaterThanOrEqual(1)
+      act(() => { root.unmount() })
+      const afterUnmount = polls()
+      await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+      expect(polls()).toBe(afterUnmount)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows the disabled state from /api/config', async () => {

@@ -54,6 +54,7 @@ let root
 beforeEach(() => {
   mocks.navs = []
   mocks.toast = vi.fn()
+  mocks.CONFIG = { agent: { enabled: true } }
   mocks.profiles = [
     {
       id: 'default', source: 'default', provider: 'fixture', model: 'fixture',
@@ -119,6 +120,13 @@ describe('AgentSetup', () => {
       model: 'gpt-new',
       apiKey: 'sk-new-1234',
     })
+  })
+
+  it('shows the disabled state from /api/config', async () => {
+    mocks.CONFIG = { agent: { enabled: false } }
+    await act(async () => { root.render(<AgentSetup />) })
+    await flush()
+    expect(host.textContent).toContain('The agent runtime is disabled')
   })
 })
 

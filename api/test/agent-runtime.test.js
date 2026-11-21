@@ -197,6 +197,14 @@ test('the tool fence refuses four classes without executing the tool', async () 
   assert.deepEqual(executed, []);
   assert.equal(notAllowed.calls + badArgs.calls + outOfScope.calls + budget.calls, 0);
 
+  // The argument schema is checked before the call budget, per DESIGN §4.
+  const budgetWithBadArgs = createDispatcher({ registry, context, allowedToolIds: ['get_stub_fact'], maxCalls: 0 });
+  await assert.rejects(
+    budgetWithBadArgs.call('get_stub_fact', { id: 'target-1', extra: true }),
+    error => error.code === 'tool_args_invalid',
+  );
+  assert.deepEqual(executed, []);
+
   const allowed = createDispatcher({ registry, context, allowedToolIds: ['get_stub_fact'], maxCalls: 2 });
   const result = await allowed.call('get_stub_fact', { id: 'target-1' });
   assert.equal(result.result.objectId, 'target-1');
@@ -308,11 +316,17 @@ test('memory selection is scoped, ordered and deletion leaves the next context',
     { id: 'm1', scope: 'scope-a', category: 'preference', value: { like: 'morning' }, updatedAt: 10, version: 1 },
     { id: 'm2', scope: 'scope-b', category: 'preference', value: { like: 'evening' }, updatedAt: 20, version: 1 },
     { id: 'm3', scope: 'scope-a', category: 'goal', value: { goal: 'bench 100' }, updatedAt: 30, version: 1 },
+    { id: 'm4', category: 'preference', value: { like: 'unscoped' }, updatedAt: 40, version: 1 },
   ];
   const selected = selectMemories(memories, { scope: 'scope-a', limit: 8 });
   assert.deepEqual(selected.map(item => item.id), ['m3', 'm1']);
   const projected = projectMemories(selected);
   assert.deepEqual(projected.map(item => item.id), ['m3', 'm1']);
+
+  // A record without a scope never passes a scope filter: fail closed.
+  assert.equal(selectMemories(memories, { scope: 'scope-a' }).some(item => item.id === 'm4'), false);
+  // Without a scope filter the host still sees its own pre-filtered list.
+  assert.deepEqual(selectMemories([memories[3]]).map(item => item.id), ['m4']);
 
   const store = createMemoryStore([], () => 1);
   const memory = store.create({ scope: 'scope-a', category: 'preference', value: { token: 'secret', like: 'morning' }, source: 'user' });

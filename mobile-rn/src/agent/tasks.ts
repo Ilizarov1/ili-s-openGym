@@ -7,12 +7,13 @@ export const LOCAL_TASK_ID = 'stub.local.v1';
 export const LOCAL_PROFILE = 'local-profile';
 export const LOCAL_QUEUE = 'local-queue';
 
-// The stub target version is the one the fixture proposal names. The facts
-// still describe the current workspace; only the version contract is fixed.
-const profileVersion = (_data: LocalState): number => 1;
-const queueVersion = (_data: LocalState): number => 1;
+/** The version a target had when this run read it. The runtime wires this to
+ *  the agent_kv store so a proposal made after a confirmed write names the
+ *  new version instead of a stale one. */
+export type TargetVersionReader = (id: string) => number;
 
-export function createLocalTask(data: LocalState): AgentTask {
+export function createLocalTask(data: LocalState, options: { targetVersion?: TargetVersionReader } = {}): AgentTask {
+  const versionOf = options.targetVersion ?? ((): number => 1);
   return {
     id: LOCAL_TASK_ID,
     version: 1,
@@ -41,13 +42,15 @@ export function createLocalTask(data: LocalState): AgentTask {
       return [LOCAL_PROFILE, LOCAL_QUEUE];
     },
     readFacts() {
+      const profileAt = versionOf(LOCAL_PROFILE);
+      const queueAt = versionOf(LOCAL_QUEUE);
       return [
         {
           source: 'workspace.profile',
           objectId: LOCAL_PROFILE,
-          version: profileVersion(data),
+          version: profileAt,
           content: {
-            version: profileVersion(data),
+            version: profileAt,
             routines: (data.profile.routines || []).map(routine => ({ id: routine.id, name: routine.name })),
             workouts: (data.profile.workouts || []).length,
             routinesCount: (data.profile.routines || []).length,
@@ -56,9 +59,9 @@ export function createLocalTask(data: LocalState): AgentTask {
         {
           source: 'workspace.queue',
           objectId: LOCAL_QUEUE,
-          version: queueVersion(data),
+          version: queueAt,
           content: {
-            version: queueVersion(data),
+            version: queueAt,
             pending: (data.queue || []).map(item => ({ id: item.workout.id, name: item.workout.name, day: item.workout.d })),
           },
         },
@@ -81,15 +84,16 @@ export function createLocalTask(data: LocalState): AgentTask {
   };
 }
 
-export function createLocalTools(data: LocalState) {
+export function createLocalTools(data: LocalState, options: { targetVersion?: TargetVersionReader } = {}) {
+  const versionOf = options.targetVersion ?? ((): number => 1);
   const calls = new Map<string, number>();
   const note = (id: string) => calls.set(id, (calls.get(id) || 0) + 1);
   const fact = (id: string) => {
     if (id === LOCAL_PROFILE) {
-      return { objectId: id, version: profileVersion(data), content: { routines: (data.profile.routines || []).length, workouts: (data.profile.workouts || []).length } };
+      return { objectId: id, version: versionOf(id), content: { routines: (data.profile.routines || []).length, workouts: (data.profile.workouts || []).length } };
     }
     if (id === LOCAL_QUEUE) {
-      return { objectId: id, version: queueVersion(data), content: { pending: data.queue?.length || 0 } };
+      return { objectId: id, version: versionOf(id), content: { pending: data.queue?.length || 0 } };
     }
     return { objectId: id, version: 0, content: {} };
   };

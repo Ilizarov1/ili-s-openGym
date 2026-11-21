@@ -14,8 +14,8 @@ import {
 import { RestTimer } from './src/restTimer';
 import { workoutSummary, type WorkoutSummary } from './src/progress';
 import { useGym } from './src/useGym';
-import { readLocal } from './src/storage';
-import { recoverAgentRuns } from './src/agent';
+import { readLocal, workspaceScope } from './src/storage';
+import { activeRunIds, recoverAgentRuns } from './src/agent';
 import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines } from './src/profileChanges';
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
 import { enableRestNotifications, useRestNotification } from './src/restNotifications';
@@ -87,10 +87,12 @@ function AppScreen() {
   const recoveredScope = useRef<string | null>(null);
   useEffect(() => {
     if (!workspace) return;
-    const scope = workspace.connection ? `${workspace.connection.server}|${workspace.connection.user.id}` : 'practice';
+    const scope = workspaceScope(workspace.connection);
     if (recoveredScope.current === scope) return;
     recoveredScope.current = scope;
-    try { recoverAgentRuns(workspace.connection); } catch { /* a storage failure must not block boot */ }
+    // Runs this process is still executing are left alone: only leftovers
+    // from a previous process are marked interrupted.
+    try { recoverAgentRuns(workspace.connection, activeRunIds()); } catch { /* a storage failure must not block boot */ }
   }, [workspace]);
   const restAlertError = useRestNotification(
     workspace ? workspace.data.restAlerts === true : undefined,

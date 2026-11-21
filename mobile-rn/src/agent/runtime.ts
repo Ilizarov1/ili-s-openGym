@@ -11,6 +11,7 @@ import {
   runAgent,
   selectMemories,
   validRequestId,
+  withRunDefaults,
 } from './shared';
 import type { AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionSummary, AgentStartInput } from './types';
 import type { Connection } from '../server';
@@ -63,14 +64,26 @@ interface ActiveRun {
   state: ReturnType<typeof createRunState>;
 }
 
+// Runs live at module level, not per runtime instance: the screen recreates
+// the runtime whenever the workspace object identity changes (a background
+// sync replaces it every few seconds on a paired account), and a recreated
+// runtime must still be able to cancel a run its predecessor started.
+const activeRuns = new Map<string, ActiveRun>();
+
+/** The runs this process is executing right now; recovery must not touch them. */
+export function activeRunIds(): Set<string> {
+  return new Set(activeRuns.keys());
+}
+
 export function createLocalRuntime(connection: Connection | null, data: LocalState) {
   const scope = workspaceScope(connection);
   const store = new AgentStore();
   const config = new AgentConfig(store);
   const gateway = new AgentGateway(config);
-  const task = createLocalTask(data);
-  const tools = createLocalTools(data);
-  const active = new Map<string, ActiveRun>();
+  const targetVersion = (id: string): number =>
+    store.readKv<{ version: number }>(scope, `target:${id}`)?.version ?? 1;
+  const task = createLocalTask(data, { targetVersion });
+  const tools = createLocalTools(data, { targetVersion });
 
   function proposalCreator(runId: string) {
     return {
@@ -102,13 +115,19 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope));
         return;
       }
-      const history = (session?.messages || []).slice(-8).map(message => ({
+      const budgets = withRunDefaults(task.budgets);
+      const taskCategories = task.memoryCategories;
+      const history = (session?.messages || []).slice(-budgets.historyItems).map(message => ({
         id: message.id,
         role: message.role,
         content: message.content,
         createdAt: message.createdAt,
       }));
-      const memories = selectMemories(store.listMemories(scope), { limit: 8, maxChars: 4000 });
+      const memories = selectMemories(store.listMemories(scope), {
+        ...(Array.isArray(taskCategories) && taskCategories.length ? { kinds: taskCategories } : {}),
+        limit: budgets.memoryItems,
+        maxChars: 4000,
+      });
       const input = (run as AgentRunRow & { input?: Record<string, unknown> }).input || {};
       const prompt = String(input.prompt || '');
       const context = bindContext({
@@ -171,7 +190,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       }
       try { store.finishRun(rowOf(state.record() as unknown as Record<string, unknown>, scope)); } catch { /* already gone */ }
     } finally {
-      active.delete(state.runId);
+      activeRuns.delete(state.runId);
     }
   }
 
@@ -218,7 +237,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
           },
         },
       );
-      active.set(runId, { scope, controller, state });
+      activeRuns.set(runId, { scope, controller, state });
       execute(begun.run, resolved.profile as unknown as Record<string, unknown>, state, controller)
         .catch(() => undefined);
       return run;
@@ -232,7 +251,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
       const current = store.getRun(scope, runId);
       if (!current) throw new AgentError('run_not_found', undefined, { details: { runId } });
       if (['completed', 'failed', 'cancelled', 'interrupted'].includes(current.status)) return current;
-      const running = active.get(runId);
+      const running = activeRuns.get(runId);
       if (running) {
         running.state.cancel('cancelled by the user');
         running.controller.abort();
@@ -315,7 +334,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
     },
 
     recover(): number {
-      return store.markInterrupted(scope);
+      return store.markInterrupted(scope, activeRunIds());
     },
   };
 

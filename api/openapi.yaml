@@ -4005,7 +4005,6 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AgentSession' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/AgentNotFound' }
         '409': { $ref: '#/components/responses/AgentConflict' }
         '503': { $ref: '#/components/responses/AgentDisabled' }
     delete:
@@ -4407,6 +4406,7 @@ components:
             - run_not_found
             - run_terminal
             - run_cancelled
+            - run_interrupted
             - request_conflict
             - model_unavailable
             - model_timeout
@@ -4415,6 +4415,7 @@ components:
             - memory_not_found
             - agent_disabled
             - agent_config_disabled
+            - agent_config_corrupt
             - agent_store_corrupt
             - agent_media_invalid
             - agent_media_too_large

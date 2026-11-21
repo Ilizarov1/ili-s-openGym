@@ -13,6 +13,7 @@ import { AgentError } from '../../agent-runtime/errors.js';
 import { providerCapabilities } from '../../agent-runtime/model-gateway.js';
 import type { AgentAccountData, AgentProfilePublic, AgentStoredProfile } from './agent.types.js';
 import { AgentCrypto } from './agent-crypto.js';
+import { fixtureAllowed } from './agent.flags.js';
 import { AgentStore } from './agent.store.js';
 
 const SERVER_PROVIDERS = new Set(['fixture', 'openai']);
@@ -24,10 +25,6 @@ export interface ResolvedAgentProfile {
   model: string;
   baseUrl?: string;
   apiKey?: string | null;
-}
-
-function fixtureAllowed(): boolean {
-  return process.env.NODE_ENV !== 'production' && !/^(0|false|no|off)$/i.test(process.env.AGENT_FIXTURE_PROVIDER || '');
 }
 
 function keyHintOf(key: string): string {
