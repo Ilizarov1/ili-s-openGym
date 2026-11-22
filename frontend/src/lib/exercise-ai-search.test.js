@@ -679,6 +679,18 @@ describe('AI exercise within-query top-3 selection (Group B)', () => {
       fallback: { understanding: '推胸机' },
     })
     expect(idsOf(result)).toEqual(['s-lever'])
+
+    const oppositeFallback = matcher.match({
+      candidates: [{ name: 'seated chest press', equipment: 'leverage machine', level: 'high', rationale: '坐姿推胸' }],
+      fallback: { understanding: '推胸机', equipment: ['cable'] },
+    })
+    expect(idsOf(oppositeFallback)).toEqual(['s-lever'])
+
+    const invalidCandidateEq = matcher.match({
+      candidates: [{ name: 'seated chest press', equipment: 'not-a-valid-slug', level: 'high', rationale: '坐姿推胸' }],
+      fallback: { understanding: '推胸机', equipment: ['leverage machine'] },
+    })
+    expect(idsOf(invalidCandidateEq)).toEqual(['s-cable'])
   })
 
   it('reviews ranks 2 and 3 when earlier items are rejected, and ignores rank 4', () => {
@@ -739,37 +751,28 @@ describe('AI exercise within-query top-3 selection (Group B)', () => {
     }))).toEqual(['s-cable'])
   })
 
-  it('uses single-value fallback equipment only for within-query ordering, never conflict or bonus', () => {
-    const cable = synth('s-cable', 'cable seated chest press', 'cable')
-    const lever = synth('s-lever', 'lever seated chest press', 'leverage machine')
-    const bw = synth('s-bw', 'push-up', 'body weight')
-    const other = synth('s-other', 'cable fly', 'cable')
+  it('does not use single-value fallback equipment for within-query ordering', () => {
+    const sled = synth('1583', 'sled reverse hack squat', 'sled machine', { bp: 'upper legs' })
+    const lever = synth('5784', 'lever reverse vertical hack squat', 'leverage machine', { bp: 'upper legs' })
     const matcher = makeInjected({
-      'seated chest press': [
-        { exercise: cable, score: 200 },
-        { exercise: lever, score: 190 },
+      'reverse hack squat': [
+        { exercise: sled, score: 299 },
+        { exercise: lever, score: 297 },
       ],
-      'push-up': [{ exercise: bw, score: 120 }],
-      'cable fly': [{ exercise: other, score: 195 }],
-    }, [cable, lever, bw, other])
+    }, [sled, lever])
 
-    // Single deduplicated valid fallback equipment orders rank 2 ahead of rank 1,
-    // while keeping its raw score (190 < 195) without adding EQ_BONUS.
-    const ordered = matcher.match({
-      candidates: [
-        { name: 'seated chest press', level: 'high', rationale: 'a' },
-        { name: 'cable fly', level: 'high', rationale: 'b' },
-      ],
-      fallback: { understanding: 'x', equipment: ['leverage machine', 'leverage machine', 'not-a-slug'] },
+    const withoutFallback = matcher.match({
+      candidates: [{ name: 'reverse hack squat', level: 'low', rationale: '反向哈克深蹲' }],
+      fallback: { understanding: '腿部器械' },
     })
-    expect(idsOf(ordered)).toEqual(['s-other', 's-lever'])
+    const withFallback = matcher.match({
+      candidates: [{ name: 'reverse hack squat', level: 'low', rationale: '反向哈克深蹲' }],
+      fallback: { understanding: '腿部器械', equipment: ['leverage machine'] },
+    })
 
-    // Single fallback equipment must not trigger hard bodyweight conflict.
-    const noConflict = matcher.match({
-      candidates: [{ name: 'push-up', level: 'high', rationale: 'x' }],
-      fallback: { understanding: 'x', equipment: ['smith machine'] },
-    })
-    expect(idsOf(noConflict)).toEqual(['s-bw'])
+    expect(withFallback.items).toEqual(withoutFallback.items)
+    expect(idsOf(withFallback)).toEqual(['1583'])
+    expect(withFallback.fallback.equipment).toEqual(['leverage machine'])
   })
 
   it('prefers a rank-2 exact name or saved alias over a rank-1 non-exact hit, and still rejects conflicting exact hits', () => {

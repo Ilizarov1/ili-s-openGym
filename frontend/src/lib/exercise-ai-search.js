@@ -408,7 +408,6 @@ function matchOne(
   recorder,
   candidateIndex,
   equipmentValues,
-  fallbackEquipmentHint,
 ) {
   const filterEvent = (decision, exercise) => {
     if (!recorder) return
@@ -430,7 +429,6 @@ function matchOne(
   const validCandidateEquipment = typeof candidate.equipment === 'string'
     ? filterSlugs([clean(candidate.equipment)], equipmentValues)?.[0] || ''
     : ''
-  const equipmentHint = validCandidateEquipment || fallbackEquipmentHint
   // The English query only runs for a Chinese name that also carries an
   // English one; the diagnostics tag that query as the English recall.
   const useEnglishQuery = isCjkName(name) && !!nameEn
@@ -446,7 +444,7 @@ function matchOne(
     if (first && first.exercise && (!firstBest || first.score > firstBest.score)) {
       firstBest = { exercise: first.exercise, score: first.score }
     }
-    const picked = pickQueryHit(results, queries, names, equipmentHint, candidate.equipment, genericWords)
+    const picked = pickQueryHit(results, queries, names, validCandidateEquipment, candidate.equipment, genericWords)
     if (!picked) continue
     if (!best || picked.score > best.score) best = picked
   }
@@ -573,7 +571,6 @@ export function createExerciseAiSearch(options) {
         : output && typeof output === 'object' ? output : {}
       const candidates = Array.isArray(source.candidates) ? source.candidates : []
       const fallback = cleanFallback(source.fallback, hints.hintText, bodyPartValues, equipmentValues)
-      const fallbackEquipmentHint = fallback.equipment?.length === 1 ? fallback.equipment[0] : ''
       const pool = poolOf()
       const byId = new Map()
       for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
@@ -585,7 +582,6 @@ export function createExerciseAiSearch(options) {
           recorder,
           candidateIndex,
           equipmentValues,
-          fallbackEquipmentHint,
         )
         if (!hit) continue
         const current = byId.get(hit.exerciseId)
