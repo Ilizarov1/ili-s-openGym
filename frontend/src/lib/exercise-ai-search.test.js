@@ -1683,7 +1683,13 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
 
   it('P3-A: rejects cross-body-part false hits while allowing synergistic muscles', () => {
     const events = []
-    const res = AI.zh.match({
+    const shrugAndCalf = EXDB.filter(e => ['1221', '1220', '1625'].includes(e.id))
+    const strictGuardSearch = createExerciseSearch({
+      nameText: exercise => `${zh[exercise.id] || exercise.n} ${exercise.n}`,
+      classicIds: V13_IDS,
+    })
+    const strictGuardAi = aiOf(strictGuardSearch, shrugAndCalf)
+    const res = strictGuardAi.match({
       candidates: [{
         name: 'lever bench press',
         equipment: 'leverage machine',
@@ -1695,7 +1701,7 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
     }, {
       diagnostics: { emit: event => events.push(event) },
     })
-    // Must not falsely match 1221 (back shrug), 1220 (lower legs calf), or 1625 (upper arms triceps)
+    // Must reject 1221 (back shrug), 1220 (lower legs calf), and 1625 (upper arms triceps)
     expect(idsOf(res)).toEqual([])
     expect(events.some(e => e.stage === 'filter' && e.decision === 'body_part_conflict')).toBe(true)
 
@@ -1765,5 +1771,66 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
       candidates: [{ name: 'leg curl', posture: 'seated', equipment: 'leverage machine', bodyPart: 'upper legs', level: 'medium', rationale: 'seated' }],
     })
     expect(seatedCurlRes.items[0].exerciseId).toBe('0599')
+  })
+
+  it('P3-B: recalls 1041 via BM25 fallback at medium level across 7 lying bench paraphrases without hallucinating on unknown tokens', () => {
+    const queries = [
+      'lever lying bench press',
+      'lying lever bench press',
+      'plate loaded bench press',
+      'flat machine chest press',
+      'horizontal machine chest press',
+      'supine chest press',
+      'lever bench press',
+    ]
+    for (const q of queries) {
+      const events = []
+      const res = AI.zh.match({
+        candidates: [{
+          name: q,
+          equipment: 'leverage machine',
+          bodyPart: 'chest',
+          level: 'high',
+          rationale: '挂片式平躺胸推器械',
+        }],
+        fallback: { understanding: '固定仰卧推胸器械', bodyParts: ['chest'], equipment: ['leverage machine'] },
+      }, {
+        diagnostics: { emit: event => events.push(event) },
+      })
+      expect(res.items[0]?.exerciseId, q).toBe('1041')
+      expect(res.items[0]?.level, q).toBe('medium')
+      expect('bm25' in res.items[0]).toBe(false)
+      expect(events.some(e => e.stage === 'recall' && e.queryOrigin === 'bm25')).toBe(true)
+    }
+
+    for (const bogus of [
+      'levitating barbell bench press',
+      'quantum flux squat machine',
+      'plate of pasta',
+      'orbital prism contraption',
+    ]) {
+      const res = AI.zh.match({
+        candidates: [{ name: bogus, level: 'high', rationale: 'out of catalogue' }],
+      })
+      expect(res.items, bogus).toEqual([])
+    }
+
+    // Existing strict-AND hits must never emit bm25 diagnostics
+    const cleanEvents = []
+    const cleanRes = AI.zh.match({
+      candidates: [{
+        name: '杠铃卧推',
+        nameEn: 'barbell bench press',
+        equipment: 'barbell',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '经典卧推',
+      }],
+    }, {
+      diagnostics: { emit: event => cleanEvents.push(event) },
+    })
+    expect(cleanRes.items[0]?.exerciseId).toBe('0025')
+    expect(cleanRes.items[0]?.level).toBe('high')
+    expect(cleanEvents.some(e => e.stage === 'recall' && e.queryOrigin === 'bm25')).toBe(false)
   })
 })

@@ -10,6 +10,7 @@
 // this path; it only powers the keyword zero-result suggestions.
 
 import SEARCH_META from './exercise-search-meta.json' with { type: 'json' }
+import { searchBm25 } from './exercise-bm25.js'
 
 export const BASE_FLOOR = 60
 export const EQ_BONUS = 25
@@ -47,7 +48,7 @@ const MACHINE_HINTS = new Set([
 const BODYWEIGHT = new Set(['body weight', 'band', 'resistance band'])
 const FIXED_MACHINES = new Set(['leverage machine', 'sled machine', 'smith machine'])
 const FREE_WEIGHTS = new Set([
-  'barbell', 'ez barbell', 'olympic barbell', 'trap bar', 'dumbbell', 'kettlebell', 'weight plate',
+  'barbell', 'ez barbell', 'olympic barbell', 'trap bar', 'dumbbell', 'kettlebell', 'weight plate', 'weighted',
 ])
 const POSTURE_SLUGS = new Set(SEARCH_META?.postures || [
   'seated', 'standing', 'supine', 'prone', 'side_lying', 'kneeling', 'bent_over', 'hanging',
@@ -287,9 +288,10 @@ function exactNameMatch(exercise, values) {
   return false
 }
 
-function levelFor(modelLevel, { exact, fallback }) {
+function levelFor(modelLevel, { exact, fallback, bm25 = false }) {
   const model = LEVEL_RANK[modelLevel] ? modelLevel : 'low'
   if (fallback) return 'low'
+  if (bm25) return 'medium'
   if (exact && model === 'high') return 'high'
   if (exact) return 'medium'
   return 'medium'
@@ -505,6 +507,7 @@ function pickQueryHit(
   const [primaryName = '', nameEn = ''] = names
   let picked = null
   let exactConflict = null
+  let sawNonConflictRejection = false
   for (let index = 0; index < limit; index++) {
     const entry = results[index]
     if (!entry || !entry.exercise) continue
@@ -514,6 +517,9 @@ function pickQueryHit(
     if (rejection) {
       if (exact && rejection === 'equipment_conflict' && !exactConflict) {
         exactConflict = { exercise, score: entry.score }
+      }
+      if (rejection === 'below_floor' || rejection === 'no_name_evidence') {
+        sawNonConflictRejection = true
       }
       continue
     }
@@ -533,9 +539,9 @@ function pickQueryHit(
     if (!picked || isBetterQueryHit(hit, picked)) picked = hit
   }
   if (exactConflict && (!picked || !picked.exact)) {
-    return { hit: null, exactConflict }
+    return { hit: null, exactConflict, sawNonConflictRejection }
   }
-  return { hit: picked, exactConflict: null }
+  return { hit: picked, exactConflict: null, sawNonConflictRejection }
 }
 
 function compareRankedHits(a, b) {
@@ -546,6 +552,7 @@ function compareRankedHits(a, b) {
   if (a.equipmentMatch !== b.equipmentMatch) return a.equipmentMatch ? -1 : 1
   if (a.bodyPartMatch !== b.bodyPartMatch) return a.bodyPartMatch ? -1 : 1
   if (a.postureMatch !== b.postureMatch) return a.postureMatch ? -1 : 1
+  if (Boolean(a.bm25) !== Boolean(b.bm25)) return a.bm25 ? 1 : -1
   if (a.unsupportedVariants !== b.unsupportedVariants) {
     return a.unsupportedVariants - b.unsupportedVariants
   }
@@ -601,6 +608,7 @@ function matchOne(
   let best = null
   let firstBest = null
   let exactConflict = null
+  let sawNonConflictRejection = false
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index]
     const results = searchScored(pool, query) || []
@@ -609,7 +617,11 @@ function matchOne(
     if (first && first.exercise && (!firstBest || first.score > firstBest.score)) {
       firstBest = { exercise: first.exercise, score: first.score }
     }
-    const { hit: picked, exactConflict: queryExactConflict } = pickQueryHit(
+    const {
+      hit: picked,
+      exactConflict: queryExactConflict,
+      sawNonConflictRejection: queryNonConflictRejection,
+    } = pickQueryHit(
       results,
       queries,
       names,
@@ -620,6 +632,9 @@ function matchOne(
       hintText,
       inferredPosture,
     )
+    if (queryNonConflictRejection && !isCjkName(query)) {
+      sawNonConflictRejection = true
+    }
     if (queryExactConflict && (!exactConflict || queryExactConflict.score > exactConflict.score)) {
       exactConflict = queryExactConflict
     }
@@ -631,6 +646,45 @@ function matchOne(
   if (exactConflict && (!best || !best.exact)) {
     filterEvent('equipment_conflict', exactConflict.exercise)
     return null
+  }
+
+  // Stage 2: BM25 zero-hit / conflict-rejected fallback for non-CJK queries.
+  if (!best && !exactConflict && !sawNonConflictRejection) {
+    for (let index = 0; index < queries.length; index++) {
+      const query = queries[index]
+      if (!query || isCjkName(query)) continue
+      const bm25Results = searchBm25(pool, query, 5)
+      if (recorder && bm25Results.length > 0) {
+        recallEvent(recorder, candidateIndex, query, 'bm25', bm25Results)
+      }
+      const first = bm25Results[0]
+      if (first && first.exercise && (!firstBest || first.score > firstBest.score)) {
+        firstBest = { exercise: first.exercise, score: first.score }
+      }
+      const { hit: bm25Picked, exactConflict: bm25Conflict } = pickQueryHit(
+        bm25Results,
+        queries,
+        names,
+        validCandidateEquipment,
+        validCandidateBodyPart,
+        candidate.equipment,
+        genericWords,
+        hintText,
+        inferredPosture,
+      )
+      if (bm25Conflict && (!exactConflict || bm25Conflict.score > exactConflict.score)) {
+        exactConflict = bm25Conflict
+      }
+      if (!bm25Picked) continue
+      const marked = { ...bm25Picked, exact: false, bm25: true }
+      if (!best || isBetterCandidateQueryHit(marked, best)) {
+        best = marked
+      }
+    }
+    if (exactConflict && !best) {
+      filterEvent('equipment_conflict', exactConflict.exercise)
+      return null
+    }
   }
 
   // An exact name or saved alias is authoritative even when the shared engine
@@ -647,7 +701,7 @@ function matchOne(
   // decides; when it is ambiguous, an evidence-backed keyword hit still
   // stands, otherwise the candidate is dropped — and only that drop, caused
   // by the top two being too close, is reported as the ambiguity rejection.
-  if (!exactName && isCjkName(name)) {
+  if (!exactName && !best?.bm25 && isCjkName(name)) {
     const pick = cjkFallback(pool, name)
     if (pick.exercise) {
       best = { exercise: pick.exercise, score: 0 }
@@ -709,8 +763,9 @@ function matchOne(
   let adjusted = fallback ? 0 : best.score
   if (candidate.equipment && clean(candidate.equipment) === clean(exercise.eq)) adjusted += EQ_BONUS
   if (candidate.bodyPart && clean(candidate.bodyPart) === clean(exercise.bp)) adjusted += BP_BONUS
-  const exact = !fallback && exactName
-  const level = levelFor(modelLevel, { exact, fallback })
+  const bm25Hit = !fallback && Boolean(best.bm25)
+  const exact = !fallback && !bm25Hit && exactName
+  const level = levelFor(modelLevel, { exact, fallback, bm25: bm25Hit })
   const rationale = clean(candidate.rationale).slice(0, 200) || name
   const equipmentMatch = Boolean(validCandidateEquipment && clean(exercise.eq) === validCandidateEquipment)
   const bodyPartMatch = Boolean(validCandidateBodyPart && clean(exercise.bp) === validCandidateBodyPart)
@@ -727,6 +782,7 @@ function matchOne(
     score: adjusted,
     exact,
     fallback,
+    bm25: bm25Hit,
     modelLevel,
     equipmentMatch,
     bodyPartMatch,
@@ -1003,6 +1059,7 @@ export function createExerciseAiSearch(options) {
           score: _score,
           exact: _exact,
           fallback: _fallback,
+          bm25: _bm25,
           modelLevel: _modelLevel,
           equipmentMatch: _equipmentMatch,
           bodyPartMatch: _bodyPartMatch,

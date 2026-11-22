@@ -478,3 +478,26 @@ test('filter accepts body_part_conflict while preserving schemaVersion 1', () =>
     id: '1221',
   });
 });
+
+test('recall accepts bm25 queryOrigin while preserving schemaVersion 1', () => {
+  const { emit, sink } = traceFor('rn');
+  emit({
+    stage: 'recall',
+    candidateIndex: 0,
+    queryOrigin: 'bm25',
+    queryWordCount: 4,
+    hitCount: 1,
+    top: [{ id: '1041', score: 132 }],
+  });
+  assert.equal(sink.lines.length, 1);
+  const event = parsed(sink)[0];
+  assert.equal(event.schemaVersion, 1);
+  assert.deepEqual(fieldsOf(event), {
+    stage: 'recall',
+    candidateIndex: 0,
+    queryOrigin: 'bm25',
+    queryWordCount: 4,
+    hitCount: 1,
+    top: [{ id: '1041', score: 132 }],
+  });
+});

@@ -4752,7 +4752,7 @@
 {"id":"5225","n":"smith back wide shrug","zh":"史密斯机背后宽握耸肩","eq":"smith machine","bp":"back","tg":"traps"},
 {"id":"4179","n":"smith banded full squat","zh":"史密斯弹力带全蹲","eq":"smith machine","bp":"upper legs","tg":"quads","p":"standing"},
 {"id":"0747","n":"smith behind neck press","zh":"史密斯机颈后推举","eq":"smith machine","bp":"shoulders","tg":"delts"},
-{"id":"0748","n":"smith bench press","zh":"史密斯机卧推","eq":"smith machine","bp":"chest","tg":"pectorals","p":"supine","a":["smith flat bench press","史密斯平板卧推"]},
+{"id":"0748","n":"smith bench press","zh":"史密斯机卧推","eq":"smith machine","bp":"chest","tg":"pectorals","p":"supine","a":["smith bench press machine","史密斯平板卧推"]},
 {"id":"11303","n":"smith bench squat","zh":"史密斯机凳上深蹲","eq":"smith machine","bp":"upper legs","tg":"quads","p":"standing"},
 {"id":"0749","n":"smith bent knee good morning","zh":"史密斯机屈膝早安式体前屈","eq":"smith machine","bp":"upper legs","tg":"hamstrings","p":"bent_over"},
 {"id":"5316","n":"smith bent over narrow pronated grip row","zh":"史密斯机俯身窄距正握划船","eq":"smith machine","bp":"back","tg":"upper back","p":"bent_over"},

@@ -30,7 +30,7 @@ const MEDIA_STATUSES = new Set(['ready', 'failed', 'cancelled']);
 const MODEL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const END_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 const END_PHASES = new Set(['submit', 'attachments', 'model', 'recognition', 'match', 'poll']);
-const QUERY_ORIGINS = new Set(['primary', 'english']);
+const QUERY_ORIGINS = new Set(['primary', 'english', 'bm25']);
 const FILTER_DECISIONS = new Set([
   'invalid_candidate',
   'no_hit',
