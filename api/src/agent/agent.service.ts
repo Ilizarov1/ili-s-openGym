@@ -13,6 +13,7 @@ import {
   withRunDefaults,
 } from '../../agent-runtime/index.js';
 import type { ProposalService, RunContext, RunRecord } from '../../agent-runtime/contracts.js';
+import { createExerciseSearchTrace } from '../../agent-runtime/exercise-search-diagnostics.js';
 import { AccountStore } from '../common/persistence/account-store.js';
 import type {
   AgentMemory, AgentProfilePublic, AgentProfileSummary, AgentProposal, AgentRunResult,
@@ -295,6 +296,14 @@ export class AgentService implements OnModuleInit {
         content: message.content,
         createdAt: message.createdAt,
       }));
+      // Exercise-search diagnostics (EVAL_CLI_EXECUTION.md D03): the switch is
+      // read at execution time and only for the matching task. The sink is a
+      // run-local function the shared orchestrator consumes from meta; with the
+      // switch off the meta below is byte-for-byte what it was before.
+      const exerciseSearchSink = process.env.AGENT_EXERCISE_SEARCH_DIAGNOSTICS === '1'
+        && task.id === EXERCISE_SEARCH_TASK_ID
+        ? createExerciseSearchTrace({ traceId: request.requestId, source: 'api', enabled: true })
+        : undefined;
       const context = bindContext({
         scope: uid,
         runId: run.runId,
@@ -314,7 +323,12 @@ export class AgentService implements OnModuleInit {
         signal: controller.signal,
         memories: memoryProjection,
         history,
-        meta: { uid, attachments, ...(session ? { sessionId: session.id } : {}) },
+        meta: {
+          uid,
+          attachments,
+          ...(session ? { sessionId: session.id } : {}),
+          ...(exerciseSearchSink ? { exerciseSearchDiagnostic: exerciseSearchSink } : {}),
+        },
         ids,
       }) as unknown as RunContext;
       const result = await runAgent({

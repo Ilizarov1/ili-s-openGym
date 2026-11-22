@@ -19,6 +19,7 @@ node_modules
 .claude/
 .agents/
 .superpowers/
+.codex/
 
 # Nix build result symlinks
 result

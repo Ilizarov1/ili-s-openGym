@@ -377,3 +377,267 @@ describe('AI exercise retrieval goldens (3.4)', () => {
     expect(wrong).toEqual([])
   })
 })
+
+describe('AI exercise matcher diagnostics (D04)', () => {
+  // Pools with a source of trust for public ids, mirroring the RN rule
+  // (catalogue entries only); the Web one is object identity in exercises.js.
+  const aiPublicOf = (engine, list) => createExerciseAiSearch({
+    searchScored: engine.searchScored,
+    list,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+  const PUBLIC_AI = {
+    en: aiPublicOf(EN_SEARCH, EN_POOL),
+    zh: aiPublicOf(ZH_SEARCH, ZH_POOL),
+    custom: aiPublicOf(CUSTOM_SEARCH, CUSTOM_POOL),
+  }
+  const collect = (matcher, output, evaluation) => {
+    const events = []
+    const result = matcher.match(output, {
+      // Production callers pass only `{ emit }`; the evaluation adds itself.
+      diagnostics: {
+        emit: event => events.push(event),
+        ...(evaluation ? { evaluation } : {}),
+      },
+    })
+    return { events, result }
+  }
+  const recalls = events => events.filter(event => event.stage === 'recall')
+  const filters = events => events.filter(event => event.stage === 'filter')
+  const display = events => events.find(event => event.stage === 'display')
+
+  it('keeps the production event shapes fixed', () => {
+    const { events } = collect(PUBLIC_AI.custom, {
+      candidates: [{ name: 'my bench', level: 'high', rationale: '保存的别名' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(events.map(event => Object.keys(event))).toEqual([
+      ['stage', 'candidateIndex', 'queryOrigin', 'queryWordCount', 'hitCount', 'top'],
+      ['stage', 'candidateIndex', 'decision', 'id'],
+      ['stage', 'resultCount', 'publicIds', 'customCount', 'fallbackOnly', 'elapsedMs'],
+    ])
+  })
+
+  it('records an empty recall and a no_hit when the query finds nothing', () => {
+    const injected = createExerciseAiSearch({
+      searchScored: () => [],
+      list: EN_POOL,
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: exercise => exercise.custom !== true,
+    })
+    const { events, result } = collect(injected, {
+      candidates: [{ name: 'orbital prism contraption', level: 'high', rationale: 'x' }],
+      fallback: { understanding: '不存在的器械' },
+    })
+    expect(idsOf(result)).toEqual([])
+    expect(recalls(events)).toEqual([{
+      stage: 'recall',
+      candidateIndex: 0,
+      queryOrigin: 'primary',
+      queryWordCount: 3,
+      hitCount: 0,
+      top: [],
+    }])
+    expect(filters(events)).toEqual([{ stage: 'filter', candidateIndex: 0, decision: 'no_hit' }])
+    expect(display(events)).toMatchObject({
+      stage: 'display', resultCount: 0, publicIds: [], customCount: 0, fallbackOnly: true,
+    })
+  })
+
+  it('still records a second-place expected id the original rules never surface', () => {
+    // The repeatable evaluation case (A2): the first keyword hit is a
+    // conflicting name the evidence rules reject, the expected exercise sits
+    // behind it at rank 2, and the output stays empty because the original
+    // pipeline never reads past results[0].
+    const conflictor = EXDB.find(exercise => exercise.id === '0027') // barbell bent over row
+    const expected = EXDB.find(exercise => exercise.id === '0576') // lever chest press
+    const injected = createExerciseAiSearch({
+      searchScored: () => [
+        { exercise: conflictor, score: 65 },
+        { exercise: expected, score: 64 },
+      ],
+      list: [conflictor, expected],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: exercise => exercise.custom !== true,
+    })
+    const output = {
+      candidates: [{ name: 'lever chest press', level: 'high', rationale: '器械推胸' }],
+      fallback: { understanding: '用户在找器械推胸' },
+    }
+    const { events, result } = collect(injected, output, { expectedIds: ['0576'], includeQueries: false })
+    expect(idsOf(result)).toEqual([])
+    expect(recalls(events)).toEqual([{
+      stage: 'recall',
+      candidateIndex: 0,
+      queryOrigin: 'primary',
+      queryWordCount: 3,
+      hitCount: 2,
+      top: [{ id: '0027', score: 65 }, { id: '0576', score: 64 }],
+      expectedRanks: [2],
+    }])
+    expect(filters(events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'no_name_evidence', id: '0027' },
+    ])
+    expect(display(events)).toMatchObject({ resultCount: 0, fallbackOnly: true })
+    expect(injected.match(output)).toEqual(result)
+
+    // Only the evaluation's includeQueries flag ever adds the raw query.
+    const withQuery = collect(injected, output, { expectedIds: ['0576'], includeQueries: true })
+    expect(recalls(withQuery.events)[0].query).toBe('lever chest press')
+    expect(withQuery.result).toEqual(result)
+  })
+
+  it('runs the English query only for a Chinese name that carries one', () => {
+    const output = {
+      candidates: [{ name: '坐姿推举', nameEn: 'seated press', level: 'high', rationale: '坐姿上推' }],
+      fallback: { understanding: 'x' },
+    }
+    const { events, result } = collect(PUBLIC_AI.zh, output, { expectedIds: ['0546'], includeQueries: true })
+    expect(idsOf(result)).toEqual(['0546'])
+    expect(recalls(events).map(event => event.queryOrigin)).toEqual(['english', 'primary'])
+    expect(recalls(events).map(event => event.query)).toEqual(['seated press', '坐姿推举'])
+    expect(recalls(events).map(event => event.queryWordCount)).toEqual([2, 1])
+    expect(filters(events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'accepted_cjk_fallback', id: '0546' },
+    ])
+
+    const plain = collect(PUBLIC_AI.zh, {
+      candidates: [{ name: 'barbell bench press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(recalls(plain.events).map(event => event.queryOrigin)).toEqual(['primary'])
+  })
+
+  it('projects public ids only for trusted entries across decision kinds', () => {
+    // A custom action is accepted but never reported as a public id.
+    const custom = collect(PUBLIC_AI.custom, {
+      candidates: [{ name: 'Viking row', level: 'high', rationale: '自建动作的别名' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(custom.result)).toEqual(['custom-1'])
+    expect(recalls(custom.events)[0].top).toEqual([])
+    expect(filters(custom.events)).toEqual([{ stage: 'filter', candidateIndex: 0, decision: 'accepted' }])
+    expect(display(custom.events)).toMatchObject({ resultCount: 1, publicIds: [], customCount: 1, fallbackOnly: false })
+
+    // A saved alias on a catalogue exercise is accepted with its public id.
+    const alias = collect(PUBLIC_AI.custom, {
+      candidates: [{ name: 'my bench', level: 'high', rationale: '保存的别名' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(alias.result)).toEqual(['0025'])
+    expect(recalls(alias.events)[0].top[0].id).toBe('0025')
+    expect(filters(alias.events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'accepted', id: '0025' },
+    ])
+    expect(display(alias.events)).toMatchObject({ resultCount: 1, publicIds: ['0025'], customCount: 0 })
+
+    // A Chinese name the character fallback cannot decide between is the
+    // ambiguity rejection and carries no id.
+    const ambiguous = collect(PUBLIC_AI.zh, {
+      candidates: [{ name: '高位下拉', level: 'high', rationale: '高位下拉' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(ambiguous.result)).toEqual([])
+    expect(filters(ambiguous.events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'cjk_ambiguous' },
+    ])
+
+    // A Chinese name with no qualifying fallback items is an evidence
+    // rejection of the keyword hit, and that exercise's id is validated.
+    const noFallback = collect(PUBLIC_AI.zh, {
+      candidates: [{ name: '绳索划船', level: 'high', rationale: '绳索划船' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(noFallback.result)).toEqual([])
+    expect(filters(noFallback.events)[0].decision).toBe('no_name_evidence')
+    expect(filters(noFallback.events)[0].id).toBe(recalls(noFallback.events)[0].top[0].id)
+
+    // An equipment contradiction is a validated rejection with an id.
+    const conflict = collect(PUBLIC_AI.en, {
+      candidates: [{
+        name: 'push-up', level: 'high', rationale: '地面俯卧撑',
+        equipment: 'smith machine', bodyPart: 'chest',
+      }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(conflict.result)).toEqual([])
+    expect(filters(conflict.events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0662' },
+    ])
+
+    // A keyword hit below the floor is rejected with its id.
+    const low = createExerciseAiSearch({
+      searchScored: () => [{ exercise: EXDB.find(exercise => exercise.id === '0025'), score: 12 }],
+      list: EN_POOL,
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: exercise => exercise.custom !== true,
+    })
+    const floored = collect(low, {
+      candidates: [{ name: 'lever chest press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(floored.result)).toEqual([])
+    expect(filters(floored.events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'below_floor', id: '0025' },
+    ])
+  })
+
+  it('reports deduplicated and invalid candidates without inventing ids', () => {
+    const { events, result } = collect(PUBLIC_AI.custom, {
+      candidates: [
+        null,
+        {},
+        { name: 'barbell bench press', level: 'high', rationale: '一' },
+        { name: 'barbell bench press', level: 'low', rationale: '二' },
+      ],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(result)).toEqual(['0025'])
+    expect(filters(events)).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'invalid_candidate' },
+      { stage: 'filter', candidateIndex: 1, decision: 'invalid_candidate' },
+      { stage: 'filter', candidateIndex: 2, decision: 'accepted', id: '0025' },
+      { stage: 'filter', candidateIndex: 3, decision: 'accepted', id: '0025' },
+      { stage: 'filter', candidateIndex: 3, decision: 'deduplicated' },
+    ])
+    expect(display(events)).toMatchObject({ resultCount: 1, publicIds: ['0025'], customCount: 0 })
+  })
+
+  it('returns deeply identical results with and without diagnostics', () => {
+    const outputs = [
+      { candidates: [{ name: 'barbell bench press', level: 'high', rationale: 'x' }], fallback: { understanding: 'x' } },
+      { candidates: [{ name: '坐姿推举', level: 'high', rationale: 'x' }], fallback: { understanding: 'x' } },
+      { candidates: [{ name: 'Viking row', level: 'high', rationale: 'x' }], fallback: { understanding: 'x' } },
+      { candidates: [{ name: '高位下拉', level: 'high', rationale: 'x' }], fallback: { understanding: 'x' } },
+      { candidates: [
+        { name: 'dumbbell lateral raise', level: 'high', rationale: 'x' },
+        { name: 'cable lateral raise', level: 'high', rationale: 'y', equipment: 'cable', bodyPart: 'shoulders' },
+      ], fallback: { understanding: 'x' } },
+    ]
+    for (const pool of ['en', 'zh', 'custom', 'zh-custom']) {
+      for (const output of outputs) {
+        const plain = AI[pool].match(output, { hintText: '提示' })
+        expect(AI[pool].match(output, { hintText: '提示', diagnostics: { emit: () => {} } })).toEqual(plain)
+        expect(AI[pool].match(output, {
+          hintText: '提示',
+          diagnostics: { emit: () => {}, evaluation: { expectedIds: ['0025', '0576'], includeQueries: true } },
+        })).toEqual(plain)
+      }
+    }
+  })
+
+  it('isolates a broken diagnostics sink from the match result', () => {
+    const output = {
+      candidates: [{ name: 'barbell bench press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }
+    const plain = AI.en.match(output)
+    const broken = AI.en.match(output, { diagnostics: { emit: () => { throw new Error('sink down') } } })
+    expect(broken).toEqual(plain)
+  })
+})

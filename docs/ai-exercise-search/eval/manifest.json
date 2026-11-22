@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 1,
+  "samples": [
+    {
+      "id": "hinted-chest-press",
+      "group": "hinted",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "image": "../test_pic/微信图片_20261121172209_120_66.jpg",
+      "hintText": "这是一台坐姿推胸器械，我想找胸部推举动作",
+      "replay": { "path": "../evidence/smoke-go-2026-11-21.json", "index": 0 }
+    },
+    {
+      "id": "hinted-leg-press",
+      "group": "hinted",
+      "expectation": "match",
+      "expectedIds": ["2224", "0739", "1463", "1464"],
+      "expectedEquipment": ["sled machine"],
+      "family": "leg-press",
+      "image": "../test_pic/微信图片_20261121172210_121_66.jpg",
+      "hintText": "这是一台斜躺的腿举器械，我想找腿部推蹬动作",
+      "replay": { "path": "../evidence/smoke-go-2026-11-21.json", "index": 1 }
+    },
+    {
+      "id": "hinted-leg-extension",
+      "group": "hinted",
+      "expectation": "match",
+      "expectedIds": ["0585", "1873", "3386", "7108"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "leg-extension",
+      "image": "../test_pic/微信图片_20261121172211_122_66.jpg",
+      "hintText": "这是一台坐姿腿屈伸器械，我想找大腿前侧的训练动作",
+      "replay": { "path": "../evidence/smoke-go-2026-11-21.json", "index": 2 }
+    },
+    {
+      "id": "hinted-shoulder-press",
+      "group": "hinted",
+      "expectation": "match",
+      "expectedIds": ["0603", "1454", "0869", "2318", "2962"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "shoulder-press",
+      "image": "../test_pic/微信图片_20261121172211_123_66.jpg",
+      "hintText": "这是一台挂片式坐姿上推器械，我想找肩部推举动作",
+      "replay": { "path": "../evidence/smoke-go-2026-11-21.json", "index": 3 }
+    },
+    {
+      "id": "hinted-hack-squat",
+      "group": "hinted",
+      "expectation": "match",
+      "expectedIds": ["0743", "1992"],
+      "expectedEquipment": ["sled machine"],
+      "family": "hack-squat",
+      "image": "../test_pic/微信图片_20261121172212_124_66.jpg",
+      "hintText": "这是一台斜板哈克深蹲/腿举器械，我想找深蹲或腿举动作",
+      "replay": { "path": "../evidence/smoke-go-2026-11-21.json", "index": 4 }
+    },
+    {
+      "id": "photo-chest-press",
+      "group": "photo-only",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "image": "../test_pic/微信图片_20261121172209_120_66.jpg"
+    },
+    {
+      "id": "photo-leg-press",
+      "group": "photo-only",
+      "expectation": "match",
+      "expectedIds": ["2224", "0739", "1463", "1464"],
+      "expectedEquipment": ["sled machine"],
+      "family": "leg-press",
+      "image": "../test_pic/微信图片_20261121172210_121_66.jpg"
+    },
+    {
+      "id": "photo-leg-extension",
+      "group": "photo-only",
+      "expectation": "match",
+      "expectedIds": ["0585", "1873", "3386", "7108"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "leg-extension",
+      "image": "../test_pic/微信图片_20261121172211_122_66.jpg"
+    },
+    {
+      "id": "photo-shoulder-press",
+      "group": "photo-only",
+      "expectation": "match",
+      "expectedIds": ["0603", "1454", "0869", "2318", "2962"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "shoulder-press",
+      "image": "../test_pic/微信图片_20261121172211_123_66.jpg"
+    },
+    {
+      "id": "photo-hack-squat",
+      "group": "photo-only",
+      "expectation": "match",
+      "expectedIds": ["0743", "1992"],
+      "expectedEquipment": ["sled machine"],
+      "family": "hack-squat",
+      "image": "../test_pic/微信图片_20261121172212_124_66.jpg"
+    },
+    {
+      "id": "edge-french-chest-press",
+      "group": "edge",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "replay": { "path": "edge-responses.json", "index": 0 }
+    },
+    {
+      "id": "edge-cjk-leg-press",
+      "group": "edge",
+      "expectation": "match",
+      "expectedIds": ["2224", "0739"],
+      "expectedEquipment": ["sled machine"],
+      "family": "leg-press",
+      "replay": { "path": "edge-responses.json", "index": 1 }
+    },
+    {
+      "id": "edge-exact-chest-press",
+      "group": "edge",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "replay": { "path": "edge-responses.json", "index": 2 }
+    },
+    {
+      "id": "edge-unrelated",
+      "group": "edge",
+      "expectation": "empty",
+      "expectedIds": [],
+      "expectedEquipment": [],
+      "family": "unrelated",
+      "replay": { "path": "edge-responses.json", "index": 3 }
+    },
+    {
+      "id": "edge-out-of-catalogue",
+      "group": "edge",
+      "expectation": "empty",
+      "expectedIds": [],
+      "expectedEquipment": [],
+      "family": "out-of-catalogue",
+      "replay": { "path": "edge-responses.json", "index": 4 }
+    }
+  ]
+}

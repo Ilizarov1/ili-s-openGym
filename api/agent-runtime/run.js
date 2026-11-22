@@ -4,7 +4,7 @@
  * the model input -> run model/tool rounds -> validate the output/proposal ->
  * save a terminal state. No host platform import lives in this file.
  */
-import { AgentError } from './errors.js';
+import { AgentError, ERROR_STATUS } from './errors.js';
 import {
   withRunDefaults,
   validRequestId,
@@ -30,6 +30,19 @@ const DEFAULT_INSTRUCTIONS = [
   'Never invent an object id or a tool name.',
   'When a business change is needed, return a proposal instead of changing data yourself.',
 ].join('\n');
+
+/* Exercise-search diagnostics (ai-exercise-search EVAL_CLI_EXECUTION.md D02).
+ * The sink is injected by the host as context.meta.exerciseSearchDiagnostic and
+ * is never imported here. Only safe summary fields are projected to it, and a
+ * throwing sink can never break a run. Everything below stays private to this
+ * behavior; no other task emits anything. */
+const EXERCISE_SEARCH_DIAGNOSTIC_TASK_ID = 'exercise-search.v1';
+/** The images a diagnostic attachments event may carry, per the event schema. */
+const DIAGNOSTIC_MAX_IMAGES = 2;
+const DIAGNOSTIC_ERROR_CODES = new Set(Object.keys(ERROR_STATUS));
+const diagnosticErrorCode = code => (typeof code === 'string' && DIAGNOSTIC_ERROR_CODES.has(code)
+  ? code
+  : 'model_unavailable');
 
 function assertRequest(task, request) {
   if (!request || typeof request !== 'object') throw new AgentError('invalid_request', 'run request is required');
@@ -193,9 +206,41 @@ export async function runAgent(options) {
   const executor = tools && typeof tools.get === 'function' && typeof tools.list === 'function'
     ? tools
     : createToolRegistry(tools);
+  // Read once, and only for the exercise-search task; every other task runs
+  // exactly as before. `null` keeps all emit sites side-effect free.
+  const exerciseDiagnostic = task.id === EXERCISE_SEARCH_DIAGNOSTIC_TASK_ID
+    ? context?.meta?.exerciseSearchDiagnostic
+    : undefined;
+  const emitDiagnostic = typeof exerciseDiagnostic === 'function'
+    ? event => {
+      try {
+        exerciseDiagnostic(event);
+      } catch {
+        /* a throwing sink must never break the run */
+      }
+    }
+    : null;
+  let diagnosticPhase = 'submit';
+  let diagnosticEndEmitted = false;
+  const diagnosticStartedAt = emitDiagnostic ? now() : 0;
+  const emitDiagnosticEnd = (status, errorCode) => {
+    if (!emitDiagnostic || diagnosticEndEmitted) return;
+    diagnosticEndEmitted = true;
+    emitDiagnostic({
+      stage: 'end',
+      status,
+      phase: diagnosticPhase,
+      elapsedMs: now() - diagnosticStartedAt,
+      ...(errorCode ? { errorCode } : {}),
+    });
+  };
   const completedOrCancelled = result => {
     if (store && typeof store.saveResult === 'function') {
       try { store.saveResult(result); } catch { /* the host persists the run itself */ }
+    }
+    if (emitDiagnostic) {
+      const status = typeof result?.status === 'string' ? result.status : 'completed';
+      emitDiagnosticEnd(status, status === 'failed' ? diagnosticErrorCode(result?.error?.code) : undefined);
     }
     return result;
   };
@@ -231,7 +276,19 @@ export async function runAgent(options) {
       maxCalls: step.maxToolCalls ?? budgets.toolCalls,
       signal,
     });
+    diagnosticPhase = 'attachments';
     const attachments = await taskAttachments(task, request.input, context);
+    if (emitDiagnostic) {
+      emitDiagnostic({
+        stage: 'attachments',
+        images: attachments.slice(0, DIAGNOSTIC_MAX_IMAGES).map(attachment => ({
+          mime: attachment?.mime,
+          width: attachment?.width,
+          height: attachment?.height,
+          bytes: attachment?.size,
+        })),
+      });
+    }
     const history = [...(context.history || [])];
     const noMemories = Array.isArray(task.memoryCategories) && task.memoryCategories.length === 0;
     const memories = noMemories ? [] : projectMemories(context.memories || []);
@@ -240,6 +297,7 @@ export async function runAgent(options) {
     let lastOutput = null;
 
     for (let round = 0; round < budgets.rounds; round++) {
+      diagnosticPhase = 'model';
       if (signal?.aborted) {
         if (state && !state.isTerminal()) state.cancel('cancelled');
         return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
@@ -271,14 +329,49 @@ export async function runAgent(options) {
         toolResults: [...toolResults],
       }, budgets);
 
-      lastOutput = await gateway.invoke(context.profileRef, modelInput, signal);
+      const invokeStartedAt = emitDiagnostic ? now() : 0;
+      let invokeOutput;
+      try {
+        invokeOutput = await gateway.invoke(context.profileRef, modelInput, signal);
+      } catch (error) {
+        if (emitDiagnostic) {
+          emitDiagnostic({
+            stage: 'model',
+            round: round + 1,
+            status: 'failed',
+            elapsedMs: now() - invokeStartedAt,
+            toolCalls: 0,
+            errorCode: diagnosticErrorCode(error instanceof AgentError ? error.code : undefined),
+          });
+        }
+        throw error;
+      }
+      lastOutput = invokeOutput;
       // Cancellation may land while the provider is answering; the answer is
       // data now, not permission to call a tool or create a proposal.
       if (signal?.aborted || (state && !state.acceptResult())) {
+        if (emitDiagnostic) {
+          emitDiagnostic({
+            stage: 'model',
+            round: round + 1,
+            status: 'cancelled',
+            elapsedMs: now() - invokeStartedAt,
+            toolCalls: Array.isArray(lastOutput.toolCalls) ? lastOutput.toolCalls.length : 0,
+          });
+        }
         if (state && !state.isTerminal()) state.cancel('cancelled');
         return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
       }
       const calls = Array.isArray(lastOutput.toolCalls) ? lastOutput.toolCalls : [];
+      if (emitDiagnostic) {
+        emitDiagnostic({
+          stage: 'model',
+          round: round + 1,
+          status: 'completed',
+          elapsedMs: now() - invokeStartedAt,
+          toolCalls: calls.length,
+        });
+      }
       if (!calls.length) break;
       if (round === budgets.rounds - 1) {
         throw new AgentError('invalid_request', 'the model kept calling tools after the round budget');
@@ -310,6 +403,7 @@ export async function runAgent(options) {
     }
 
     if (!lastOutput) throw new AgentError('model_unavailable', 'the model returned no answer');
+    diagnosticPhase = 'recognition';
     const parsed = outputOf(lastOutput, task, context);
     const candidate = proposalCandidate(parsed);
     let proposal;
@@ -413,6 +507,8 @@ export async function runAgent(options) {
       const code = error instanceof AgentError ? error.code : 'model_unavailable';
       state.failed({ code, message: error instanceof Error ? error.message : 'run failed' });
     }
+    // The non-cancelled failure exit: one safe end event, never the raw error.
+    emitDiagnosticEnd('failed', diagnosticErrorCode(error instanceof AgentError ? error.code : undefined));
     throw error;
   }
 }

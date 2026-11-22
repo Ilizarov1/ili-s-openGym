@@ -417,15 +417,37 @@ export function cleanExerciseSearchOutput(raw, input = {}) {
   };
 }
 
-function structuredFrom(output, input) {
+/* Clean the chosen raw output and report the recognition stage to an optional,
+ * host-injected diagnostic sink. Only counts and the cleaned fallback slugs
+ * leave this function; the raw output is never copied or re-parsed for logs. */
+function cleanedFrom(raw, input, diagnostic) {
+  const rawCandidateCount = Array.isArray(raw?.candidates) ? raw.candidates.length : 0;
+  const cleaned = cleanExerciseSearchOutput(raw, input);
+  if (typeof diagnostic === 'function') {
+    try {
+      diagnostic({
+        stage: 'recognition',
+        rawCandidateCount,
+        cleanCandidateCount: cleaned.candidates.length,
+        ...(cleaned.fallback.bodyParts ? { bodyParts: cleaned.fallback.bodyParts } : {}),
+        ...(cleaned.fallback.equipment ? { equipment: cleaned.fallback.equipment } : {}),
+      });
+    } catch {
+      /* a broken sink must never fail the parse */
+    }
+  }
+  return cleaned;
+}
+
+function structuredFrom(output, input, diagnostic) {
   if (output?.structured && typeof output.structured === 'object' && !Array.isArray(output.structured)) {
-    return cleanExerciseSearchOutput(output.structured, input);
+    return cleanedFrom(output.structured, input, diagnostic);
   }
   const parsed = extractJsonObject(output?.text);
   if (!parsed) {
     throw new AgentError('model_unavailable', 'the model did not return a readable JSON answer');
   }
-  return cleanExerciseSearchOutput(parsed, input);
+  return cleanedFrom(parsed, input, diagnostic);
 }
 
 function messagePayload(result) {
@@ -516,7 +538,7 @@ export function createExerciseSearchTask() {
       return typeof input?.fixtureCase === 'string' ? input.fixtureCase : 'candidates';
     },
     parseOutput(output, context) {
-      return structuredFrom(output, context?.request?.input || {});
+      return structuredFrom(output, context?.request?.input || {}, context?.meta?.exerciseSearchDiagnostic);
     },
   };
 }

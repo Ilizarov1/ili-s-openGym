@@ -28,6 +28,8 @@ const mocks = vi.hoisted(() => ({
   deleteSession: vi.fn(),
   listProfiles: vi.fn(),
   runSeq: 0,
+  runEvents: [],
+  mediaEvents: [],
 }))
 
 vi.mock('../store/useStore.js', () => {
@@ -49,6 +51,33 @@ vi.mock('../agent/api.js', () => ({
     deleteSession: (...args) => mocks.deleteSession(...args),
   },
 }))
+// The diagnostics contract is replaced with an in-memory capture so the suite
+// asserts exactly the events the component emits, with no console noise. The
+// mock mirrors the module's own gating: no trace when the switch is off, no
+// media line when the attempt id or switch is invalid, and only declared
+// error codes pass through safeExerciseSearchError.
+vi.mock('../../../api/agent-runtime/exercise-search-diagnostics.js', () => {
+  const SAFE_ERROR_CODES = new Set([
+    'invalid_request', 'scope_denied', 'profile_not_found', 'profile_capability_missing',
+    'context_budget_exceeded', 'fact_missing', 'tool_not_allowed', 'tool_args_invalid',
+    'tool_target_out_of_scope', 'tool_budget_exceeded', 'proposal_not_found', 'proposal_conflict',
+    'proposal_consumed', 'run_not_found', 'run_terminal', 'run_cancelled', 'run_interrupted',
+    'request_conflict', 'model_unavailable', 'model_timeout', 'model_response_too_large',
+    'session_deleted', 'session_busy', 'session_conflict', 'turn_limit', 'memory_not_found',
+    'agent_disabled', 'agent_config_disabled', 'agent_config_corrupt', 'agent_store_corrupt',
+    'agent_media_invalid', 'agent_media_too_large', 'permission_denied', 'asset_missing',
+  ])
+  return {
+    createExerciseSearchTrace: vi.fn(({ traceId, source, enabled }) => (enabled === true
+      ? event => { mocks.runEvents.push({ traceId, source, ...event }) }
+      : undefined)),
+    logExerciseSearchMedia: vi.fn(({ mediaAttemptId, source, enabled, metrics }) => {
+      if (enabled !== true) return
+      mocks.mediaEvents.push({ mediaAttemptId, source, stage: 'media', ...(metrics || {}) })
+    }),
+    safeExerciseSearchError: vi.fn(code => (typeof code === 'string' && SAFE_ERROR_CODES.has(code) ? code : 'unknown')),
+  }
+})
 
 import ExerciseAiSearch, {
   AI_SEARCH_MAX_RUNS,
@@ -131,6 +160,8 @@ beforeEach(() => {
   mocks.getRun.mockReset().mockImplementation(async runId => ({ ...completed(), runId }))
   mocks.cancelRun.mockReset().mockResolvedValue({})
   mocks.deleteSession.mockReset().mockResolvedValue({})
+  mocks.runEvents = []
+  mocks.mediaEvents = []
 })
 
 afterEach(() => {
@@ -436,5 +467,197 @@ describe('ExerciseAiSearch errors and lifecycle', () => {
     act(() => byLabel(host, 'Add Bench Press').click())
     expect(props.onPick).toHaveBeenCalledWith(EXERCISE, true)
     expect(props.onExit).toHaveBeenCalled()
+  })
+})
+
+describe('ExerciseAiSearch diagnostics', () => {
+  it('emits submit and one end on the same trace id and hands the matcher an emit bound to it', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+
+    const traceId = mocks.startRun.mock.calls[0][0].requestId
+    const submit = mocks.runEvents.find(event => event.stage === 'submit')
+    expect(submit).toMatchObject({ traceId, source: 'web', execution: 'server', hasHint: true, imageCount: 0 })
+    expect(submit.mediaAttemptId).toBeUndefined()
+    const ends = mocks.runEvents.filter(event => event.stage === 'end')
+    expect(ends).toHaveLength(1)
+    expect(ends[0]).toMatchObject({ traceId, status: 'completed', phase: 'match' })
+    expect(Number.isFinite(ends[0].elapsedMs)).toBe(true)
+
+    const hints = mocks.match.mock.calls[0][1]
+    expect(hints.hintText).toBe('卧推')
+    expect(typeof hints.diagnostics?.emit).toBe('function')
+    hints.diagnostics.emit({ stage: 'display', resultCount: 1 })
+    const display = mocks.runEvents.find(event => event.stage === 'display')
+    expect(display.traceId).toBe(traceId)
+  })
+
+  it('drops a late poll after a newer run instead of attributing it or ending the old trace twice', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    let release = null
+    mocks.getRun.mockReset()
+    mocks.getRun.mockImplementation(() => {
+      if (!release) return new Promise(resolve => { release = () => resolve(completed()) })
+      return completed()
+    })
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '第一次')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    await act(async () => { byText(host, '取消').click() })
+    await flush()
+    const firstTraceId = mocks.startRun.mock.calls[0][0].requestId
+    expect(mocks.runEvents.filter(event => event.traceId === firstTraceId).map(event => event.stage))
+      .toEqual(['submit', 'end'])
+    expect(mocks.runEvents.find(event => event.traceId === firstTraceId && event.stage === 'end').status)
+      .toBe('cancelled')
+
+    setValue(host.querySelector('textarea'), '第二次')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    const secondTraceId = mocks.startRun.mock.calls[1][0].requestId
+    expect(secondTraceId).not.toBe(firstTraceId)
+    expect(mocks.runEvents.find(event => event.traceId === secondTraceId && event.stage === 'end').status)
+      .toBe('completed')
+
+    await act(async () => {
+      release()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await flush()
+    expect(mocks.runEvents.filter(event => event.traceId === firstTraceId).map(event => event.stage))
+      .toEqual(['submit', 'end'])
+    const firstEnds = mocks.runEvents.filter(event => event.traceId === firstTraceId && event.stage === 'end')
+    expect(firstEnds).toHaveLength(1)
+  })
+
+  it('uses a different trace id per submission', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    setValue(host.querySelector('.ai-follow input'), '不是，是哑铃的')
+    await act(async () => { host.querySelector('.ai-follow').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    await tick()
+
+    const submits = mocks.runEvents.filter(event => event.stage === 'submit')
+    expect(submits).toHaveLength(2)
+    expect(submits[0].traceId).toBe(mocks.startRun.mock.calls[0][0].requestId)
+    expect(submits[1].traceId).toBe(mocks.startRun.mock.calls[1][0].requestId)
+    expect(submits[0].traceId).not.toBe(submits[1].traceId)
+    const ends = mocks.runEvents.filter(event => event.stage === 'end')
+    expect(ends.map(event => event.traceId)).toEqual([submits[0].traceId, submits[1].traceId])
+  })
+
+  it('emits nothing while the diagnostics switch is off', async () => {
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    expect(mocks.runEvents).toHaveLength(0)
+    expect(mocks.mediaEvents).toHaveLength(0)
+  })
+
+  it('emits one media event per pick and carries its attempt id into the following submit', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    const { host } = render({
+      normalizeImage: async (file, onSummary) => {
+        onSummary?.({ status: 'ready', width: 640, height: 480, bytes: 12345, attempts: 2 })
+        return `data:image/jpeg;base64,${file.name}`
+      },
+    })
+    await flush()
+    await pickImage(host)
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+
+    expect(mocks.mediaEvents).toHaveLength(1)
+    const media = mocks.mediaEvents[0]
+    expect(media).toMatchObject({ source: 'web', stage: 'media', status: 'ready', inputBytes: 5 })
+    expect(media).toMatchObject({ outputBytes: 12345, outputWidth: 640, outputHeight: 480, attempts: 2 })
+    expect(media.rotationApplied).toBeUndefined()
+    expect(Number.isFinite(media.elapsedMs)).toBe(true)
+    expect(media.mediaAttemptId).toMatch(/^mat_[0-9A-Za-z_-]{1,64}$/)
+
+    const submit = mocks.runEvents.find(event => event.stage === 'submit')
+    expect(submit).toMatchObject({ hasHint: false, imageCount: 1 })
+    expect(submit.mediaAttemptId).toBe(media.mediaAttemptId)
+  })
+
+  it('keeps the image attempt id when a retry re-references the same image on a new trace', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    mocks.startRun.mockReset()
+    let failures = 0
+    mocks.startRun.mockImplementation(async () => {
+      if (!failures) {
+        failures += 1
+        throw Object.assign(new Error('bad'), { code: 'network' })
+      }
+      mocks.runSeq += 1
+      return { runId: `run${mocks.runSeq}`, status: 'accepted', profile: PROFILE }
+    })
+    const { host } = render({ normalizeImage: async () => 'data:image/jpeg;base64,IMAGE' })
+    await flush()
+    await pickImage(host)
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    expect(host.textContent).toContain('网络连接失败')
+    const first = mocks.runEvents.find(event => event.stage === 'submit')
+    expect(first.mediaAttemptId).toBeTruthy()
+
+    await act(async () => { byText(host, '重试').click() })
+    await flush()
+    const submits = mocks.runEvents.filter(event => event.stage === 'submit')
+    expect(submits).toHaveLength(2)
+    expect(submits[1].traceId).not.toBe(submits[0].traceId)
+    expect(submits[1].mediaAttemptId).toBe(first.mediaAttemptId)
+  })
+
+  it('ends the original request trace at the submit phase when starting fails', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    mocks.startRun.mockReset()
+    mocks.startRun.mockImplementation(async () => {
+      throw Object.assign(new Error('bad'), { code: 'network' })
+    })
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    expect(host.textContent).toContain('网络连接失败')
+    const end = mocks.runEvents.find(event => event.stage === 'end')
+    expect(end).toMatchObject({ status: 'failed', phase: 'submit', errorCode: 'unknown' })
+    expect(end.traceId).toBe(mocks.startRun.mock.calls[0][0].requestId)
+  })
+
+  it('ends with the run failure code when the server reports the run failed', async () => {
+    localStorage.setItem('opengym:ai-search-diagnostics', '1')
+    mocks.getRun.mockReset()
+    mocks.getRun.mockResolvedValue({ runId: 'run1', status: 'failed', profile: PROFILE, error: { code: 'model_unavailable' } })
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    const end = mocks.runEvents.find(event => event.stage === 'end')
+    expect(end).toMatchObject({ status: 'failed', phase: 'model', errorCode: 'model_unavailable' })
+    expect(end.traceId).toBe(mocks.startRun.mock.calls[0][0].requestId)
+    expect(host.textContent).toContain('模型暂时不可用')
   })
 })

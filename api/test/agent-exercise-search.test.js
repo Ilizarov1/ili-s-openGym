@@ -17,7 +17,7 @@ import {
   validateExerciseImages,
   validateExerciseSearchInput,
 } from '../agent-runtime/index.js';
-import { PNG_1X1_DATA_URL } from './agent-fixtures.mjs';
+import { PNG_1X1, PNG_1X1_DATA_URL } from './agent-fixtures.mjs';
 import { EXDB } from '../../frontend/src/lib/exercises-data.js';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -37,7 +37,7 @@ function fakeJpegDataUrl(bytes = 32) {
   return `data:image/jpeg;base64,${raw.toString('base64')}`;
 }
 
-function contextFor(task, input, provider = 'fixture', requestId = 'req_exercise_1') {
+function contextFor(task, input, provider = 'fixture', requestId = 'req_exercise_1', meta = {}) {
   return bindContext({
     scope: 'user-1',
     runId: 'run_exercise_1',
@@ -46,6 +46,7 @@ function contextFor(task, input, provider = 'fixture', requestId = 'req_exercise
     profileRef: { profileId: 'p1', version: 1, provider, capabilities: { text: true, image: true, tools: false } },
     targetScope: [],
     ids: { evidence: () => 'ev_exercise_1' },
+    meta,
   });
 }
 
@@ -259,4 +260,267 @@ test('the five new stable error codes carry their documented HTTP status', async
   assert.equal(ERROR_STATUS.turn_limit, 429);
   assert.equal(ERROR_STATUS.session_busy, 409);
   assert.equal(ERROR_STATUS.session_conflict, 409);
+});
+
+/* The stub task used by api/test/agent-runtime.test.js: same id and shape,
+ * so the diagnostic path can prove other tasks emit nothing. */
+function stubTask() {
+  return {
+    id: 'stub.v1',
+    version: 1,
+    inputSchema: {
+      type: 'object',
+      properties: { prompt: { type: 'string', minLength: 1 } },
+      required: ['prompt'],
+      additionalProperties: true,
+    },
+    outputSchema: {
+      type: 'object',
+      properties: { text: { type: 'string' } },
+      additionalProperties: true,
+    },
+    requiredCapabilities: ['text'],
+    budgets: { rounds: 1, toolCalls: 0, contextChars: 20000, historyItems: 2, memoryItems: 2 },
+    steps: [{ id: 'model' }],
+    targetScope: () => [],
+    instructions: () => 'test instructions',
+    userText: input => input.prompt,
+  };
+}
+
+test('a successful fixture run emits attachments, model, recognition and end in order', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: '坐着往上推的器械', images: [PNG_1X1_DATA_URL], fixtureCase: 'candidates' };
+  const provider = createProvider('fixture', { fixtureCase: 'candidates' });
+  const events = [];
+  let clock = 0;
+  const result = await runAgent({
+    task,
+    request: { taskId: task.id, requestId: 'req_diag_success', profileId: 'p1', input },
+    context: contextFor(task, input, 'fixture', 'req_diag_success', {
+      exerciseSearchDiagnostic: event => events.push(event),
+    }),
+    gateway: {
+      invoke: (profileRef, modelInput, signal) => provider.invoke({ profile: profileRef, modelInput, signal }),
+    },
+    now: () => (clock += 10),
+  });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(events.map(event => event.stage), ['attachments', 'model', 'recognition', 'end']);
+  const [attachments, model, recognition, end] = events;
+  assert.deepEqual(attachments.images, [{ mime: 'image/png', width: 1, height: 1, bytes: PNG_1X1.length }]);
+  assert.deepEqual(model, { stage: 'model', round: 1, status: 'completed', elapsedMs: 10, toolCalls: 0 });
+  assert.equal(recognition.rawCandidateCount, 2);
+  assert.equal(recognition.cleanCandidateCount, 2);
+  assert.deepEqual(recognition.equipment, ['barbell']);
+  assert.deepEqual(recognition.bodyParts, ['shoulders']);
+  assert.deepEqual(end, { stage: 'end', status: 'completed', phase: 'recognition', elapsedMs: 30 });
+});
+
+test('the recognition event counts raw and cleaned candidates and projects cleaned fallback slugs', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: 'press' };
+  const events = [];
+  await runAgent({
+    task,
+    request: { taskId: task.id, requestId: 'req_diag_recognition', profileId: 'p1', input },
+    context: contextFor(task, input, 'fixture', 'req_diag_recognition', {
+      exerciseSearchDiagnostic: event => events.push(event),
+    }),
+    gateway: {
+      invoke: async () => ({
+        structured: {
+          candidates: [
+            { name: 'bench press', rationale: 'bench and bar', level: 'high', equipment: 'barbell', bodyPart: 'chest' },
+            { name: 'bad level', rationale: 'x', level: 'certain' },
+            { name: 'bench press', rationale: 'duplicate name', level: 'low' },
+          ],
+          fallback: {
+            understanding: 'a press',
+            bodyParts: ['chest', 'not-a-slug', 'chest'],
+            equipment: ['barbell', 'smith machine'],
+          },
+        },
+        toolCalls: [],
+      }),
+    },
+  });
+  assert.deepEqual(events.find(event => event.stage === 'recognition'), {
+    stage: 'recognition',
+    rawCandidateCount: 3,
+    cleanCandidateCount: 1,
+    bodyParts: ['chest'],
+    equipment: ['barbell', 'smith machine'],
+  });
+});
+
+test('a bad image fails at the attachments phase without calling the model', async () => {
+  const task = createExerciseSearchTask();
+  const input = { images: [`data:image/png;base64,${Buffer.from('not png').toString('base64')}`] };
+  const events = [];
+  let invokeCalls = 0;
+  await assert.rejects(
+    runAgent({
+      task,
+      request: { taskId: task.id, requestId: 'req_diag_bad_image', profileId: 'p1', input },
+      context: contextFor(task, input, 'fixture', 'req_diag_bad_image', {
+        exerciseSearchDiagnostic: event => events.push(event),
+      }),
+      gateway: {
+        invoke: async () => {
+          invokeCalls++;
+          return { text: 'never reached' };
+        },
+      },
+      now: () => 5,
+    }),
+    error => error instanceof AgentError && error.code === 'agent_media_invalid',
+  );
+  assert.equal(invokeCalls, 0);
+  assert.deepEqual(events.map(event => event.stage), ['end']);
+  assert.deepEqual(events[0], {
+    stage: 'end',
+    status: 'failed',
+    phase: 'attachments',
+    errorCode: 'agent_media_invalid',
+    elapsedMs: 0,
+  });
+});
+
+test('an unparseable model answer ends at the recognition phase with a safe error code', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: 'seated press' };
+  const events = [];
+  await assert.rejects(
+    runAgent({
+      task,
+      request: { taskId: task.id, requestId: 'req_diag_unparseable', profileId: 'p1', input },
+      context: contextFor(task, input, 'fixture', 'req_diag_unparseable', {
+        exerciseSearchDiagnostic: event => events.push(event),
+      }),
+      gateway: {
+        invoke: async () => ({
+          text: 'the model rambled about a mystery machine without any JSON',
+          structured: null,
+          toolCalls: [],
+        }),
+      },
+      now: () => 5,
+    }),
+    error => error instanceof AgentError && error.code === 'model_unavailable',
+  );
+  assert.deepEqual(events.map(event => event.stage), ['attachments', 'model', 'end']);
+  assert.deepEqual(events[0], { stage: 'attachments', images: [] });
+  assert.deepEqual(events[1], { stage: 'model', round: 1, status: 'completed', elapsedMs: 0, toolCalls: 0 });
+  assert.deepEqual(events[2], {
+    stage: 'end',
+    status: 'failed',
+    phase: 'recognition',
+    errorCode: 'model_unavailable',
+    elapsedMs: 0,
+  });
+  assert.equal(JSON.stringify(events).includes('the model rambled'), false);
+});
+
+test('a provider failure emits a failed model event and a safe failed end', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: 'seated press' };
+  for (const [thrown, expectedCode] of [
+    [new AgentError('model_timeout', 'secret provider detail timeout'), 'model_timeout'],
+    [new Error('secret provider detail'), 'model_unavailable'],
+  ]) {
+    const events = [];
+    await assert.rejects(
+      runAgent({
+        task,
+        request: { taskId: task.id, requestId: 'req_diag_model_fail', profileId: 'p1', input },
+        context: contextFor(task, input, 'fixture', 'req_diag_model_fail', {
+          exerciseSearchDiagnostic: event => events.push(event),
+        }),
+        gateway: {
+          invoke: async () => {
+            throw thrown;
+          },
+        },
+        now: () => 5,
+      }),
+      error => error === thrown,
+    );
+    assert.deepEqual(events.map(event => event.stage), ['attachments', 'model', 'end']);
+    assert.deepEqual(events[1], {
+      stage: 'model',
+      round: 1,
+      status: 'failed',
+      elapsedMs: 0,
+      toolCalls: 0,
+      errorCode: expectedCode,
+    });
+    assert.deepEqual(events[2], {
+      stage: 'end',
+      status: 'failed',
+      phase: 'model',
+      errorCode: expectedCode,
+      elapsedMs: 0,
+    });
+    assert.equal(JSON.stringify(events).includes('secret provider detail'), false);
+  }
+});
+
+test('a non-exercise-search task emits no diagnostic events', async () => {
+  const task = stubTask();
+  const input = { prompt: 'hello' };
+  const events = [];
+  const result = await runAgent({
+    task,
+    request: { taskId: task.id, requestId: 'req_diag_stub', profileId: 'p1', input },
+    context: contextFor(task, input, 'fixture', 'req_diag_stub', {
+      exerciseSearchDiagnostic: event => events.push(event),
+    }),
+    gateway: {
+      invoke: async () => ({ text: 'stub answer', structured: { text: 'stub answer' }, toolCalls: [] }),
+    },
+  });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual(events, []);
+});
+
+test('running with and without the diagnostic callback produces identical results', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: '坐着往上推的器械', images: [PNG_1X1_DATA_URL], fixtureCase: 'candidates' };
+  const provider = createProvider('fixture', { fixtureCase: 'candidates' });
+  const runWith = meta => runAgent({
+    task,
+    request: { taskId: task.id, requestId: 'req_diag_identical', profileId: 'p1', input },
+    context: contextFor(task, input, 'fixture', 'req_diag_identical', meta),
+    gateway: {
+      invoke: (profileRef, modelInput, signal) => provider.invoke({ profile: profileRef, modelInput, signal }),
+    },
+  });
+  const events = [];
+  const traced = await runWith({ exerciseSearchDiagnostic: event => events.push(event) });
+  const plain = await runWith({});
+  assert.equal(plain.status, traced.status);
+  assert.deepEqual(plain.structured, traced.structured);
+  assert.deepEqual(plain.usage, traced.usage);
+  assert.ok(events.some(event => event.stage === 'end' && event.status === 'completed'));
+});
+
+test('a throwing diagnostic sink never breaks the run', async () => {
+  const task = createExerciseSearchTask();
+  const input = { hintText: '坐着往上推的器械', fixtureCase: 'candidates' };
+  const provider = createProvider('fixture', { fixtureCase: 'candidates' });
+  const result = await runAgent({
+    task,
+    request: { taskId: task.id, requestId: 'req_diag_throwing', profileId: 'p1', input },
+    context: contextFor(task, input, 'fixture', 'req_diag_throwing', {
+      exerciseSearchDiagnostic: () => {
+        throw new Error('sink exploded');
+      },
+    }),
+    gateway: {
+      invoke: (profileRef, modelInput, signal) => provider.invoke({ profile: profileRef, modelInput, signal }),
+    },
+  });
+  assert.equal(result.status, 'completed');
+  assert.ok(Array.isArray(result.structured.candidates));
 });

@@ -11,6 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:fatigue-probe": "node scripts/fatigue-monotonic-probe.mjs",
+    "test:ai-search-eval": "node --test scripts/ai-search-eval.test.mjs",
+    "eval:ai-search": "node scripts/ai-search-eval.mjs",
     "pdf:check": "node scripts/pdf/render-samples.mjs --out pdf-samples --langs en,de,ar --paper A4,Letter --check"
   },
   "license": "AGPL-3.0-or-later",

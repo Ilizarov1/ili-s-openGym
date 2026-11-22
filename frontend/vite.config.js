@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { lazyAssets, stampSw } from './scripts/sw-stamp.mjs'
 import { mobileViewport } from './src/lib/viewport-zoom.js'
@@ -125,5 +126,13 @@ export default defineConfig({
   // lower, scripts/check-bundle-syntax.mjs catches (its test builds the bundle).
   build: { chunkSizeWarningLimit: 1500, target: ['safari15', 'chrome100', 'firefox100', 'edge100'] },
   // Gives happy-dom tests a working localStorage on Node 24+ (#733).
-  test: { setupFiles: ['./src/test-setup.js'] }
+  // scripts/ai-search-eval.test.mjs runs under node:test ("npm run
+  // test:ai-search-eval", D12 of docs/ai-exercise-search/EVAL_CLI_EXECUTION.md):
+  // vitest's default include matches the file but finds no vitest-registered
+  // suite and fails it, so exactly this path is excluded. Every other scripts
+  // test stays collected.
+  test: {
+    setupFiles: ['./src/test-setup.js'],
+    exclude: [...configDefaults.exclude, 'scripts/ai-search-eval.test.mjs'],
+  }
 })

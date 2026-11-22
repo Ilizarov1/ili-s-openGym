@@ -190,6 +190,10 @@ function conflictFor(hint, exercise) {
   return BODYWEIGHT.has(clean(exercise?.eq))
 }
 
+// The character fallback's own verdict: the exercise it would pick, or why it
+// will not pick one — no name qualified at all, or the top two are too close
+// to call (CJK_MARGIN). The diagnostics need that distinction: only a
+// candidate actually dropped by the ambiguity is reported as ambiguous.
 function cjkFallback(pool, candidateName) {
   const scored = []
   for (let index = 0; index < pool.length; index++) {
@@ -207,9 +211,11 @@ function cjkFallback(pool, candidateName) {
     if (best) scored.push({ exercise, index, ...best })
   }
   scored.sort((a, b) => b.dice - a.dice || b.lcs - a.lcs || a.index - b.index)
-  if (!scored.length) return null
-  if (scored.length > 1 && scored[0].dice - scored[1].dice < CJK_MARGIN) return null
-  return scored[0].exercise
+  if (!scored.length) return { exercise: null, ambiguous: false }
+  if (scored.length > 1 && scored[0].dice - scored[1].dice < CJK_MARGIN) {
+    return { exercise: null, ambiguous: true }
+  }
+  return { exercise: scored[0].exercise, ambiguous: false }
 }
 
 function filterSlugs(values, allowed) {
@@ -250,15 +256,91 @@ function genericSet(bodyPartValues, equipmentValues) {
   return new Set(words)
 }
 
-function matchOne(candidate, pool, searchScored, genericWords) {
-  if (!candidate || typeof candidate !== 'object') return null
+// One diagnostics recorder per match() call. The sink is isolated at this one
+// boundary so a logging error can never change a match result. Production
+// passes only `emit`; the evaluation CLI also passes expected ids to rank and
+// opts into carrying the raw query.
+function recorderOf(diagnostics, isPublic) {
+  if (!diagnostics || typeof diagnostics.emit !== 'function') return null
+  const evaluation = diagnostics.evaluation && Array.isArray(diagnostics.evaluation.expectedIds)
+    ? {
+      expectedIds: diagnostics.evaluation.expectedIds,
+      includeQueries: diagnostics.evaluation.includeQueries === true,
+    }
+    : null
+  return {
+    evaluation,
+    isPublic,
+    emit(event) {
+      try { diagnostics.emit(event) } catch { /* a broken sink must not change the match */ }
+    },
+  }
+}
+
+// One query's recall, snapshotted from the synchronous ranking before the
+// pipeline reads its first entry, so an empty result is still reported.
+// `top` is the actual first five results filtered down to trusted-public
+// entries (never refilled from further down the list); the evaluation
+// additionally gets each expected id's 1-based rank in the full unfiltered
+// list, null when absent.
+function recallEvent(recorder, candidateIndex, query, queryOrigin, results) {
+  const top = []
+  for (let index = 0; index < results.length && index < 5; index++) {
+    const exercise = results[index]?.exercise
+    if (exercise && recorder.isPublic(exercise)) {
+      top.push({ id: exercise.id, score: results[index].score })
+    }
+  }
+  const event = {
+    stage: 'recall',
+    candidateIndex,
+    queryOrigin,
+    queryWordCount: clean(query).split(/\s+/).filter(Boolean).length,
+    hitCount: results.length,
+    top,
+  }
+  if (recorder.evaluation) {
+    const expectedRanks = []
+    for (const expectedId of recorder.evaluation.expectedIds) {
+      let rank = null
+      for (let index = 0; index < results.length; index++) {
+        if (results[index]?.exercise?.id === expectedId) { rank = index + 1; break }
+      }
+      expectedRanks.push(rank)
+    }
+    event.expectedRanks = expectedRanks
+    if (recorder.evaluation.includeQueries) event.query = query
+  }
+  recorder.emit(event)
+}
+
+function matchOne(candidate, pool, searchScored, genericWords, recorder, candidateIndex) {
+  const filterEvent = (decision, exercise) => {
+    if (!recorder) return
+    const event = { stage: 'filter', candidateIndex, decision }
+    if (exercise && recorder.isPublic(exercise)) event.id = exercise.id
+    recorder.emit(event)
+  }
+  if (!candidate || typeof candidate !== 'object') {
+    filterEvent('invalid_candidate')
+    return null
+  }
   const name = clean(candidate.name)
-  if (!name) return null
+  if (!name) {
+    filterEvent('invalid_candidate')
+    return null
+  }
   const nameEn = clean(candidate.nameEn)
-  const queries = isCjkName(name) && nameEn ? [nameEn, name] : [name]
+  // The English query only runs for a Chinese name that also carries an
+  // English one; the diagnostics tag that query as the English recall.
+  const useEnglishQuery = isCjkName(name) && !!nameEn
+  const queries = useEnglishQuery ? [nameEn, name] : [name]
+  const queryOrigins = useEnglishQuery ? ['english', 'primary'] : ['primary']
   let best = null
-  for (const query of queries) {
+  for (let index = 0; index < queries.length; index++) {
+    const query = queries[index]
     const results = searchScored(pool, query) || []
+    if (recorder) recallEvent(recorder, candidateIndex, query, queryOrigins[index], results)
     const first = results[0]
     if (!first || !first.exercise) continue
     if (!best || first.score > best.score) best = { exercise: first.exercise, score: first.score }
@@ -268,28 +350,47 @@ function matchOne(candidate, pool, searchScored, genericWords) {
   // scores it below a name word (aliases live in the corpus, not in nameWords).
   const exactName = !!best && exactNameMatch(best.exercise, [name, nameEn])
   let fallback = false
+  // Why a null `best` was dropped; only read at the `!best` return, where the
+  // candidate is actually rejected.
+  let rejection = 'no_hit'
+  let rejectedExercise = null
   // The keyword engine splits on spaces, so a Chinese candidate name is one
   // token: an inexact hit can be a substring of a longer name and outrank the
   // exercise the user meant. For a non-exact CJK name the character fallback
-  // decides; when it is ambiguous, an evidence-backed keyword hit still stands,
-  // otherwise the candidate is dropped.
+  // decides; when it is ambiguous, an evidence-backed keyword hit still
+  // stands, otherwise the candidate is dropped — and only that drop, caused
+  // by the top two being too close, is reported as the ambiguity rejection.
   if (!exactName && isCjkName(name)) {
-    const exercise = cjkFallback(pool, name)
-    if (exercise) {
-      best = { exercise, score: 0 }
+    const pick = cjkFallback(pool, name)
+    if (pick.exercise) {
+      best = { exercise: pick.exercise, score: 0 }
       fallback = true
     } else if (!best || !hasNameEvidence(queries, best.exercise, genericWords)) {
+      rejection = pick.ambiguous ? 'cjk_ambiguous' : best ? 'no_name_evidence' : 'no_hit'
+      rejectedExercise = pick.ambiguous || !best ? null : best.exercise
       best = null
     }
   }
-  if (!best) return null
+  if (!best) {
+    filterEvent(rejection, rejectedExercise)
+    return null
+  }
   if (!fallback && !exactName) {
-    if (best.score < BASE_FLOOR) return null
-    if (!hasNameEvidence(queries, best.exercise, genericWords)) return null
+    if (best.score < BASE_FLOOR) {
+      filterEvent('below_floor', best.exercise)
+      return null
+    }
+    if (!hasNameEvidence(queries, best.exercise, genericWords)) {
+      filterEvent('no_name_evidence', best.exercise)
+      return null
+    }
   }
 
   const exercise = best.exercise
-  if (conflictFor(candidate.equipment, exercise)) return null
+  if (conflictFor(candidate.equipment, exercise)) {
+    filterEvent('equipment_conflict', exercise)
+    return null
+  }
 
   let adjusted = fallback ? 0 : best.score
   if (candidate.equipment && clean(candidate.equipment) === clean(exercise.eq)) adjusted += EQ_BONUS
@@ -298,6 +399,7 @@ function matchOne(candidate, pool, searchScored, genericWords) {
   const level = levelFor(candidate.level, { exact, fallback })
   const rationale = clean(candidate.rationale).slice(0, 200) || name
 
+  filterEvent(fallback ? 'accepted_cjk_fallback' : 'accepted', exercise)
   return {
     exerciseId: exercise.id,
     name: nameOf(exercise) || name,
@@ -317,6 +419,7 @@ function matchOne(candidate, pool, searchScored, genericWords) {
  *   translate?: (value: string) => string,
  *   bodyPartValues?: string[],
  *   equipmentValues?: string[],
+ *   isPublicExercise?: (exercise: object) => boolean,
  * }} options
  */
 export function createExerciseAiSearch(options) {
@@ -325,9 +428,13 @@ export function createExerciseAiSearch(options) {
     list,
     bodyPartValues,
     equipmentValues,
+    isPublicExercise,
   } = options || {}
   if (typeof searchScored !== 'function') throw new Error('createExerciseAiSearch needs searchScored')
   const genericWords = genericSet(bodyPartValues, equipmentValues)
+  // Trusted-public entries decide which ids the diagnostics may ever carry.
+  // Without a source of trust nothing is public, so no id is reported.
+  const isPublic = typeof isPublicExercise === 'function' ? isPublicExercise : () => false
 
   const poolOf = () => {
     const value = typeof list === 'function' ? list() : list
@@ -336,19 +443,24 @@ export function createExerciseAiSearch(options) {
 
   return {
     match(output, hints = {}) {
+      const recorder = recorderOf(hints.diagnostics, isPublic)
+      const startedAt = recorder ? Date.now() : 0
       const source = output?.structured && typeof output.structured === 'object'
         ? output.structured
         : output && typeof output === 'object' ? output : {}
       const candidates = Array.isArray(source.candidates) ? source.candidates : []
       const pool = poolOf()
       const byId = new Map()
-      for (const candidate of candidates) {
-        const hit = matchOne(candidate, pool, searchScored, genericWords)
+      for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
+        const hit = matchOne(candidates[candidateIndex], pool, searchScored, genericWords, recorder, candidateIndex)
         if (!hit) continue
         const current = byId.get(hit.exerciseId)
         if (!current) {
           byId.set(hit.exerciseId, { ...hit, rationales: [hit.rationale] })
           continue
+        }
+        if (recorder) {
+          recorder.emit({ stage: 'filter', candidateIndex, decision: 'deduplicated' })
         }
         const rationales = [...current.rationales]
         if (hit.rationale && !rationales.includes(hit.rationale) && rationales.length < 2) {
@@ -368,6 +480,22 @@ export function createExerciseAiSearch(options) {
           ...item,
           rationale: rationales.join('；'),
         }))
+      if (recorder) {
+        const publicIds = []
+        let customCount = 0
+        for (const item of items) {
+          if (isPublic(item.exercise)) publicIds.push(item.exerciseId)
+          else customCount += 1
+        }
+        recorder.emit({
+          stage: 'display',
+          resultCount: items.length,
+          publicIds,
+          customCount,
+          fallbackOnly: items.length === 0,
+          elapsedMs: Date.now() - startedAt,
+        })
+      }
       return {
         items,
         fallback: cleanFallback(source.fallback, hints.hintText, bodyPartValues, equipmentValues),

@@ -14,6 +14,10 @@ import Icon from './Icon.jsx'
 import { Thumb } from './Media.jsx'
 import EmptyState from './EmptyState.jsx'
 import { Button } from './ui.jsx'
+// The exercise-search diagnostics contract is plain standard JS shared with the
+// API server and RN; the Web client imports it across the tree boundary the same
+// way it already imports the coach core.
+import { createExerciseSearchTrace, logExerciseSearchMedia, safeExerciseSearchError } from '../../../api/agent-runtime/exercise-search-diagnostics.js'
 import './ExerciseAiSearch.css'
 
 export const AI_SEARCH_TASK_ID = 'exercise-search.v1'
@@ -58,6 +62,20 @@ const storage = () => {
     return null
   }
 }
+
+const DIAGNOSTICS_KEY = 'opengym:ai-search-diagnostics'
+
+/** The Web diagnostics switch: exactly '1' in localStorage, OFF whenever storage is unreachable. */
+const diagnosticsEnabled = () => {
+  try {
+    return storage()?.getItem(DIAGNOSTICS_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** Fresh id for one image pick; it joins the pick's own `media` event with the run that submits it. */
+const newMediaAttemptId = () => `mat_${globalThis.crypto?.randomUUID?.() || uid()}`
 
 export const aiSearchRefKey = accountId => REF_PREFIX + (accountId || 'guest')
 
@@ -137,9 +155,13 @@ const loadImage = src => new Promise((resolve, reject) => {
 /**
  * Read a picked image, orient it through the browser's own decoder, then try
  * the documented quality/size ladder until the decoded JPEG is at most 1 MiB.
- * The returned value is the data URL the task receives inline.
+ * The returned value is the data URL the task receives inline. The optional
+ * second parameter is a diagnostics summary: invoked once, at the canvas step's
+ * success or failure, with the produced dimensions and bytes plus the
+ * compression round count. The return value and the throws stay exactly as
+ * they were, so callers may ignore the callback entirely.
  */
-export async function normalizeImageFile(file) {
+export async function normalizeImageFile(file, onSummary) {
   if (!file) throw imageError('invalid')
   if (file.type && !String(file.type).startsWith('image/')) throw imageError('invalid')
   if (Number(file.size) > MAX_RAW_IMAGE_BYTES) throw imageError('too_large')
@@ -150,23 +172,56 @@ export async function normalizeImageFile(file) {
   const height = Number(image.naturalHeight || image.height)
   if (!(width > 0) || !(height > 0)) throw imageError('invalid')
   if (typeof document === 'undefined' || !document.createElement) throw imageError('invalid')
+  let attempts = 0
   for (const attempt of ATTEMPTS) {
+    attempts += 1
     const scale = Math.min(1, attempt.max / Math.max(width, height))
     const canvas = document.createElement('canvas')
     canvas.width = Math.max(1, Math.round(width * scale))
     canvas.height = Math.max(1, Math.round(height * scale))
     const context = typeof canvas.getContext === 'function' ? canvas.getContext('2d') : null
-    if (!context || typeof canvas.toDataURL !== 'function') throw imageError('invalid')
+    if (!context || typeof canvas.toDataURL !== 'function') {
+      onSummary?.({ status: 'failed', attempts })
+      throw imageError('invalid')
+    }
     context.drawImage(image, 0, 0, canvas.width, canvas.height)
     const dataUrl = canvas.toDataURL('image/jpeg', attempt.quality)
-    if (dataUrlBytes(dataUrl) <= AI_SEARCH_MAX_IMAGE_BYTES) return dataUrl
+    if (dataUrlBytes(dataUrl) <= AI_SEARCH_MAX_IMAGE_BYTES) {
+      onSummary?.({ status: 'ready', width: canvas.width, height: canvas.height, bytes: dataUrlBytes(dataUrl), attempts })
+      return dataUrl
+    }
   }
+  onSummary?.({ status: 'failed', attempts })
   throw imageError('too_large')
 }
 
 function imageMessage(error) {
   if (error?.code === 'too_large' || error?.message === 'too_large') return t(ERROR_TEXT.agent_media_too_large)
   return t(ERROR_TEXT.agent_media_invalid)
+}
+
+/** A local pick failure maps onto the two declared media codes; anything else logs as `unknown`. */
+const mediaErrorCode = failure => safeExerciseSearchError(
+  failure?.code === 'invalid' || failure?.message === 'invalid' ? 'agent_media_invalid'
+    : failure?.code === 'too_large' || failure?.message === 'too_large' ? 'agent_media_too_large'
+      : failure?.code || failure?.message,
+)
+
+/**
+ * The one terminal event a run's trace may carry, guarded inside the per-run
+ * object so cancel-then-exit and every other overlap emit it exactly once. A
+ * missing emit (switch off) or an already-ended trace is a plain no-op.
+ */
+const endTrace = (trace, status, phase, code) => {
+  if (!trace?.emit || trace.ended) return
+  trace.ended = true
+  trace.emit({
+    stage: 'end',
+    status,
+    ...(phase ? { phase } : {}),
+    elapsedMs: Date.now() - trace.startedAt,
+    ...(status === 'failed' ? { errorCode: safeExerciseSearchError(code) } : {}),
+  })
 }
 
 function errorCode(error) {
@@ -240,6 +295,14 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   const sessionRef = useRef('')
   const sessionCreatedRef = useRef(false)
   const imagesRef = useRef([])
+  // The latest successful pick, kept in memory only as { image, id } so a later
+  // submit — including a retry that re-references the same image — can join the
+  // pick's media event. It is never persisted, and it is released with the pick
+  // replacement, the draft removal buttons and the session-reset flows.
+  const mediaAttemptRef = useRef(null)
+  // The open run's per-run diagnostics object. Only the user-driven cancel and
+  // leave paths read it; run responses always arrive on their own trace.
+  const openTraceRef = useRef(null)
   const lastSentRef = useRef({ text: '', image: null })
   const lastRequestRef = useRef(null)
   const resultRef = useRef(null)
@@ -298,23 +361,29 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     if (session) agentApi.deleteSession(session).catch(() => {})
   }, [stopPolling])
 
-  const finishRun = useCallback(run => {
+  const finishRun = useCallback((run, trace) => {
     stopPolling()
     terminalRef.current = true
     const id = run?.runId || runIdRef.current
     if (id) clearInterrupted(accountRef.current, id)
+    openTraceRef.current = null
     const status = run?.status
     if (status === 'completed') {
       let matched
       try {
-        matched = createWebAiSearch(SRef.current).match(run.result, { hintText: lastSentRef.current.text })
+        matched = createWebAiSearch(SRef.current).match(run.result, {
+          hintText: lastSentRef.current.text,
+          ...(trace?.emit ? { diagnostics: { emit: trace.emit } } : {}),
+        })
       } catch {
         setError({ code: 'model_unavailable' })
         setPhase('error')
+        endTrace(trace, 'failed', 'match', 'model_unavailable')
         return
       }
       rememberResult(matched)
       setPhase(matched.items.length ? 'candidates' : 'fallbackOnly')
+      endTrace(trace, 'completed', 'match')
       setFollowText('')
       setFollowImage(null)
       setFollowNotice(null)
@@ -322,30 +391,34 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     } else if (status === 'failed') {
       setError({ code: run?.error?.code || 'model_unavailable' })
       setPhase('error')
+      endTrace(trace, 'failed', 'model', run?.error?.code || 'model_unavailable')
     } else if (status === 'cancelled') {
       setPhase(resultRef.current ? resultPhaseRef.current : 'sheetOpen')
+      endTrace(trace, 'cancelled')
     } else if (status === 'interrupted') {
       setError({ code: 'interrupted' })
       setPhase('error')
+      endTrace(trace, 'interrupted')
     }
   }, [rememberResult, stopPolling])
 
-  const pollOnce = useCallback(async (id, token) => {
+  const pollOnce = useCallback(async (id, token, trace) => {
     try {
       const run = await agentApi.getRun(id)
       if (!alive.current || token !== runToken.current) return
       if (run?.profile) setProfile(run.profile)
       if (TERMINAL.has(run?.status)) {
-        finishRun(run)
+        finishRun(run, trace)
         return
       }
-      pollTimer.current = setTimeout(() => { void pollOnce(id, token) }, AI_SEARCH_POLL_MS)
+      pollTimer.current = setTimeout(() => { void pollOnce(id, token, trace) }, AI_SEARCH_POLL_MS)
     } catch (failure) {
       if (!alive.current || token !== runToken.current) return
       // The run may still be alive server-side; keep the interrupted reference
       // so leaving and coming back can still offer a recovery.
       setError({ code: errorCode(failure) })
       setPhase('error')
+      endTrace(trace, 'failed', 'poll', errorCode(failure))
     }
   }, [finishRun])
 
@@ -356,6 +429,8 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     stopPolling()
     setCancelling(false)
     setPhase(resultRef.current ? resultPhaseRef.current : 'sheetOpen')
+    endTrace(openTraceRef.current, 'cancelled')
+    openTraceRef.current = null
     if (id) {
       clearInterrupted(accountRef.current, id)
       agentApi.cancelRun(id).catch(() => {})
@@ -367,6 +442,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     sessionRef.current = ''
     sessionCreatedRef.current = false
     imagesRef.current = []
+    mediaAttemptRef.current = null
     if (old) agentApi.deleteSession(old).catch(() => {})
     setProfile(null)
     setRunCount(0)
@@ -383,6 +459,9 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     sessionRef.current = ''
     sessionCreatedRef.current = false
     imagesRef.current = []
+    mediaAttemptRef.current = null
+    if (open) endTrace(openTraceRef.current, 'cancelled')
+    openTraceRef.current = null
     if (id) {
       clearInterrupted(accountRef.current, id)
       if (open) agentApi.cancelRun(id).catch(() => {})
@@ -438,9 +517,22 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     setRunCount(count => count + 1)
     setPhase('running')
 
+    // One request id per run, also used as its trace id. The per-run object
+    // carries the emit function, the start time, the end guard and this submit's
+    // image-attempt id, and it travels with the token: late responses land on
+    // the run they belong to, never on whatever run happens to be current.
+    const requestId = newRequestId()
+    const attempt = image ? mediaAttemptRef.current : null
+    const trace = {
+      emit: createExerciseSearchTrace({ traceId: requestId, source: 'web', enabled: diagnosticsEnabled() }),
+      startedAt: Date.now(),
+      ended: false,
+      mediaAttemptId: attempt && attempt.image === image ? attempt.id : '',
+    }
+
     const body = {
       taskId: AI_SEARCH_TASK_ID,
-      requestId: newRequestId(),
+      requestId,
       profileId: picked.id,
       sessionId: session,
       sessionMode: continuing ? 'continue' : 'new',
@@ -449,6 +541,13 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
         ...(images.length ? { images } : {}),
       },
     }
+    trace.emit?.({
+      stage: 'submit',
+      execution: 'server',
+      hasHint: !!hintText,
+      imageCount: images.length,
+      ...(trace.mediaAttemptId ? { mediaAttemptId: trace.mediaAttemptId } : {}),
+    })
 
     try {
       const started = await agentApi.startRun(body)
@@ -462,6 +561,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       else setProfile(picked)
       runIdRef.current = started.runId
       terminalRef.current = false
+      openTraceRef.current = trace
       writeInterrupted(accountRef.current, {
         runId: started.runId,
         sessionId: session,
@@ -470,16 +570,19 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       })
       if (TERMINAL.has(started.status)) {
         const run = await agentApi.getRun(started.runId)
-        if (alive.current && token === runToken.current) finishRun({ ...run, profile: run.profile || started.profile || picked })
+        if (alive.current && token === runToken.current) {
+          finishRun({ ...run, profile: run.profile || started.profile || picked }, trace)
+        }
         return
       }
-      pollTimer.current = setTimeout(() => { void pollOnce(started.runId, token) }, AI_SEARCH_POLL_MS)
+      pollTimer.current = setTimeout(() => { void pollOnce(started.runId, token, trace) }, AI_SEARCH_POLL_MS)
     } catch (failure) {
       if (!alive.current || token !== runToken.current) return
       if (!continuing) sessionRef.current = ''
       if (runIdRef.current) clearInterrupted(accountRef.current, runIdRef.current)
       setError({ code: errorCode(failure) })
       setPhase('error')
+      endTrace(trace, 'failed', 'submit', errorCode(failure))
     }
   }, [finishRun, pollOnce, profiles, stopPolling])
 
@@ -548,6 +651,11 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   const chooseImage = async (file, target) => {
     if (!file) return
     const replacing = target === 'panel' ? !!panelImage : !!followImage
+    const mediaAttemptId = newMediaAttemptId()
+    const enabled = diagnosticsEnabled()
+    const startedAt = Date.now()
+    const inputBytes = Number(file.size)
+    let summary = null
     if (target === 'panel') {
       setImageBusy(true)
       setPanelError('')
@@ -557,7 +665,27 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       setFollowNotice('')
     }
     try {
-      const dataUrl = await normalizeImage(file)
+      const dataUrl = await normalizeImage(file, enabled ? value => { summary = value } : undefined)
+      // The pick completed even if the overlay went away meanwhile, so the
+      // attempt is recorded first; the alive guard below only keeps the state
+      // updates to the mounted case.
+      mediaAttemptRef.current = { image: dataUrl, id: mediaAttemptId }
+      logExerciseSearchMedia({
+        mediaAttemptId,
+        source: 'web',
+        enabled,
+        metrics: {
+          status: 'ready',
+          ...(Number.isFinite(inputBytes) ? { inputBytes } : {}),
+          ...(summary?.status === 'ready' ? {
+            outputBytes: summary.bytes,
+            outputWidth: summary.width,
+            outputHeight: summary.height,
+            attempts: summary.attempts,
+          } : {}),
+          elapsedMs: Date.now() - startedAt,
+        },
+      })
       if (!alive.current) return
       if (target === 'panel') {
         setPanelImage(dataUrl)
@@ -567,6 +695,18 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
         setFollowNotice(replacing ? { text: t('已替换为新的图片'), error: false } : null)
       }
     } catch (failure) {
+      logExerciseSearchMedia({
+        mediaAttemptId,
+        source: 'web',
+        enabled,
+        metrics: {
+          status: 'failed',
+          ...(Number.isFinite(inputBytes) ? { inputBytes } : {}),
+          ...(summary?.attempts ? { attempts: summary.attempts } : {}),
+          elapsedMs: Date.now() - startedAt,
+          errorCode: mediaErrorCode(failure),
+        },
+      })
       if (!alive.current) return
       const message = imageMessage(failure)
       if (target === 'panel') setPanelError(message)
@@ -658,7 +798,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
         {panelImage ? <div className="ai-attach">
           <img src={panelImage} alt="" />
           <button type="button" className="ai-attach-x" aria-label={t('移除图片')}
-            onClick={() => { setPanelImage(null); setPanelNotice('') }}><Icon name="xmark" /></button>
+            onClick={() => { setPanelImage(null); setPanelNotice(''); mediaAttemptRef.current = null }}><Icon name="xmark" /></button>
         </div> : null}
         {panelNotice ? <p className="ai-note" role="status">{panelNotice}</p> : null}
         {panelError ? <p className="ai-error" role="alert">{panelError}</p> : null}
@@ -747,7 +887,8 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
           placeholder={t('继续描述或追问…')} onChange={event => setFollowText(event.target.value)} />
         {followImage ? <span className="ai-follow-thumb">
           <img src={followImage} alt="" />
-          <button type="button" aria-label={t('移除图片')} onClick={() => setFollowImage(null)}><Icon name="xmark" /></button>
+          <button type="button" aria-label={t('移除图片')}
+            onClick={() => { setFollowImage(null); mediaAttemptRef.current = null }}><Icon name="xmark" /></button>
         </span> : null}
         <button type="submit" className="iconbtn ai-send" aria-label={t('发送')} disabled={!canFollow}>
           {running ? <span className="ai-spin" aria-hidden="true" /> : <Icon name="arrowUp" />}

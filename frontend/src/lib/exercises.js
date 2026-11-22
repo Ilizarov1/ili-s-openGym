@@ -326,9 +326,13 @@ export const similarExercises = webSearch.similarExercises
 // AI candidates are matched against every exercise the account can pick (own
 // exercises included), never against the Library's current chips.
 export const EQUIPMENTS = equipmentOf(CATALOGUE)
+// The catalogue objects by identity: only these are ever reported as trusted
+// public ids in the AI matcher's diagnostics; a custom exercise never is.
+const PUBLIC_EXERCISES = new Set(CATALOGUE)
 export const createWebAiSearch = state => createExerciseAiSearch({
   searchScored,
   list: allExercises(state),
   bodyPartValues: BODYPARTS,
   equipmentValues: EQUIPMENTS,
+  isPublicExercise: exercise => PUBLIC_EXERCISES.has(exercise),
 })

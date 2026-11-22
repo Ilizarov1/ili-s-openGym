@@ -22,11 +22,14 @@ api/                 NestJS 路由、认证、设备配对、JSON 存储和同�
 api/coach/           AI Coach 服务与共用逻辑
 api/agent-runtime/   共享 Agent 运行核心（契约、围栏、编排、提供商）
 api/agent-runtime/tasks/ 共享业务任务：exercise-search.v1、系统提示词与词表快照
+api/agent-runtime/exercise-search-diagnostics.js  跨端 exercise_search 诊断事件模块
 api/src/agent/       NestJS Agent 模块、按账号存储、配置与作业
 frontend/src/agent/  Web 服务端 Agent 客户端与 Zustand 状态
 frontend/src/lib/exercise-ai-search.js  双端 AI 候选匹配（searchScored + CJK 回退）
 frontend/src/components/ExerciseAiSearch.jsx  Web 动作库/选择器共用识别态
+frontend/scripts/ai-search-eval.mjs  AI 动作检索评估 CLI（replay/vision/e2e）
 mobile-rn/src/agent/ RN 本机执行、SQLite、SecureStore 和服务端客户端
+mobile-rn/src/agent/ai-search-matcher.ts  RN 纯匹配器桥（无 Expo 运行时依赖）
 api/integrations/    外部集成和投递队列
 web/                 Web 镜像构建和 Nginx 配置
 catalogue/           动作原始数据、翻译和演示媒体
@@ -90,6 +93,12 @@ docs/
     DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
     EXECUTION.md                         阶段 0–7 实施清单、命令矩阵与记录
     ACCEPTANCE.md                        A1–A16 离线/设备证据与真实模型 smoke 状态
+    EVAL_CLI_EXECUTION.md                评估 CLI、traceId 与诊断日志实施和验收
+    eval/
+      manifest.json                      hinted / photo-only / edge 三组评估样本清单
+      edge-responses.json                edge 组固定结构化回放
+      README.md                           评估 CLI runbook：模式、参数、退出码与日志开关
+      ACCEPTANCE.md                       A1–A7 验收证据、命令与报告路径
     test_pic/                            真实器械照片 smoke 素材
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程

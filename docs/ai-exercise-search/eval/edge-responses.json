@@ -1,0 +1,75 @@
+{
+  "results": [
+    {
+      "structured": {
+        "candidates": [
+          {
+            "name": "presse à pectoraux assise",
+            "nameEn": "lever chest press",
+            "rationale": "The French phrase names a seated chest press machine, and the supplied English gloss points to a lever-style press.",
+            "level": "medium"
+          }
+        ],
+        "fallback": {
+          "understanding": "A user asked in French about a seated chest press machine and gave an English reference name for a lever-style press.",
+          "bodyParts": ["chest"],
+          "equipment": ["leverage machine"]
+        }
+      }
+    },
+    {
+      "structured": {
+        "candidates": [
+          {
+            "name": "腿举",
+            "rationale": "The Chinese phrase names a reclined leg press movement without any English gloss.",
+            "level": "medium"
+          }
+        ],
+        "fallback": {
+          "understanding": "A user described a leg press in Chinese and gave no English name for it.",
+          "bodyParts": ["upper legs"],
+          "equipment": ["sled machine"]
+        }
+      }
+    },
+    {
+      "structured": {
+        "candidates": [
+          {
+            "name": "lever chest press",
+            "rationale": "The user says the machine they train on is exactly the standard seated lever chest press.",
+            "level": "medium"
+          }
+        ],
+        "fallback": {
+          "understanding": "A user reported training on the machine whose common name is the lever chest press.",
+          "bodyParts": ["chest"],
+          "equipment": ["leverage machine"]
+        }
+      }
+    },
+    {
+      "structured": {
+        "candidates": [],
+        "fallback": {
+          "understanding": "The photo shows an unrelated gym corner with a water cooler, a potted plant and folded towels, and no exercise or training apparatus is visible."
+        }
+      }
+    },
+    {
+      "structured": {
+        "candidates": [
+          {
+            "name": "orbital prism contraption",
+            "rationale": "The user names a fictional apparatus that no fitness catalogue would list as a real exercise or machine.",
+            "level": "medium"
+          }
+        ],
+        "fallback": {
+          "understanding": "A user mentioned a made-up device called an orbital prism contraption, which is not a known exercise or piece of fitness equipment."
+        }
+      }
+    }
+  ]
+}

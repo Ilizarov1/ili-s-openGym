@@ -119,13 +119,35 @@ function invalid(): AgentError {
   return new AgentError('agent_media_invalid', 'this image cannot be decoded');
 }
 
+/** What the compression and rotation stages observed about one normalization. */
+export type AiMediaSummary = {
+  /** The picked asset's reported size, when the platform provided one. */
+  inputBytes: number | null;
+  /** Decoded byte length of the returned JPEG. */
+  outputBytes: number;
+  outputWidth: number;
+  outputHeight: number;
+  /** Compression ladder rounds actually run. */
+  attempts: number;
+  /** Whether the EXIF rotation re-encode branch ran. */
+  rotationApplied: boolean;
+};
+
+/** Diagnostics-only; invoked once, and only when normalization succeeds. */
+export type AiMediaSummarySink = (summary: AiMediaSummary) => void;
+
 /**
  * Normalize one picked image for the AI exercise search: honour EXIF
  * orientation, try 1280/0.85 → 1280/0.7 → 1200/0.7 → 960/0.6 until the decoded
  * JPEG is at most 1 MiB, and return an inline data URL plus metadata. The bytes
- * and the data URL are never logged.
+ * and the data URL are never logged. The optional `onSummary` callback receives
+ * the compression/rotation metadata right before a successful return; a failed
+ * normalization never invokes it, so the caller observes the throw instead.
  */
-export async function normalizeAiImage(asset: AiImageAsset): Promise<AgentAiImageInput> {
+export async function normalizeAiImage(
+  asset: AiImageAsset,
+  onSummary?: AiMediaSummarySink,
+): Promise<AgentAiImageInput> {
   if (!asset?.uri) throw new AgentError('agent_media_invalid', 'no image was selected');
   if (asset.type && asset.type !== 'image' && asset.type !== 'livePhoto') {
     throw new AgentError('agent_media_invalid', 'please select a still image');
@@ -140,9 +162,12 @@ export async function normalizeAiImage(asset: AiImageAsset): Promise<AgentAiImag
   const orientation = orientationOf(exif);
   const raw = rawDimensions(exif, asset.width, asset.height);
   let encoded: Awaited<ReturnType<typeof encodeOnce>> | null = null;
+  let attempts = 0;
+  let rotationApplied = false;
 
   try {
     for (const [edge, quality] of AI_ATTEMPTS) {
+      attempts += 1;
       let attempt = await encodeOnce(asset.uri, resizeActions(asset.width, asset.height, edge), quality);
       if (attempt.bytes.byteLength === 0 || attempt.width <= 0 || attempt.height <= 0) throw invalid();
       // Android decoders normally apply EXIF orientation before the manipulator
@@ -152,6 +177,7 @@ export async function normalizeAiImage(asset: AiImageAsset): Promise<AgentAiImag
         const rawLandscape = raw.width > raw.height;
         const outLandscape = attempt.width > attempt.height;
         if (rawLandscape === outLandscape) {
+          rotationApplied = true;
           attempt = await encodeOnce(
             attempt.uri,
             [{ rotate: orientation === 6 ? 90 : 270 }, ...resizeActions(attempt.height, attempt.width, edge)],
@@ -184,6 +210,20 @@ export async function normalizeAiImage(asset: AiImageAsset): Promise<AgentAiImag
     width: Math.round(encoded.width),
     height: Math.round(encoded.height),
   }));
+  if (onSummary) {
+    try {
+      onSummary({
+        inputBytes: asset.fileSize ?? null,
+        outputBytes: size,
+        outputWidth: Math.round(encoded.width),
+        outputHeight: Math.round(encoded.height),
+        attempts,
+        rotationApplied,
+      });
+    } catch {
+      // A diagnostics sink must never change normalization's outcome.
+    }
+  }
   return {
     id: `image_${randomUUID()}`,
     mime,

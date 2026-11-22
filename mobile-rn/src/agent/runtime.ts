@@ -18,6 +18,7 @@ import {
   EXERCISE_SEARCH_TASK_ID,
 } from './shared';
 import type { AgentTask, AgentTool } from './shared';
+import { createExerciseSearchTrace } from '../../../api/agent-runtime/exercise-search-diagnostics.js';
 import type {
   AgentAttachment, AgentMemory, AgentProposal, AgentProposalRow, AgentRunRow, AgentSessionMode,
   AgentSessionSummary, AgentStartInput,
@@ -284,6 +285,14 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
         ...(run.sessionId ? { sessionId: run.sessionId } : {}),
         ...(sessionMode ? { sessionMode } : {}),
       };
+      // Exercise-search diagnostics (EVAL_CLI_EXECUTION.md D03): same
+      // convention as the server host — the switch is read at execution time
+      // and only for the AI task, and the run-local sink travels through
+      // meta so the shared orchestrator can emit stage events.
+      const exerciseSearchSink = process.env.EXPO_PUBLIC_AGENT_EXERCISE_SEARCH_DIAGNOSTICS === '1'
+        && task.id === AI_TASK_ID
+        ? createExerciseSearchTrace({ traceId: run.requestId, source: 'rn-local', enabled: true })
+        : undefined;
       const context = bindContext({
         scope,
         runId: run.runId,
@@ -300,6 +309,7 @@ export function createLocalRuntime(connection: Connection | null, data: LocalSta
           prompt,
           ...(run.sessionId ? { sessionId: run.sessionId } : {}),
           ...(attachments.length ? { attachments } : {}),
+          ...(exerciseSearchSink ? { exerciseSearchDiagnostic: exerciseSearchSink } : {}),
         },
         ids,
       });

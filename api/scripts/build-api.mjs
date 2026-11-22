@@ -65,6 +65,7 @@ const required = [
   'integrations/index.js',
   'agent-runtime/index.js',
   'agent-runtime/contracts.d.ts',
+  'agent-runtime/exercise-search-diagnostics.js',
   'agent-runtime/tasks/exercise-search.js',
   'agent-runtime/tasks/exercise-search-vocabulary.json',
 ];

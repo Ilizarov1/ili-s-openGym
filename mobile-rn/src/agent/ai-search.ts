@@ -2,9 +2,14 @@
 // It owns the run/session lifecycle and the session's images; the screen only
 // renders candidates and decision rows.
 import { randomUUID } from 'expo-crypto';
-import { createExerciseAiSearch } from '../../../frontend/src/lib/exercise-ai-search.js';
 import { AgentError, createId, EXERCISE_SEARCH_TASK_ID, validateExerciseSearchInput } from './shared';
 import { clearAiRunReference, rememberAiRun, settleAiRun } from './recovery';
+import {
+  createExerciseSearchTrace, safeExerciseSearchError,
+} from '../../../api/agent-runtime/exercise-search-diagnostics.js';
+import type {
+  ExerciseSearchEndPhase, ExerciseSearchEndStatus, ExerciseSearchTrace,
+} from '../../../api/agent-runtime/exercise-search-diagnostics.js';
 import type { AgentLaunch } from './config';
 import type { LocalAgentRuntime } from './runtime';
 import type { ServerAgent } from './server-client';
@@ -13,6 +18,12 @@ import type {
 } from './types';
 import type { LibraryExercise, LibrarySearch } from '../librarySearch';
 import type { Connection } from '../server';
+
+// The pure matcher bridge lives in ai-search-matcher.ts so an offline
+// evaluation can load it without this module's Expo, SQLite and session
+// dependencies. Re-exported here so every existing call site keeps its
+// import source.
+export { matchAiSearch, matcherFor, type AiSearchDiagnostics } from './ai-search-matcher';
 
 export type AiSearchItem = {
   exerciseId: string;
@@ -32,41 +43,6 @@ export type AiSearchMatch = {
   fallback: AiSearchFallback;
 };
 
-type SharedMatcher = {
-  match: (output: unknown, hints?: { hintText?: string }) => AiSearchMatch;
-};
-
-const matchers = new WeakMap<object, SharedMatcher>();
-
-function matcherFor(source: LibrarySearch): SharedMatcher {
-  const cached = matchers.get(source);
-  if (cached) return cached;
-  const factory = createExerciseAiSearch as unknown as (options: {
-    searchScored: (list: LibraryExercise[], query: string) => { exercise: LibraryExercise; score: number }[];
-    list: LibraryExercise[];
-    bodyPartValues: string[];
-    equipmentValues: string[];
-  }) => SharedMatcher;
-  const matcher = factory({
-    searchScored: (list, query) => source.aiSearch.searchScored(query)
-      .filter(hit => list.includes(hit.exercise)),
-    list: source.aiSearch.pool,
-    bodyPartValues: source.aiSearch.bodyPartValues,
-    equipmentValues: source.aiSearch.equipmentValues,
-  });
-  matchers.set(source, matcher);
-  return matcher;
-}
-
-/** Match the task's structured candidates against the same unfiltered pool. */
-export function matchAiSearch(
-  source: LibrarySearch,
-  structured: unknown,
-  hintText: string,
-): AiSearchMatch {
-  return matcherFor(source).match({ structured }, { hintText });
-}
-
 export function structuredOf(run: AgentRunRow | null | undefined): unknown {
   if (!run || !run.result || typeof run.result !== 'object') return null;
   return (run.result as { structured?: unknown }).structured ?? null;
@@ -81,15 +57,40 @@ export type AiSearchLaunch = AgentLaunch;
 export type AiStartTurnInput = {
   hintText: string;
   image?: AiSearchImageInput;
+  /** The latest successful image pick; joins this turn's media event to its submit event. */
+  mediaAttemptId?: string;
   /** Fixture/acceptance only; real providers ignore it. */
   fixtureCase?: 'candidates' | 'fallback-only' | 'error';
 };
 
 export type AiSearchImageInput = AgentAiImageInput;
 
+/** The single end event one turn's diagnostics can still record. */
+export type AiTurnEnd = {
+  status: ExerciseSearchEndStatus;
+  /** The stage the client observed the end at. */
+  phase: ExerciseSearchEndPhase;
+  /** Failure code; undeclared codes log as `unknown`. */
+  errorCode?: string;
+};
+
+/**
+ * The per-run diagnostics handle: the emit function the shared matcher records
+ * recall/filter/display through, plus an end helper guarded so one trace logs
+ * at most one end event. The screen never re-derives the trace from it.
+ */
+export type AiTurnDiagnostics = {
+  emit: (event: Record<string, unknown>) => void;
+  end: (end: AiTurnEnd) => void;
+};
+
 export type AiTurnStart = {
   run: AgentRunRow;
   images: AgentAiImageRow[];
+  /** The request id this turn also logs diagnostics under. */
+  traceId: string;
+  /** Per-run diagnostics; undefined when the diagnostics switch is off. */
+  diagnostics?: AiTurnDiagnostics;
 };
 
 export type AiSearchControllerOptions = {
@@ -99,6 +100,39 @@ export type AiSearchControllerOptions = {
   launch: AgentLaunch;
   sessionId?: string;
 };
+
+/** The stable error code a thrown failure carries, when it carries one at all. */
+function codeOf(failure: unknown): string | undefined {
+  if (failure && typeof failure === 'object' && 'code' in failure) {
+    const code = (failure as { code?: unknown }).code;
+    if (typeof code === 'string' && code) return code;
+  }
+  return undefined;
+}
+
+/**
+ * Build the per-run diagnostics handle. The controller keeps no mutable trace
+ * state; everything a turn may still record travels with the handle it got.
+ */
+function turnDiagnosticsOf(trace: ExerciseSearchTrace, startedAt: number): AiTurnDiagnostics {
+  let ended = false;
+  return {
+    // The trace re-validates and projects every event itself, so it can sit
+    // directly in the shared matcher's `(event: Record<string, unknown>) => void` slot.
+    emit: trace as unknown as (event: Record<string, unknown>) => void,
+    end: (end: AiTurnEnd) => {
+      if (ended) return;
+      ended = true;
+      trace({
+        stage: 'end',
+        status: end.status,
+        phase: end.phase,
+        elapsedMs: Date.now() - startedAt,
+        ...(end.errorCode ? { errorCode: end.errorCode } : {}),
+      });
+    },
+  };
+}
 
 /**
  * One recognition session. Images live in SQLite for both execution
@@ -186,27 +220,53 @@ export class AiSearchController {
     };
     validateExerciseSearchInput(payload);
     const requestId = createId('req', randomUUID);
+    // The request id doubles as the diagnostics trace id, so this client's
+    // submit/end lines and the runtime's stage lines join on one value. The
+    // switch matches the local runtime binding (EVAL_CLI_EXECUTION.md D03/D06).
+    const trace = createExerciseSearchTrace({
+      traceId: requestId,
+      source: 'rn',
+      enabled: process.env.EXPO_PUBLIC_AGENT_EXERCISE_SEARCH_DIAGNOSTICS === '1',
+    });
+    const diagnostics = trace ? turnDiagnosticsOf(trace, Date.now()) : undefined;
+    diagnostics?.emit({
+      stage: 'submit',
+      execution: this.launch.location,
+      hasHint: !!input.hintText.trim(),
+      imageCount: images.length,
+      ...(input.mediaAttemptId ? { mediaAttemptId: input.mediaAttemptId } : {}),
+    });
     const sessionMode = this.runs === 0 ? 'new' : 'continue';
     let run: AgentRunRow;
-    if (this.launch.location === 'server') {
-      if (!this.server) throw new Error('the paired server is not available');
-      run = await this.server.startRun({
-        requestId,
-        profileId: this.launch.profile.id,
-        input: payload,
-        sessionId: this.sessionId,
-        sessionMode,
-        taskId: EXERCISE_SEARCH_TASK_ID,
+    try {
+      if (this.launch.location === 'server') {
+        if (!this.server) throw new Error('the paired server is not available');
+        run = await this.server.startRun({
+          requestId,
+          profileId: this.launch.profile.id,
+          input: payload,
+          sessionId: this.sessionId,
+          sessionMode,
+          taskId: EXERCISE_SEARCH_TASK_ID,
+        });
+      } else {
+        run = await this.runtime.start({
+          requestId,
+          profileId: this.launch.profile.id,
+          input: payload,
+          sessionId: this.sessionId,
+          sessionMode,
+          taskId: EXERCISE_SEARCH_TASK_ID,
+        });
+      }
+    } catch (error) {
+      // The turn never started, so a submit failure is the only observable end.
+      diagnostics?.end({
+        status: 'failed',
+        phase: 'submit',
+        errorCode: safeExerciseSearchError(codeOf(error)),
       });
-    } else {
-      run = await this.runtime.start({
-        requestId,
-        profileId: this.launch.profile.id,
-        input: payload,
-        sessionId: this.sessionId,
-        sessionMode,
-        taskId: EXERCISE_SEARCH_TASK_ID,
-      });
+      throw error;
     }
     this.runs += 1;
     this.activeRunId = run.runId;
@@ -227,7 +287,12 @@ export class AiSearchController {
         createdAt: run.createdAt,
       });
     }
-    return { run, images };
+    return {
+      run,
+      images,
+      traceId: requestId,
+      ...(diagnostics ? { diagnostics } : {}),
+    };
   }
 
   async poll(

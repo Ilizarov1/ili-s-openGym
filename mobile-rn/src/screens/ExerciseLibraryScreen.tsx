@@ -4,6 +4,8 @@ import { randomUUID } from 'expo-crypto';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { isFav } from '../../../frontend/src/lib/favourites.js';
+import { logExerciseSearchMedia, safeExerciseSearchError } from '../../../api/agent-runtime/exercise-search-diagnostics.js';
+import type { ExerciseSearchMediaMetrics } from '../../../api/agent-runtime/exercise-search-diagnostics.js';
 import {
   Badge,
   Button,
@@ -53,9 +55,10 @@ import {
   structuredOf,
 } from '../agent';
 import type {
-  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AiRunRecovery, AiSearchFallback,
-  AiSearchItem,
+  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AgentRunRow, AiRunRecovery,
+  AiSearchFallback, AiSearchItem,
 } from '../agent';
+import type { AiTurnDiagnostics, AiTurnEnd } from '../agent/ai-search';
 import { ExerciseDetailScreen } from './ExerciseDetailScreen';
 
 export type ExerciseLibraryScreenProps = {
@@ -115,6 +118,24 @@ function errorCodeOf(failure: unknown): { code?: string; message: string } {
     };
   }
   return { message: failure instanceof Error ? failure.message : '检索失败，请重试。' };
+}
+
+/** One `media` stage event for an image pick; the caller measures the elapsed time. */
+function logAiMedia(mediaAttemptId: string, metrics: ExerciseSearchMediaMetrics): void {
+  logExerciseSearchMedia({
+    mediaAttemptId,
+    source: 'rn',
+    enabled: process.env.EXPO_PUBLIC_AGENT_EXERCISE_SEARCH_DIAGNOSTICS === '1',
+    metrics,
+  });
+}
+
+/** The client's own end event for a terminal run its poll observed. */
+function runEndOf(run: AgentRunRow): AiTurnEnd {
+  if (run.status === 'completed' || run.status === 'cancelled' || run.status === 'interrupted') {
+    return { status: run.status, phase: 'poll' };
+  }
+  return { status: 'failed', phase: 'poll', errorCode: safeExerciseSearchError(run.error?.code) };
 }
 
 function levelText(level: AiSearchItem['level']): string {
@@ -210,6 +231,11 @@ export function ExerciseLibraryScreen({
   const aiRef = useRef<AiView | null>(null);
   const aiSeqRef = useRef(0);
   const aiPollAbortRef = useRef<AbortController | null>(null);
+  // The latest pick's media attempt association lives in screen memory only:
+  // the submit event joins the media log through it, and it never reaches
+  // SQLite or the image rows.
+  const aiSheetMediaRef = useRef<{ imageId: string; attemptId: string } | null>(null);
+  const aiFollowUpMediaRef = useRef<{ imageId: string; attemptId: string } | null>(null);
   aiRef.current = ai;
 
   const term = query.trim();
@@ -251,6 +277,8 @@ export function ExerciseLibraryScreen({
     setAiFollowUpImage(null);
     setAiFollowUpSheet(false);
     aiSnapshotRef.current = null;
+    aiSheetMediaRef.current = null;
+    aiFollowUpMediaRef.current = null;
     setDetail(null);
     setFiltersOpen(false);
     setEditing(null);
@@ -377,30 +405,77 @@ export function ExerciseLibraryScreen({
     }
   }
 
+  /** The media attempt id of the latest pick that produced this image, if any. */
+  function mediaAttemptOf(image: { id: string }): string | undefined {
+    const sheet = aiSheetMediaRef.current;
+    if (sheet && sheet.imageId === image.id) return sheet.attemptId;
+    const followUp = aiFollowUpMediaRef.current;
+    if (followUp && followUp.imageId === image.id) return followUp.attemptId;
+    return undefined;
+  }
+
   async function pickAiImage(source: 'camera' | 'library', target: 'sheet' | 'followup'): Promise<void> {
     if (target === 'sheet') setAiSheetError(null);
     else setAiFollowUpError(null);
     setAiPickerBusy(true);
+    // One fresh attempt id per selection; the media event logs on its own trace
+    // and the later submit event joins the two through this id.
+    const mediaAttemptId = `media_${randomUUID()}`;
+    const startedAt = Date.now();
+    let mediaEnded = false;
     try {
       if (source === 'camera') {
         const permission = await ImagePicker.requestCameraPermissionsAsync();
-        if (!permission.granted) throw new Error('没有相机权限，请在系统设置中允许。');
+        if (!permission.granted) {
+          mediaEnded = true;
+          logAiMedia(mediaAttemptId, {
+            status: 'failed',
+            errorCode: 'permission_denied',
+            elapsedMs: Date.now() - startedAt,
+          });
+          throw new Error('没有相机权限，请在系统设置中允许。');
+        }
       }
       const result = source === 'camera'
         ? await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsMultipleSelection: false, quality: 1, exif: true })
         : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsMultipleSelection: false, quality: 1, exif: true });
-      if (result.canceled) return;
+      if (result.canceled) {
+        mediaEnded = true;
+        logAiMedia(mediaAttemptId, { status: 'cancelled', elapsedMs: Date.now() - startedAt });
+        return;
+      }
       const asset = result.assets?.[0];
       if (!asset) throw new Error('没有读取到所选照片，请重试。');
-      const image = await normalizeAiImage(asset);
+      const image = await normalizeAiImage(asset, summary => {
+        mediaEnded = true;
+        logAiMedia(mediaAttemptId, {
+          status: 'ready',
+          ...(summary.inputBytes != null ? { inputBytes: summary.inputBytes } : {}),
+          outputBytes: summary.outputBytes,
+          outputWidth: summary.outputWidth,
+          outputHeight: summary.outputHeight,
+          attempts: summary.attempts,
+          rotationApplied: summary.rotationApplied,
+          elapsedMs: Date.now() - startedAt,
+        });
+      });
       if (target === 'sheet') {
+        aiSheetMediaRef.current = { imageId: image.id, attemptId: mediaAttemptId };
         setAiImageNotice(aiDraftImage ? '已用新照片替换上一张。' : '已选择 1 张照片。');
         setAiDraftImage(image);
       } else {
+        aiFollowUpMediaRef.current = { imageId: image.id, attemptId: mediaAttemptId };
         setAiFollowUpImage(image);
         setAiFollowUpSheet(false);
       }
     } catch (failure) {
+      if (!mediaEnded) {
+        logAiMedia(mediaAttemptId, {
+          status: 'failed',
+          errorCode: safeExerciseSearchError(errorCodeOf(failure).code),
+          elapsedMs: Date.now() - startedAt,
+        });
+      }
       const error = errorCodeOf(failure);
       const message = aiErrorMessage(error.code, error.message);
       if (target === 'sheet') setAiSheetError({ ...error, message });
@@ -415,6 +490,7 @@ export function ExerciseLibraryScreen({
     text: string,
     image?: AgentAiImageInput,
     fixtureCase?: FixtureCase,
+    mediaAttemptId?: string,
   ): Promise<void> {
     const seq = aiSeqRef.current + 1;
     aiSeqRef.current = seq;
@@ -458,21 +534,42 @@ export function ExerciseLibraryScreen({
         previous,
       };
     });
+    // The completion, poll and late callbacks below record through the
+    // diagnostics object this run started with, never through whatever run
+    // happens to be current when they fire.
+    let diagnostics: AiTurnDiagnostics | undefined;
     try {
       const started = await controller.startTurn({
         hintText: trimmed,
         ...(image ? { image } : {}),
         ...(fixtureCase ? { fixtureCase } : {}),
+        ...(mediaAttemptId ? { mediaAttemptId } : {}),
       });
-      if (aiSeqRef.current !== seq) return;
+      diagnostics = started.diagnostics;
+      if (aiSeqRef.current !== seq) {
+        // A late start still ends its own trace: every path that invalidates
+        // the sequence also cancels or disposes the run this turn started.
+        diagnostics?.end({ status: 'cancelled', phase: 'submit' });
+        return;
+      }
       const latestImage = started.images[0] ?? null;
       setAi(view => (view ? { ...view, latestImage: latestImage ?? view.latestImage, summary: controller.summary } : view));
       const final = await controller.poll(started.run.runId, undefined, abort.signal);
-      if (aiSeqRef.current !== seq) return;
+      if (aiSeqRef.current !== seq) {
+        // A late terminal result still ends its own trace; the newer turn owns the UI.
+        diagnostics?.end(runEndOf(final));
+        return;
+      }
       if (final.status === 'completed') {
         const structured = structuredOf(final);
         if (structured == null) throw new Error('the model returned no structured result');
-        const matched = matchAiSearch(librarySearch, structured, trimmed);
+        const matched = matchAiSearch(
+          librarySearch,
+          structured,
+          trimmed,
+          diagnostics ? { emit: diagnostics.emit } : undefined,
+        );
+        diagnostics?.end({ status: 'completed', phase: 'match' });
         setAi(view => (view ? {
           ...view,
           status: 'ready',
@@ -489,6 +586,7 @@ export function ExerciseLibraryScreen({
         setAiFollowUpImage(null);
         setAiFollowUpError(null);
       } else if (final.status === 'cancelled') {
+        diagnostics?.end({ status: 'cancelled', phase: 'poll' });
         setAi(view => {
           if (!view) return view;
           const before = view.previous;
@@ -506,6 +604,7 @@ export function ExerciseLibraryScreen({
         });
       } else {
         const error = final.error ?? { code: 'model_unavailable', message: '检索失败，请重试。' };
+        diagnostics?.end(runEndOf(final));
         setAi(view => (view ? {
           ...view,
           status: 'error',
@@ -516,8 +615,15 @@ export function ExerciseLibraryScreen({
         } : view));
       }
     } catch (failure) {
-      if (aiSeqRef.current !== seq) return;
       const error = errorCodeOf(failure);
+      // A rejection still ends the trace of the run it belongs to: an aborted
+      // signal (or a cancelled run) is a client-side cancel, the rest a failure.
+      diagnostics?.end(
+        abort.signal.aborted || error.code === 'run_cancelled'
+          ? { status: 'cancelled', phase: 'poll' }
+          : { status: 'failed', phase: 'poll', errorCode: safeExerciseSearchError(error.code) },
+      );
+      if (aiSeqRef.current !== seq) return;
       setAi(view => (view ? {
         ...view,
         status: 'error',
@@ -546,7 +652,13 @@ export function ExerciseLibraryScreen({
         current.controller.retarget(launch);
         setAiSheetOpen(false);
         resetAiSheetDraft();
-        await runAiTurn(current.controller, text, aiDraftImage ?? undefined, aiFixtureCase);
+        await runAiTurn(
+          current.controller,
+          text,
+          aiDraftImage ?? undefined,
+          aiFixtureCase,
+          aiDraftImage ? mediaAttemptOf(aiDraftImage) : undefined,
+        );
         return;
       }
       const launch = await resolveLaunchFor(!!aiDraftImage);
@@ -568,7 +680,13 @@ export function ExerciseLibraryScreen({
       setQuery('');
       clearFilterChips();
       setFiltersOpen(false);
-      await runAiTurn(controller, text, aiDraftImage ?? undefined, aiFixtureCase);
+      await runAiTurn(
+        controller,
+        text,
+        aiDraftImage ?? undefined,
+        aiFixtureCase,
+        aiDraftImage ? mediaAttemptOf(aiDraftImage) : undefined,
+      );
     } catch (failure) {
       const error = errorCodeOf(failure);
       setAiSheetError({ ...error, message: aiErrorMessage(error.code, error.message) });
@@ -616,7 +734,13 @@ export function ExerciseLibraryScreen({
     }
     const text = aiFollowUpText.trim();
     if (!text && !aiFollowUpImage) return;
-    runAiTurn(current.controller, text, aiFollowUpImage ?? undefined, current.fixtureCase).catch(() => undefined);
+    runAiTurn(
+      current.controller,
+      text,
+      aiFollowUpImage ?? undefined,
+      current.fixtureCase,
+      aiFollowUpImage ? mediaAttemptOf(aiFollowUpImage) : undefined,
+    ).catch(() => undefined);
   }
 
   function exitAi(): void {
@@ -627,6 +751,8 @@ export function ExerciseLibraryScreen({
     if (current) current.controller.dispose().catch(() => undefined);
     const snapshot = aiSnapshotRef.current;
     aiSnapshotRef.current = null;
+    aiSheetMediaRef.current = null;
+    aiFollowUpMediaRef.current = null;
     setAi(null);
     setAiRecovery(null);
     setAiFollowUpText('');
@@ -683,7 +809,9 @@ export function ExerciseLibraryScreen({
       setAiSheetOpen(false);
       setAiFollowUpSheet(false);
       aiSheetReset();
-      await runAiTurn(controller, text, image, aiFixtureCase);
+      // A retry builds a new trace but reuses the attempt id when the same
+      // image is re-referenced.
+      await runAiTurn(controller, text, image, aiFixtureCase, image ? mediaAttemptOf(image) : undefined);
     } catch (failure) {
       const error = errorCodeOf(failure);
       setAiSheetError({ ...error, message: aiErrorMessage(error.code, error.message) });
@@ -1074,7 +1202,10 @@ export function ExerciseLibraryScreen({
             <IconButton
               accessibilityLabel="移除追问图片"
               name="xmark"
-              onPress={() => setAiFollowUpImage(null)}
+              onPress={() => {
+                setAiFollowUpImage(null);
+                aiFollowUpMediaRef.current = null;
+              }}
               size="sm"
             />
           </View>
@@ -1614,6 +1745,7 @@ export function ExerciseLibraryScreen({
               onPress={() => {
                 setAiDraftImage(null);
                 setAiImageNotice('');
+                aiSheetMediaRef.current = null;
               }}
             />
           </View>
