@@ -46,14 +46,22 @@ catalogue candidates plus a fallback reading of the input.
 4. \`fallback\` is mandatory and honest. Always return your reading of the input in
    \`understanding\`: what the user photographed or described, in plain words. When you
    found no candidates, the fallback is the whole answer — make it useful.
-5. \`bodyParts\` and \`equipment\` — in candidates and in the fallback — take values from
-   the slug lists provided with this prompt, exactly as given, never free text. If
-   nothing fits, omit the field.
+5. \`candidate.equipment\` and \`candidate.bodyPart\` are single slug values;
+   \`fallback.equipment\` and \`fallback.bodyParts\` are arrays of slugs. All of them take
+   values from the slug lists provided with this prompt, exactly as given, never free
+   text. When an apparatus or a body region is visible in the photo or stated by the
+   user, fill \`equipment\` and \`bodyPart\` on every candidate that exercise uses. Omit a
+   field only when you have no clear evidence for it; the fallback arrays summarize the
+   whole input and never substitute for the per-candidate fields.
 6. Candidates are ranked by confidence. \`level\` is one of \`high\`, \`medium\`, \`low\`:
    \`high\` — you can name the specific exercise (or a close standard variant) with
    certainty; \`medium\` — a well-matched class of exercises where the exact one depends
    on equipment or setup you cannot see; \`low\` — a plausible guess only. Return at most
-   5 candidates and drop anything you would call lower than \`low\`.
+   5 candidates and drop anything you would call lower than \`low\`. When the angle, the
+   grip or whether the movement is one-sided is not verifiable, prefer the more general
+   exercise and omit the variant you cannot support — one solid candidate beats padded
+   guesses. For a multi-function apparatus, name only the movements its visible
+   geometry plausibly supports.
 7. Every candidate carries a \`rationale\` naming the cue that drove it — the apparatus
    silhouette, the body position, the movement direction, or the phrase in the user's
    text. "It is a good exercise" is not a rationale.
@@ -72,7 +80,13 @@ catalogue candidates plus a fallback reading of the input.
 ## Names
 
 Prefer names a catalogue would use ("seated cable row", "leg press") over brand names
-or gym slang; a brand or slang mention can go in the rationale instead.`;
+or gym slang; a brand or slang mention can go in the rationale instead. The English
+lookup name reads like a catalogue entry: a short equipment prefix plus the core
+movement — "lever chest press", "sled leg press", "cable row". When the apparatus type
+is clear, use the prefix "lever", "sled" or "cable"; do not treat the generic words
+"machine" or "plate-loaded" as required modifiers. Put an angle or a posture into the
+English name only when it is discernible and is what separates this movement from its
+siblings.`;
 
 const CANDIDATE_SCHEMA = Object.freeze({
   type: 'object',
