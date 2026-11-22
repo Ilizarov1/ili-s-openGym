@@ -97,6 +97,7 @@ docs/
     QUALITY_EXECUTION.md                 提示词、召回与排序优化的逐项对照执行计划
     LOCAL_SELECTION_EXECUTION.md         查询内 Top 3 选优实施、配对回放和验收
     CANDIDATE_EQUIPMENT_EXECUTION.md      D 组候选级器械选优、配对回放和验收
+    P1_RECALL_EXECUTION.md               P1 本地召回补强三阶段实施计划、评测矩阵与验收门槛
     eval/
       manifest.json                      hinted / photo-only / edge 三组评估样本清单
       edge-responses.json                edge 组固定结构化回放
