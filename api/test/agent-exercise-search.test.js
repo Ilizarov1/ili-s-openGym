@@ -7,12 +7,14 @@ import {
   BODY_PART_SLUGS,
   EQUIPMENT_SLUGS,
   EXERCISE_SEARCH_MAX_IMAGE_BYTES,
+  EXERCISE_SEARCH_OUTPUT_SCHEMA,
   EXERCISE_SEARCH_PROMPT,
   EXERCISE_SEARCH_TASK_ID,
   bindContext,
   cleanExerciseSearchOutput,
   createExerciseSearchTask,
   createProvider,
+  isExerciseSearchOutput,
   runAgent,
   validateExerciseImages,
   validateExerciseSearchInput,
@@ -142,14 +144,30 @@ test('output cleaning truncates, throws out invalid candidates and builds a safe
   assert.match(fallback.fallback.understanding, /未能理解/);
 });
 
-test('parseOutput extracts a fenced/extra-text JSON object and refuses unreadable output', () => {
+test('parseOutput and schema accept both fallback-first and candidates-first JSON key orders', () => {
   const task = createExerciseSearchTask();
   const context = contextFor(task, { hintText: 'test' });
-  const output = task.parseOutput({
+  const candidatesFirst = task.parseOutput({
     text: '```json\n{"candidates":[{"name":"bench press","rationale":"bench","level":"high"}],"fallback":{"understanding":"a bench press"}}\n```',
   }, context);
-  assert.equal(output.candidates[0].name, 'bench press');
-  assert.equal(output.fallback.understanding, 'a bench press');
+  assert.equal(candidatesFirst.candidates[0].name, 'bench press');
+  assert.equal(candidatesFirst.fallback.understanding, 'a bench press');
+
+  const fallbackFirst = task.parseOutput({
+    text: '{"fallback":{"understanding":"plate-loaded lever chest press"},"candidates":[{"name":"lever chest press","rationale":"lever arms","level":"high"}]}',
+  }, context);
+  assert.equal(fallbackFirst.candidates[0].name, 'lever chest press');
+  assert.equal(fallbackFirst.fallback.understanding, 'plate-loaded lever chest press');
+
+  assert.equal(isExerciseSearchOutput({
+    fallback: { understanding: 'lever arms' },
+    candidates: [{ name: 'lever chest press', rationale: 'lever arms', level: 'high' }],
+  }), true);
+  assert.equal(isExerciseSearchOutput({
+    candidates: [{ name: 'lever chest press', rationale: 'lever arms', level: 'high' }],
+    fallback: { understanding: 'lever arms' },
+  }), true);
+
   assert.throws(
     () => task.parseOutput({ text: 'no json here' }, context),
     error => error instanceof AgentError && error.code === 'model_unavailable',
@@ -171,12 +189,18 @@ test('the task declares one JSON model round, no tools, no memories and only the
   assert.equal(task.userMessage({}), '[图片]');
   assert.equal(task.userMessage({ hintText: ' row ' }), 'row');
   assert.deepEqual(task.targetScope({}, {}), []);
+  assert.deepEqual(Object.keys(EXERCISE_SEARCH_OUTPUT_SCHEMA.properties), ['fallback', 'candidates']);
+  assert.deepEqual(EXERCISE_SEARCH_OUTPUT_SCHEMA.required, ['fallback', 'candidates']);
   const instructions = task.instructions({}, {});
   assert.ok(instructions.includes('Output is JSON and nothing else'));
+  assert.ok(instructions.includes('Emit `fallback` first and `candidates` second'));
+  assert.ok(instructions.includes('written before `candidates`'));
+  assert.ok(instructions.includes('drive mechanism'));
   assert.ok(instructions.includes('Never invent, guess or reference catalogue'));
   assert.ok(instructions.includes('## Allowed body part slugs'));
   assert.ok(instructions.includes('## Allowed equipment slugs'));
   assert.ok(instructions.includes('leverage machine'));
+  assert.ok(instructions.includes('lever", "sled" or "cable"'));
   assert.ok(EXERCISE_SEARCH_PROMPT.includes('Output is JSON'));
 });
 
