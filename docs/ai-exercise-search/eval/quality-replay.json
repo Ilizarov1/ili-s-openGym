@@ -1,0 +1,99 @@
+{
+  "results": [
+    {
+      "id": "quality-hinted-chest",
+      "structured": {
+        "candidates": [
+          {
+            "name": "seated chest press",
+            "nameEn": "seated chest press",
+            "rationale": "合成简述：坐姿推胸器械的高置信候选。",
+            "level": "high"
+          },
+          {
+            "name": "lever chest press",
+            "nameEn": "lever chest press",
+            "rationale": "合成简述：用户说明与杠杆臂结构指向杠杆式推胸。",
+            "level": "medium"
+          },
+          {
+            "name": "single arm chest press",
+            "nameEn": "single arm chest press",
+            "rationale": "合成简述：双臂独立，可能支持单臂变体。",
+            "level": "low"
+          },
+          {
+            "name": "incline chest press",
+            "nameEn": "incline chest press",
+            "rationale": "合成简述：推臂角度可能偏上斜，证据不足。",
+            "level": "low"
+          },
+          {
+            "name": "cable chest press",
+            "nameEn": "cable chest press",
+            "rationale": "合成简述：绳索替代方案。",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "合成简述：一台带靠背与双杠杆臂的坐姿推胸机。",
+          "bodyParts": ["chest", "upper arms", "shoulders"],
+          "equipment": ["leverage machine"]
+        }
+      }
+    },
+    {
+      "id": "quality-photo-chest",
+      "structured": {
+        "candidates": [
+          {
+            "name": "chest press",
+            "nameEn": "chest press",
+            "rationale": "合成简述：杠杆臂加对握把手，最像坐姿推胸。",
+            "level": "medium"
+          },
+          {
+            "name": "seated shoulder press",
+            "nameEn": "seated shoulder press",
+            "rationale": "合成简述：把手位置偏高，也可能是坐姿肩推。",
+            "level": "low"
+          },
+          {
+            "name": "pec deck fly",
+            "nameEn": "pec deck fly",
+            "rationale": "合成简述：照片模糊，也可能是蝴蝶机。",
+            "level": "low"
+          },
+          {
+            "name": "seated dip",
+            "nameEn": "seated dip",
+            "rationale": "合成简述：低支点高把手，或为坐姿臂屈伸机。",
+            "level": "low"
+          }
+        ],
+        "fallback": {
+          "understanding": "合成简述：一台挂片式杠杆器械，含座椅、背垫与两条低位支点推臂。",
+          "bodyParts": ["chest", "shoulders", "upper arms"],
+          "equipment": ["leverage machine", "weight plate"]
+        }
+      }
+    },
+    {
+      "id": "quality-no-recall-chest",
+      "structured": {
+        "candidates": [
+          {
+            "name": "seated machine chest press",
+            "rationale": "合成简述：构造样本，高置信坐姿器械推胸单候选。",
+            "level": "high"
+          }
+        ],
+        "fallback": {
+          "understanding": "合成简述：构造样本，模拟一次目标 ID 未进入原始召回的坐姿器械推胸。",
+          "bodyParts": ["chest"],
+          "equipment": ["leverage machine"]
+        }
+      }
+    }
+  ]
+}

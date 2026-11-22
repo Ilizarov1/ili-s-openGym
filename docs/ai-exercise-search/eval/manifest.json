@@ -145,6 +145,33 @@
       "expectedEquipment": [],
       "family": "out-of-catalogue",
       "replay": { "path": "edge-responses.json", "index": 4 }
+    },
+    {
+      "id": "quality-hinted-chest",
+      "group": "quality-regression",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "replay": { "path": "quality-replay.json", "index": 0 }
+    },
+    {
+      "id": "quality-photo-chest",
+      "group": "quality-regression",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "replay": { "path": "quality-replay.json", "index": 1 }
+    },
+    {
+      "id": "quality-no-recall-chest",
+      "group": "quality-regression",
+      "expectation": "match",
+      "expectedIds": ["0576", "0577"],
+      "expectedEquipment": ["leverage machine"],
+      "family": "chest-press",
+      "replay": { "path": "quality-replay.json", "index": 2 }
     }
   ]
 }
