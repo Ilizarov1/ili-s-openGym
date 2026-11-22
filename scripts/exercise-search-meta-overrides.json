@@ -1,0 +1,653 @@
+{
+  "byId": {
+    "1041": {
+      "p": "supine",
+      "a": [
+        "plate loaded lying chest press",
+        "杠杆仰卧卧推",
+        "仰卧推胸机"
+      ]
+    },
+    "0576": {
+      "p": "seated",
+      "a": [
+        "seated chest press machine",
+        "lever seated chest press",
+        "machine seated chest press",
+        "坐姿推胸机",
+        "坐姿胸推机"
+      ]
+    },
+    "0577": {
+      "p": "seated"
+    },
+    "1455": {
+      "p": "seated"
+    },
+    "2277": {
+      "p": "seated"
+    },
+    "10671": {
+      "p": "seated",
+      "a": [
+        "pin loaded seated chest press",
+        "selectorized seated chest press",
+        "插销式坐姿推胸机"
+      ]
+    },
+    "1299": {
+      "p": "seated",
+      "a": [
+        "incline chest press machine",
+        "lever incline bench press",
+        "上斜推胸机"
+      ]
+    },
+    "2659": {
+      "p": "seated",
+      "a": [
+        "plate loaded incline chest press"
+      ]
+    },
+    "1300": {
+      "p": "seated",
+      "a": [
+        "decline chest press machine",
+        "lever decline bench press",
+        "下斜推胸机"
+      ]
+    },
+    "1030": {
+      "p": "seated",
+      "a": [
+        "lever pec fly",
+        "butterfly machine",
+        "pec fly machine",
+        "pec deck machine",
+        "pec deck chest fly",
+        "蝴蝶机",
+        "蝴蝶机夹胸",
+        "坐姿蝴蝶机夹胸"
+      ]
+    },
+    "0596": {
+      "p": "seated",
+      "a": [
+        "seated chest fly machine",
+        "坐姿夹胸机",
+        "坐姿飞鸟夹胸机"
+      ]
+    },
+    "0602": {
+      "p": "seated",
+      "a": [
+        "reverse pec deck fly",
+        "rear delt fly machine",
+        "反向蝴蝶机",
+        "蝴蝶机反向飞鸟"
+      ]
+    },
+    "0603": {
+      "p": "seated",
+      "a": [
+        "lever seated overhead press",
+        "shoulder press machine",
+        "坐姿推肩机"
+      ]
+    },
+    "1454": {
+      "p": "seated",
+      "a": [
+        "seated shoulder press machine",
+        "坐姿肩部推举机"
+      ]
+    },
+    "0869": {
+      "p": "seated"
+    },
+    "2318": {
+      "p": "seated"
+    },
+    "2962": {
+      "p": "seated",
+      "a": [
+        "neutral grip seated shoulder press machine"
+      ]
+    },
+    "0587": {
+      "p": "seated",
+      "a": [
+        "lever seated military press",
+        "坐姿器械军事推举"
+      ]
+    },
+    "0585": {
+      "p": "seated",
+      "a": [
+        "seated leg extension machine",
+        "leg extension machine",
+        "坐姿腿屈伸机",
+        "腿屈伸机"
+      ]
+    },
+    "1873": {
+      "p": "seated",
+      "a": [
+        "plate loaded leg extension"
+      ]
+    },
+    "0599": {
+      "p": "seated",
+      "a": [
+        "seated leg curl machine",
+        "坐姿腿弯举机"
+      ]
+    },
+    "8604": {
+      "p": "seated",
+      "a": [
+        "plate loaded seated leg curl"
+      ]
+    },
+    "0586": {
+      "p": "prone",
+      "a": [
+        "prone leg curl machine",
+        "lying leg curl machine",
+        "俯卧腿弯举机"
+      ]
+    },
+    "1590": {
+      "p": "prone"
+    },
+    "0597": {
+      "p": "seated",
+      "a": [
+        "hip abduction machine",
+        "坐姿髋外展机"
+      ]
+    },
+    "0598": {
+      "p": "seated",
+      "a": [
+        "hip adduction machine",
+        "坐姿髋内收机"
+      ]
+    },
+    "0739": {
+      "p": "supine",
+      "a": [
+        "45 degree leg press",
+        "angled leg press",
+        "sled leg press machine",
+        "倒蹬机",
+        "45度腿举机",
+        "斜躺腿举"
+      ]
+    },
+    "2224": {
+      "p": "supine"
+    },
+    "1463": {
+      "p": "supine"
+    },
+    "1464": {
+      "p": "supine"
+    },
+    "2267": {
+      "p": "seated",
+      "a": [
+        "seated leg press machine",
+        "坐姿腿举机",
+        "水平坐姿腿举机"
+      ]
+    },
+    "2951": {
+      "p": "seated",
+      "a": [
+        "horizontal leg press machine",
+        "水平蹬腿机"
+      ]
+    },
+    "0743": {
+      "p": "standing",
+      "a": [
+        "hack squat machine",
+        "哈克深蹲机"
+      ]
+    },
+    "1992": {
+      "p": "standing"
+    },
+    "0744": {
+      "p": "supine"
+    },
+    "0150": {
+      "p": "seated",
+      "a": [
+        "cable bar lat pulldown",
+        "wide bar lat pulldown",
+        "绳索直杆高位下拉"
+      ]
+    },
+    "0197": {
+      "p": "seated",
+      "a": [
+        "cable lat pulldown pro bar"
+      ]
+    },
+    "0198": {
+      "p": "seated",
+      "a": [
+        "cable lat pulldown machine",
+        "lat pulldown machine",
+        "坐姿高位下拉机"
+      ]
+    },
+    "2291": {
+      "p": "seated",
+      "a": [
+        "wide grip lat pulldown machine",
+        "宽握高位下拉机"
+      ]
+    },
+    "2330": {
+      "p": "seated"
+    },
+    "7583": {
+      "p": "seated",
+      "a": [
+        "neutral grip lat pulldown machine",
+        "对握高位下拉机"
+      ]
+    },
+    "1204": {
+      "p": "seated",
+      "a": [
+        "single arm cable lat pulldown"
+      ]
+    },
+    "1870": {
+      "p": "seated",
+      "a": [
+        "plate loaded lat pulldown",
+        "lever lat pulldown machine",
+        "挂片式高位下拉机"
+      ]
+    },
+    "0579": {
+      "p": "seated",
+      "a": [
+        "lever lat pulldown",
+        "固定器械高位下拉"
+      ]
+    },
+    "0673": {
+      "p": "seated",
+      "a": [
+        "reverse grip lat pulldown machine",
+        "反握高位下拉机"
+      ]
+    },
+    "0861": {
+      "p": "seated",
+      "a": [
+        "seated cable row machine",
+        "low cable row machine",
+        "坐姿绳索划船机"
+      ]
+    },
+    "0180": {
+      "p": "seated",
+      "a": [
+        "low pulley seated row"
+      ]
+    },
+    "0160": {
+      "p": "seated"
+    },
+    "1350": {
+      "p": "seated",
+      "a": [
+        "seated row machine",
+        "lever row machine",
+        "坐姿划船机"
+      ]
+    },
+    "2664": {
+      "p": "seated",
+      "a": [
+        "plate loaded seated row"
+      ]
+    },
+    "0588": {
+      "p": "seated"
+    },
+    "0581": {
+      "p": "seated",
+      "a": [
+        "high row machine",
+        "高位划船机"
+      ]
+    },
+    "0606": {
+      "p": "bent_over",
+      "a": [
+        "t bar row machine",
+        "T杠划船机"
+      ]
+    },
+    "0592": {
+      "p": "seated",
+      "a": [
+        "preacher curl machine",
+        "坐姿牧师凳弯举机"
+      ]
+    },
+    "0575": {
+      "p": "seated",
+      "a": [
+        "biceps curl machine",
+        "坐姿二头弯举机"
+      ]
+    },
+    "0607": {
+      "p": "seated",
+      "a": [
+        "triceps extension machine",
+        "坐姿臂屈伸伸展机"
+      ]
+    },
+    "1451": {
+      "p": "seated",
+      "a": [
+        "seated dip machine",
+        "坐姿臂屈伸机"
+      ]
+    },
+    "0595": {
+      "p": "seated",
+      "a": [
+        "ab crunch machine",
+        "坐姿卷腹机"
+      ]
+    },
+    "1452": {
+      "p": "seated"
+    },
+    "0594": {
+      "p": "seated",
+      "a": [
+        "seated calf raise machine",
+        "坐姿提踵机"
+      ]
+    },
+    "0605": {
+      "p": "standing",
+      "a": [
+        "standing calf raise machine",
+        "站姿提踵机"
+      ]
+    },
+    "0584": {
+      "p": "seated",
+      "a": [
+        "lateral raise machine",
+        "坐姿侧平举机"
+      ]
+    },
+    "0025": {
+      "p": "supine",
+      "a": [
+        "flat barbell bench press",
+        "平板杠铃卧推"
+      ]
+    },
+    "0047": {
+      "p": "supine",
+      "a": [
+        "incline barbell bench press",
+        "上斜杠铃卧推"
+      ]
+    },
+    "0033": {
+      "p": "supine",
+      "a": [
+        "decline barbell bench press",
+        "下斜杠铃卧推"
+      ]
+    },
+    "0289": {
+      "p": "supine",
+      "a": [
+        "flat dumbbell bench press",
+        "平板哑铃卧推"
+      ]
+    },
+    "0314": {
+      "p": "supine",
+      "a": [
+        "incline dumbbell bench press",
+        "上斜哑铃卧推"
+      ]
+    },
+    "0308": {
+      "p": "supine",
+      "a": [
+        "flat dumbbell fly",
+        "平板哑铃飞鸟"
+      ]
+    },
+    "0060": {
+      "p": "supine",
+      "a": [
+        "barbell skull crusher",
+        "杠铃颅骨粉碎者"
+      ]
+    },
+    "0061": {
+      "p": "supine",
+      "a": [
+        "lying barbell triceps extension"
+      ]
+    },
+    "0748": {
+      "p": "supine",
+      "a": [
+        "smith flat bench press",
+        "史密斯平板卧推"
+      ]
+    },
+    "0757": {
+      "p": "supine",
+      "a": [
+        "smith incline chest press",
+        "史密斯机上斜胸推"
+      ]
+    },
+    "0753": {
+      "p": "supine",
+      "a": [
+        "smith decline chest press",
+        "史密斯机下斜胸推"
+      ]
+    },
+    "0770": {
+      "p": "standing",
+      "a": [
+        "smith machine back squat"
+      ]
+    },
+    "0765": {
+      "p": "seated",
+      "a": [
+        "smith seated overhead press"
+      ]
+    },
+    "0766": {
+      "p": "standing",
+      "a": [
+        "smith machine shoulder press"
+      ]
+    },
+    "0755": {
+      "p": "standing",
+      "a": [
+        "smith machine hack squat"
+      ]
+    },
+    "0760": {
+      "p": "supine",
+      "a": [
+        "smith vertical leg press"
+      ]
+    },
+    "0043": {
+      "p": "standing",
+      "a": [
+        "barbell back squat",
+        "深蹲架深蹲"
+      ]
+    },
+    "3593": {
+      "p": "standing",
+      "a": [
+        "classic barbell squat"
+      ]
+    },
+    "0042": {
+      "p": "standing"
+    },
+    "0085": {
+      "p": "bent_over",
+      "a": [
+        "barbell rdl"
+      ]
+    },
+    "0116": {
+      "p": "bent_over"
+    },
+    "0027": {
+      "p": "bent_over",
+      "a": [
+        "barbell row"
+      ]
+    },
+    "0293": {
+      "p": "bent_over"
+    },
+    "0292": {
+      "p": "bent_over",
+      "a": [
+        "single arm dumbbell row",
+        "one arm dumbbell row"
+      ]
+    },
+    "0334": {
+      "p": "standing",
+      "a": [
+        "standing dumbbell lateral raise",
+        "站姿哑铃侧平举"
+      ]
+    },
+    "0405": {
+      "p": "seated",
+      "a": [
+        "seated dumbbell overhead press",
+        "哑铃坐姿推肩"
+      ]
+    },
+    "0091": {
+      "p": "seated",
+      "a": [
+        "seated barbell shoulder press"
+      ]
+    },
+    "1162": {
+      "p": "standing",
+      "a": [
+        "barbell overhead press"
+      ]
+    },
+    "0200": {
+      "p": "standing",
+      "a": [
+        "rope triceps pushdown",
+        "绳索三头下压"
+      ]
+    },
+    "0201": {
+      "p": "standing",
+      "a": [
+        "cable triceps pushdown"
+      ]
+    },
+    "0241": {
+      "p": "standing"
+    },
+    "0178": {
+      "p": "standing",
+      "a": [
+        "standing cable lateral raise"
+      ]
+    },
+    "0155": {
+      "p": "standing",
+      "a": [
+        "cable crossover chest fly",
+        "龙门架绳索夹胸"
+      ]
+    },
+    "0175": {
+      "p": "kneeling"
+    },
+    "0212": {
+      "p": "seated"
+    },
+    "0472": {
+      "p": "hanging"
+    },
+    "0652": {
+      "p": "hanging"
+    },
+    "1326": {
+      "p": "hanging"
+    },
+    "0662": {
+      "p": "prone"
+    },
+    "0463": {
+      "p": "prone"
+    },
+    "1060": {
+      "p": "supine",
+      "a": [
+        "杠铃臀桥推举"
+      ]
+    },
+    "1372": {
+      "p": "standing"
+    },
+    "0294": {
+      "p": "standing",
+      "a": [
+        "standing dumbbell biceps curl"
+      ]
+    },
+    "0313": {
+      "p": "standing",
+      "a": [
+        "standing dumbbell hammer curl"
+      ]
+    },
+    "0031": {
+      "p": "standing",
+      "a": [
+        "standing barbell curl"
+      ]
+    },
+    "0070": {
+      "p": "seated"
+    }
+  }
+}

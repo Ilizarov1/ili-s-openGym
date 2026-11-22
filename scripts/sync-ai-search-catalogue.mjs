@@ -12,18 +12,34 @@ import { EXDB } from '../frontend/src/lib/exercises-data.js';
 import zhNames from '../frontend/src/exercise-names/zh.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const META_PATH = path.join(ROOT, 'frontend', 'src', 'lib', 'exercise-search-meta.json');
 const OUT_PATH = path.join(ROOT, 'api', 'agent-runtime', 'tasks', 'exercise-search-catalogue.json');
 const checkOnly = process.argv.includes('--check');
 
-export function buildCompactCatalogue(exdb = EXDB, zhMap = zhNames) {
-  return exdb.map(entry => ({
-    id: String(entry.id || ''),
-    n: String(entry.n || ''),
-    zh: String(zhMap?.[entry.id] || ''),
-    eq: String(entry.eq || ''),
-    bp: String(entry.bp || ''),
-    tg: String(entry.tg || ''),
-  }));
+function loadSearchMeta(metaPath = META_PATH) {
+  if (!fs.existsSync(metaPath)) return {};
+  const parsed = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+  return parsed?.byId && typeof parsed.byId === 'object' ? parsed.byId : {};
+}
+
+export function buildCompactCatalogue(exdb = EXDB, zhMap = zhNames, metaById = loadSearchMeta()) {
+  return exdb.map(entry => {
+    const id = String(entry.id || '');
+    const meta = metaById?.[id];
+    const row = {
+      id,
+      n: String(entry.n || ''),
+      zh: String(zhMap?.[id] || ''),
+      eq: String(entry.eq || ''),
+      bp: String(entry.bp || ''),
+      tg: String(entry.tg || ''),
+    };
+    if (meta?.p) row.p = String(meta.p);
+    if (Array.isArray(meta?.a) && meta.a.length) {
+      row.a = meta.a.slice(0, 8).map(v => String(v));
+    }
+    return row;
+  });
 }
 
 export function serializeCompactCatalogue(entries) {

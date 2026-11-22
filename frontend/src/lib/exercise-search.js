@@ -5,6 +5,19 @@
 // its own data: how an exercise's searchable name is built, where saved aliases
 // come from, and how body part / equipment / muscle labels are translated.
 
+import SEARCH_META from './exercise-search-meta.json' with { type: 'json' }
+
+const POSTURE_CORPUS_TERMS = {
+  seated: 'seated 坐姿',
+  standing: 'standing 站姿',
+  supine: 'supine 仰卧',
+  prone: 'prone 俯卧',
+  side_lying: 'side lying 侧卧',
+  kneeling: 'kneeling 跪姿',
+  bent_over: 'bent over 俯身',
+  hanging: 'hanging 悬垂',
+}
+
 export const normalizeStr = s => (s || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -176,9 +189,12 @@ export function createExerciseSearch({
     const hit = corpusCache.get(e)
     if (hit && hit.v === v && hit.aliasKey === aliasKey) return hit
     const sm = Array.isArray(e?.sm) ? e.sm : []
+    const meta = !e?.custom && e?.id ? SEARCH_META?.byId?.[e.id] : null
+    const metaAliases = Array.isArray(meta?.a) ? meta.a : []
+    const metaPosture = meta?.p ? (POSTURE_CORPUS_TERMS[meta.p] || '') : ''
     const name = normalizeStr(nameText(e))
     const s = normalizeStr([
-      name, ...aliasValues,
+      name, ...aliasValues, ...metaAliases, metaPosture,
       e?.tg || '', translate(e?.tg || ''),
       e?.eq || '', translate(e?.eq || ''),
       e?.bp || '', translate(e?.bp || ''),

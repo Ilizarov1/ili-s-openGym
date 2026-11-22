@@ -560,8 +560,13 @@ test('the compact catalogue snapshot matches EXDB counts, ids, equipment and bod
   assert.deepEqual(snapshot.map(row => row.id), EXDB.map(row => row.id));
   assert.deepEqual(snapshot.map(row => row.eq), EXDB.map(row => row.eq));
   assert.deepEqual(snapshot.map(row => row.bp), EXDB.map(row => row.bp));
+  const allowedKeys = new Set(['a', 'bp', 'eq', 'id', 'n', 'p', 'tg', 'zh']);
+  const allowedPostures = new Set(['seated', 'standing', 'supine', 'prone', 'side_lying', 'kneeling', 'bent_over', 'hanging']);
   for (const row of snapshot) {
-    assert.deepEqual(Object.keys(row).sort(), ['bp', 'eq', 'id', 'n', 'tg', 'zh']);
+    for (const key of ['bp', 'eq', 'id', 'n', 'tg', 'zh']) assert.ok(key in row, `missing ${key}`);
+    for (const key of Object.keys(row)) assert.ok(allowedKeys.has(key), `unexpected key ${key}`);
+    if ('p' in row) assert.ok(allowedPostures.has(row.p), `unexpected posture ${row.p}`);
+    if ('a' in row) assert.ok(Array.isArray(row.a) && row.a.every(v => typeof v === 'string' && v.length > 0));
     assert.ok(row.n && row.zh);
   }
 });
