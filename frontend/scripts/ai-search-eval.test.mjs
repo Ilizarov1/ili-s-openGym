@@ -35,7 +35,9 @@ const CLI = path.join(REPO_ROOT, 'frontend', 'scripts', 'ai-search-eval.mjs')
 // Relative on purpose: the direct run resolves it against cwd (repo root),
 // the npm run against INIT_CWD (repo root) — both paths the CLI must support.
 const REAL_MANIFEST = 'docs/ai-exercise-search/eval/manifest.json'
-const REPLAY_SAMPLES = 10
+// 5 hinted + 5 edge replays + the 3 quality-regression replays (T0 of
+// docs/ai-exercise-search/QUALITY_EXECUTION.md).
+const REPLAY_SAMPLES = 13
 const PHOTO_ONLY_SAMPLES = 5
 
 // The synthetic markers. None of these may ever reach a report, stdout or
