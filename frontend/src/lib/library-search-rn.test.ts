@@ -113,4 +113,12 @@ describe('RN library search adapter', () => {
     expect(search.search('卧堆', filters).suggestions).toEqual([])
     expect(search.search('高位下拉', filters).suggestions).toEqual([])
   })
+
+  it('expands commercial gym and run-together synonyms in shared RN library search (P1-C)', () => {
+    const search = createLibrarySearch(baseProfile)
+    expect(search.search('pecdeck', filters).items.map(item => item.id)).toContain('1030')
+    expect(search.search('tbar', filters).items.map(item => item.id)).toContain('0606')
+    expect(search.search('selectorized chest press', filters).items.map(item => item.id)).toContain('0576')
+    expect(search.search('latpulldown', filters).items.map(item => item.id)).toContain('6881')
+  })
 })

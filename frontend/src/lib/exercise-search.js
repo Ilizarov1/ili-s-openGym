@@ -78,6 +78,10 @@ const SYNONYMS = {
   delt: ['delts', 'shoulder'], lat: ['lats', 'latissimus', 'pulldown'], trap: ['traps', 'shrug'],
   glute: ['glutes', 'gluteus'], calf: ['calf', 'calves'], hip: ['hip'], rope: ['rope'], trx: ['suspension'],
   ring: ['ring', 'suspension'], rings: ['ring', 'suspension'], kettle: ['kettlebell'], dumbel: ['dumbbell'],
+  selectorized: ['lever', 'machine'], pinloaded: ['lever', 'machine'], plateloaded: ['plate loaded', 'lever'],
+  converging: ['lever', 'machine'], isolateral: ['lever', 'machine'], pecdeck: ['pec deck'], tbar: ['t-bar'],
+  latpulldown: ['lat pulldown'], chestpress: ['chest press'], shoulderpress: ['shoulder press'],
+  legpress: ['leg press'], legextension: ['leg extension'], legcurl: ['leg curl'], hipthrust: ['hip thrust'],
 }
 
 const queryTokens = query => normalizeStr(query || '').split(/\s+/).filter(Boolean)

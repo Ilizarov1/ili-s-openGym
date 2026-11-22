@@ -1397,3 +1397,137 @@ describe('AI exercise local recall (P1-A)', () => {
     }))).toEqual(['0576'])
   })
 })
+
+describe('AI exercise equipment conflict matrix (P1-C)', () => {
+  const synth = (id, n, eq, extra = {}) => ({
+    id,
+    n,
+    name: extra.name || n,
+    eq,
+    bp: extra.bp || 'upper legs',
+    aliases: extra.aliases || [],
+    custom: extra.custom === true,
+  })
+  const zhPublicMatcher = createExerciseAiSearch({
+    searchScored: ZH_SEARCH.searchScored,
+    list: ZH_POOL,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+  const collectWith = (matcher, output) => {
+    const events = []
+    const result = matcher.match(output, {
+      diagnostics: { emit: event => events.push(event) },
+    })
+    return { events, result }
+  }
+
+  it('rejects free-weight hack squat (0046) when candidate specifies sled machine and picks 0743', () => {
+    const { result } = collectWith(zhPublicMatcher, {
+      candidates: [{
+        name: 'hack squat',
+        equipment: 'sled machine',
+        bodyPart: 'upper legs',
+        level: 'high',
+        rationale: '哈克深蹲',
+      }],
+      fallback: { understanding: '哈克深蹲器械' },
+    })
+    expect(idsOf(result)).toEqual(['0743'])
+
+    // Verify 0046 alone is explicitly rejected as equipment_conflict
+    const barbellOnly = synth('0046', 'barbell hack squat', 'barbell')
+    const conflictOnly = createExerciseAiSearch({
+      searchScored: () => [{ exercise: barbellOnly, score: 300 }],
+      list: [barbellOnly],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: () => true,
+    })
+    const blocked = collectWith(conflictOnly, {
+      candidates: [{ name: 'hack squat', equipment: 'sled machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(blocked.result)).toEqual([])
+    expect(blocked.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0046' },
+    ])
+  })
+
+  it('rejects fixed machines when candidate specifies free weights, and rejects machines/free weights when candidate specifies bodyweight', () => {
+    const leverPress = synth('0576', 'lever chest press', 'leverage machine', { bp: 'chest' })
+    const mFreeVsFixed = createExerciseAiSearch({
+      searchScored: () => [{ exercise: leverPress, score: 300 }],
+      list: [leverPress],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: () => true,
+    })
+    const blockedFixed = collectWith(mFreeVsFixed, {
+      candidates: [{ name: 'chest press', equipment: 'barbell', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(blockedFixed.result)).toEqual([])
+    expect(blockedFixed.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0576' },
+    ])
+
+    const barbellBench = synth('0025', 'barbell bench press', 'barbell', { bp: 'chest' })
+    const mBwVsFree = createExerciseAiSearch({
+      searchScored: () => [{ exercise: barbellBench, score: 300 }],
+      list: [barbellBench],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+      isPublicExercise: () => true,
+    })
+    const blockedFree = collectWith(mBwVsFree, {
+      candidates: [{ name: 'bench press', equipment: 'body weight', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(blockedFree.result)).toEqual([])
+    expect(blockedFree.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0025' },
+    ])
+  })
+
+  it('keeps leverage machine <-> sled machine, cable <-> fixed machines, and barbell family compatible', () => {
+    const sledLegPress = synth('0739', 'sled 45° leg press', 'sled machine')
+    const leverHackSquat = synth('5516', 'lever hack squat', 'leverage machine')
+    const cableChestPress = synth('2144', 'cable seated chest press', 'cable', { bp: 'chest' })
+    const olympicSquat = synth('s-oly', 'olympic barbell squat', 'olympic barbell')
+
+    const mCompat = createExerciseAiSearch({
+      searchScored: (_list, query) => {
+        if (query === 'leg press') return [{ exercise: sledLegPress, score: 250 }]
+        if (query === 'hack squat') return [{ exercise: leverHackSquat, score: 250 }]
+        if (query === 'chest press') return [{ exercise: cableChestPress, score: 250 }]
+        if (query === 'barbell squat') return [{ exercise: olympicSquat, score: 250 }]
+        return []
+      },
+      list: [sledLegPress, leverHackSquat, cableChestPress, olympicSquat],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+    })
+
+    expect(idsOf(mCompat.match({
+      candidates: [{ name: 'leg press', equipment: 'leverage machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['0739'])
+
+    expect(idsOf(mCompat.match({
+      candidates: [{ name: 'hack squat', equipment: 'sled machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['5516'])
+
+    expect(idsOf(mCompat.match({
+      candidates: [{ name: 'chest press', equipment: 'leverage machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['2144'])
+
+    expect(idsOf(mCompat.match({
+      candidates: [{ name: 'barbell squat', equipment: 'barbell', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-oly'])
+  })
+})

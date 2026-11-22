@@ -43,6 +43,10 @@ const MACHINE_HINTS = new Set([
   'weight plate', 'weighted', 'landmine', 'hammer',
 ])
 const BODYWEIGHT = new Set(['body weight', 'band', 'resistance band'])
+const FIXED_MACHINES = new Set(['leverage machine', 'sled machine', 'smith machine'])
+const FREE_WEIGHTS = new Set([
+  'barbell', 'ez barbell', 'olympic barbell', 'trap bar', 'dumbbell', 'kettlebell', 'weight plate',
+])
 const STOP_WORDS = new Set([
   'a', 'an', 'the', 'of', 'on', 'in', 'with', 'for', 'and', 'or', 'to', 'at', 'by', 'from',
   'is', 'are', 'this', 'that', 'your', 'you', 'my', 'me', 'it', 'its',
@@ -203,8 +207,13 @@ function strongerLevel(current, next) {
 
 function conflictFor(hint, exercise) {
   const equipment = clean(hint)
-  if (!MACHINE_HINTS.has(equipment)) return false
-  return BODYWEIGHT.has(clean(exercise?.eq))
+  const exEq = clean(exercise?.eq)
+  if (!equipment || !exEq) return false
+  if (MACHINE_HINTS.has(equipment) && BODYWEIGHT.has(exEq)) return true
+  if (FIXED_MACHINES.has(equipment) && FREE_WEIGHTS.has(exEq)) return true
+  if (FREE_WEIGHTS.has(equipment) && FIXED_MACHINES.has(exEq)) return true
+  if (BODYWEIGHT.has(equipment) && (FIXED_MACHINES.has(exEq) || FREE_WEIGHTS.has(exEq))) return true
+  return false
 }
 
 // The character fallback's own verdict: the exercise it would pick, or why it
