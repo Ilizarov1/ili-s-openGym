@@ -370,7 +370,18 @@ function isBetterQueryHit(next, current) {
   return false
 }
 
-function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment, genericWords, hintText) {
+function isBetterCandidateQueryHit(next, current) {
+  if (next.exact !== current.exact) return next.exact
+  if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
+  if (next.bodyPartMatch !== current.bodyPartMatch) return next.bodyPartMatch
+  if (next.unsupportedVariants !== current.unsupportedVariants) {
+    return next.unsupportedVariants < current.unsupportedVariants
+  }
+  if (next.score !== current.score) return next.score > current.score
+  return false
+}
+
+function pickQueryHit(results, queries, names, equipmentHint, bodyPartHint, candidateEquipment, genericWords, hintText) {
   const limit = Math.min(results.length, QUERY_PICK_LIMIT)
   const [primaryName = '', nameEn = ''] = names
   let picked = null
@@ -394,6 +405,7 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
       score: entry.score,
       exact,
       equipmentMatch: !!equipmentHint && eq === equipmentHint,
+      bodyPartMatch: !!bodyPartHint && clean(exercise.bp) === bodyPartHint,
       eq,
       unsupportedVariants,
       queryRank: index,
@@ -459,9 +471,9 @@ function matchOne(
     : ''
   const rawModelLevel = typeof candidate.level === 'string' ? candidate.level.trim().toLowerCase() : ''
   const modelLevel = LEVEL_RANK[rawModelLevel] ? rawModelLevel : 'low'
-  // The English query only runs for a Chinese name that also carries an
-  // English one; the diagnostics tag that query as the English recall.
-  const useEnglishQuery = isCjkName(name) && !!nameEn
+  // Run the English query whenever nameEn is present and differs from name
+  // after normalization; diagnostics tag that query as the English recall.
+  const useEnglishQuery = !!nameEn && normalize(nameEn) !== normalize(name)
   const queries = useEnglishQuery ? [nameEn, name] : [name]
   const queryOrigins = useEnglishQuery ? ['english', 'primary'] : ['primary']
   let best = null
@@ -480,6 +492,7 @@ function matchOne(
       queries,
       names,
       validCandidateEquipment,
+      validCandidateBodyPart,
       candidate.equipment,
       genericWords,
       hintText,
@@ -488,7 +501,7 @@ function matchOne(
       exactConflict = queryExactConflict
     }
     if (!picked) continue
-    if (!best || (picked.exact && !best.exact) || (picked.exact === best.exact && picked.score > best.score)) {
+    if (!best || isBetterCandidateQueryHit(picked, best)) {
       best = picked
     }
   }

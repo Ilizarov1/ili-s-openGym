@@ -499,7 +499,7 @@ describe('AI exercise matcher diagnostics (D04)', () => {
     expect(withQuery.result).toEqual(result)
   })
 
-  it('runs the English query only for a Chinese name that carries one', () => {
+  it('runs the English query when nameEn is present and differs from name', () => {
     const output = {
       candidates: [{ name: '坐姿推举', nameEn: 'seated press', level: 'high', rationale: '坐姿上推' }],
       fallback: { understanding: 'x' },
@@ -1275,5 +1275,125 @@ describe('AI exercise cross-query ranking & unsupported variants (P0-A)', () => 
       'name',
       'rationale',
     ])
+  })
+})
+
+describe('AI exercise local recall (P1-A)', () => {
+  const synth = (id, n, eq, extra = {}) => ({
+    id,
+    n,
+    name: extra.name || n,
+    eq,
+    bp: extra.bp || 'chest',
+    aliases: extra.aliases || [],
+    custom: extra.custom === true,
+  })
+  const makeInjected = (resultsByQuery, pool) => createExerciseAiSearch({
+    searchScored: (_list, query) => resultsByQuery[query] || [],
+    list: pool,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+  const collectWith = (matcher, output) => {
+    const events = []
+    const result = matcher.match(output, {
+      diagnostics: { emit: event => events.push(event), evaluation: { expectedIds: [], includeQueries: true } },
+    })
+    return { events, result }
+  }
+  const zhPublicMatcher = createExerciseAiSearch({
+    searchScored: ZH_SEARCH.searchScored,
+    list: ZH_POOL,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+
+  it('uses nameEn for non-CJK names such as French chest press to recall 0576', () => {
+    const { events, result } = collectWith(zhPublicMatcher, {
+      candidates: [{
+        name: 'presse à pectoraux assise',
+        nameEn: 'lever chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'medium',
+        rationale: '坐姿推胸',
+      }],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(idsOf(result)).toEqual(['0576'])
+    expect(events.filter(e => e.stage === 'recall').map(e => e.queryOrigin)).toEqual(['english', 'primary'])
+  })
+
+  it('uses canonical nameEn for colloquial English names such as plate-loaded shoulder press to recall 0603', () => {
+    const { events, result } = collectWith(zhPublicMatcher, {
+      candidates: [{
+        name: 'plate-loaded shoulder press',
+        nameEn: 'lever shoulder press',
+        equipment: 'leverage machine',
+        bodyPart: 'shoulders',
+        level: 'high',
+        rationale: '挂片式肩推',
+      }],
+      fallback: { understanding: '肩推器械' },
+    })
+    expect(idsOf(result)).toEqual(['0603'])
+    expect(events.filter(e => e.stage === 'recall').map(e => e.queryOrigin)).toEqual(['english', 'primary'])
+  })
+
+  it('skips duplicate English query when nameEn equals name after normalization', () => {
+    const { events, result } = collectWith(zhPublicMatcher, {
+      candidates: [{
+        name: 'Lever Chest Press',
+        nameEn: '  lever   chest press  ',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '推胸机',
+      }],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(idsOf(result)).toEqual(['0576'])
+    expect(events.filter(e => e.stage === 'recall').map(e => e.queryOrigin)).toEqual(['primary'])
+  })
+
+  it('prefers an equipment-consistent and variant-clean nameEn hit over a higher-scoring primary hit', () => {
+    const leverClean = synth('0576', 'lever chest press', 'leverage machine', { bp: 'chest' })
+    const cableWrongEq = synth('2144', 'cable seated chest press', 'cable', { bp: 'chest' })
+    const eqMatcher = makeInjected({
+      'lever chest press': [{ exercise: leverClean, score: 210 }],
+      'seated chest press': [{ exercise: cableWrongEq, score: 310 }],
+    }, [leverClean, cableWrongEq])
+
+    expect(idsOf(eqMatcher.match({
+      candidates: [{
+        name: 'seated chest press',
+        nameEn: 'lever chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '坐姿推胸',
+      }],
+      fallback: { understanding: '推胸机' },
+    }))).toEqual(['0576'])
+
+    const leverIncline = synth('1299', 'lever incline chest press', 'leverage machine', { bp: 'chest' })
+    const variantMatcher = makeInjected({
+      'lever chest press': [{ exercise: leverClean, score: 210 }],
+      'seated chest press': [{ exercise: leverIncline, score: 310 }],
+    }, [leverClean, leverIncline])
+
+    expect(idsOf(variantMatcher.match({
+      candidates: [{
+        name: 'seated chest press',
+        nameEn: 'lever chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '坐姿推胸',
+      }],
+      fallback: { understanding: '推胸机' },
+    }))).toEqual(['0576'])
   })
 })
