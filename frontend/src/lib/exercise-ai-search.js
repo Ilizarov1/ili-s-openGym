@@ -372,12 +372,19 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
   const namePhrase = candidateIsChestPress ? normalizePhrase(primaryName) : ''
   const nameEnPhrase = candidateIsChestPress ? normalizePhrase(nameEn) : ''
   let picked = null
+  let exactConflict = null
   for (let index = 0; index < limit; index++) {
     const entry = results[index]
     if (!entry || !entry.exercise) continue
     const exercise = entry.exercise
     const exact = exactNameMatch(exercise, names)
-    if (keywordRejection(entry, exact, queries, candidateEquipment, genericWords)) continue
+    const rejection = keywordRejection(entry, exact, queries, candidateEquipment, genericWords)
+    if (rejection) {
+      if (exact && rejection === 'equipment_conflict' && !exactConflict) {
+        exactConflict = { exercise, score: entry.score }
+      }
+      continue
+    }
     const eq = clean(exercise.eq)
     const cataloguePhrase = candidateIsChestPress
       ? normalizePhrase(clean(exercise.n) || clean(exercise.name))
@@ -397,7 +404,10 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
     }
     if (!picked || isBetterQueryHit(hit, picked)) picked = hit
   }
-  return picked
+  if (exactConflict && (!picked || !picked.exact)) {
+    return { hit: null, exactConflict }
+  }
+  return { hit: picked, exactConflict: null }
 }
 
 function matchOne(
@@ -436,6 +446,7 @@ function matchOne(
   const queryOrigins = useEnglishQuery ? ['english', 'primary'] : ['primary']
   let best = null
   let firstBest = null
+  let exactConflict = null
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index]
     const results = searchScored(pool, query) || []
@@ -444,9 +455,23 @@ function matchOne(
     if (first && first.exercise && (!firstBest || first.score > firstBest.score)) {
       firstBest = { exercise: first.exercise, score: first.score }
     }
-    const picked = pickQueryHit(results, queries, names, validCandidateEquipment, candidate.equipment, genericWords)
+    const { hit: picked, exactConflict: queryExactConflict } = pickQueryHit(
+      results,
+      queries,
+      names,
+      validCandidateEquipment,
+      candidate.equipment,
+      genericWords,
+    )
+    if (queryExactConflict && (!exactConflict || queryExactConflict.score > exactConflict.score)) {
+      exactConflict = queryExactConflict
+    }
     if (!picked) continue
     if (!best || picked.score > best.score) best = picked
+  }
+  if (exactConflict && (!best || !best.exact)) {
+    filterEvent('equipment_conflict', exactConflict.exercise)
+    return null
   }
 
   // An exact name or saved alias is authoritative even when the shared engine

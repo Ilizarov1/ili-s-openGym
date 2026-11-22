@@ -447,19 +447,22 @@ describe('AI exercise matcher diagnostics (D04)', () => {
     })
   })
 
-  it('still records a second-place expected id the original rules never surface', () => {
-    // The repeatable evaluation case (A2): the first keyword hit is a
-    // conflicting name the evidence rules reject, the expected exercise sits
-    // behind it at rank 2, and the output stays empty because the original
-    // pipeline never reads past results[0].
-    const conflictor = EXDB.find(exercise => exercise.id === '0027') // barbell bent over row
+  it('still records a rank-4 expected id that top-3 selection never surfaces', () => {
+    // The repeatable evaluation case (A2): the top-3 keyword hits all lack
+    // name evidence, the expected exercise sits behind them at rank 4, and the
+    // output stays empty because within-query selection only inspects the top 3.
+    const conflictor1 = EXDB.find(exercise => exercise.id === '0027') // barbell bent over row
+    const conflictor2 = EXDB.find(exercise => exercise.id === '0031') // barbell curl
+    const conflictor3 = EXDB.find(exercise => exercise.id === '0463') // front plank
     const expected = EXDB.find(exercise => exercise.id === '0576') // lever chest press
     const injected = createExerciseAiSearch({
       searchScored: () => [
-        { exercise: conflictor, score: 65 },
-        { exercise: expected, score: 64 },
+        { exercise: conflictor1, score: 65 },
+        { exercise: conflictor2, score: 64 },
+        { exercise: conflictor3, score: 63 },
+        { exercise: expected, score: 62 },
       ],
-      list: [conflictor, expected],
+      list: [conflictor1, conflictor2, conflictor3, expected],
       bodyPartValues: BODYPARTS,
       equipmentValues: EQUIPMENTS,
       isPublicExercise: exercise => exercise.custom !== true,
@@ -475,9 +478,14 @@ describe('AI exercise matcher diagnostics (D04)', () => {
       candidateIndex: 0,
       queryOrigin: 'primary',
       queryWordCount: 3,
-      hitCount: 2,
-      top: [{ id: '0027', score: 65 }, { id: '0576', score: 64 }],
-      expectedRanks: [2],
+      hitCount: 4,
+      top: [
+        { id: '0027', score: 65 },
+        { id: '0031', score: 64 },
+        { id: '0463', score: 63 },
+        { id: '0576', score: 62 },
+      ],
+      expectedRanks: [4],
     }])
     expect(filters(events)).toEqual([
       { stage: 'filter', candidateIndex: 0, decision: 'no_name_evidence', id: '0027' },
@@ -816,6 +824,108 @@ describe('AI exercise within-query top-3 selection (Group B)', () => {
     expect(events.filter(e => e.stage === 'filter')).toEqual([
       { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: 's-bw' },
     ])
+  })
+
+  it('rejects a candidate when all exact matches in top 3 hit equipment conflict, without falling back to non-exact variants, bilingual queries, or CJK fallback', () => {
+    const bwPushUp = synth('0662', 'push-up', 'body weight', { name: '俯卧撑' })
+    const bosuPushUp = synth('0653', 'push-up (bosu ball)', 'bosu ball', { name: '波速球俯卧撑' })
+    const compatExact = synth('s-smith-pushup', 'push-up', 'smith machine', { name: '俯卧撑' })
+    const nonExactBw = synth('s-bw-var', 'decline push-up', 'body weight')
+
+    // All exact hits in top 3 conflict -> do not substitute non-exact rank-3 variant.
+    const mSingle = makeInjected({
+      'push-up': [
+        { exercise: bwPushUp, score: 113 },
+        { exercise: nonExactBw, score: 110 },
+        { exercise: bosuPushUp, score: 104 },
+      ],
+    }, [bwPushUp, nonExactBw, bosuPushUp])
+    const single = collectEvents(mSingle, {
+      candidates: [{ name: 'push-up', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(single.result)).toEqual([])
+    expect(single.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0662' },
+    ])
+
+    // Another compatible exact match in top 3 is still allowed.
+    const mCompatExact = makeInjected({
+      'push-up': [
+        { exercise: bwPushUp, score: 113 },
+        { exercise: bosuPushUp, score: 108 },
+        { exercise: compatExact, score: 104 },
+      ],
+    }, [bwPushUp, bosuPushUp, compatExact])
+    expect(idsOf(mCompatExact.match({
+      candidates: [{ name: 'push-up', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-smith-pushup'])
+
+    // Bilingual query + CJK fallback must not bypass an exact-match conflict from English query.
+    const mBilingual = makeInjected({
+      'push-up': [
+        { exercise: bwPushUp, score: 113 },
+        { exercise: bosuPushUp, score: 104 },
+      ],
+      '标准俯卧撑': [
+        { exercise: bosuPushUp, score: 120 },
+      ],
+    }, [bwPushUp, bosuPushUp])
+    const bilingual = collectEvents(mBilingual, {
+      candidates: [{ name: '标准俯卧撑', nameEn: 'push-up', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(bilingual.result)).toEqual([])
+    expect(bilingual.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0662' },
+    ])
+
+    // Bilingual query where primary query is empty and CJK fallback would pick a non-exact exercise.
+    const enOnlyBw = synth('0662', 'push-up', 'body weight', { name: 'push-up' })
+    const zhOnlyBosu = synth('0653', 'push-up (bosu ball)', 'bosu ball', { name: '波速球标准俯卧撑' })
+    const mCjkBypass = makeInjected({
+      'push-up': [{ exercise: enOnlyBw, score: 113 }],
+      '标准俯卧撑': [],
+    }, [enOnlyBw, zhOnlyBosu])
+    const cjkBypass = collectEvents(mCjkBypass, {
+      candidates: [{ name: '标准俯卧撑', nameEn: 'push-up', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(cjkBypass.result)).toEqual([])
+    expect(cjkBypass.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: '0662' },
+    ])
+
+    // Single Chinese query exact conflict must not bypass via CJK character fallback.
+    const zhPushUp = synth('s-zh-bw', 'floor push-up', 'body weight', { name: '标准俯卧撑' })
+    const zhBosu = synth('s-zh-bosu', 'bosu push-up', 'bosu ball', { name: '波速球标准俯卧撑' })
+    const mZhOnly = makeInjected({
+      '标准俯卧撑': [
+        { exercise: zhPushUp, score: 113 },
+        { exercise: zhBosu, score: 104 },
+      ],
+    }, [zhPushUp, zhBosu])
+    const zhOnly = collectEvents(mZhOnly, {
+      candidates: [{ name: '标准俯卧撑', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(zhOnly.result)).toEqual([])
+    expect(zhOnly.events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: 's-zh-bw' },
+    ])
+
+    // Non-exact rank-1 equipment conflict still allows rank-2 non-exact hit.
+    const mNonExactConflict = makeInjected({
+      'press push-up': [
+        { exercise: nonExactBw, score: 110 },
+        { exercise: bosuPushUp, score: 104 },
+      ],
+    }, [nonExactBw, bosuPushUp])
+    expect(idsOf(mNonExactConflict.match({
+      candidates: [{ name: 'press push-up', equipment: 'smith machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['0653'])
   })
 
   it('chooses the higher raw score across English and primary queries, keeping query order on ties', () => {
