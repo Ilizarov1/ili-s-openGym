@@ -1064,32 +1064,9 @@ describe('AI exercise chest-press variant rule (Group C)', () => {
     }))).toEqual(['s-one-arm'])
   })
 
-  it('keeps Group B ordering for non-chest-press queries and across different equipment', () => {
-    const hackInner = synth('s-hack1', 'sled inner hack squat', 'sled machine', { bp: 'upper legs' })
-    const hackPlain = synth('s-hack2', 'sled hack squat', 'sled machine', { bp: 'upper legs' })
-    const shoulderSingle = synth('s-sh1', 'lever single arm shoulder press', 'leverage machine', { bp: 'shoulders' })
-    const shoulderPlain = synth('s-sh2', 'lever shoulder press', 'leverage machine', { bp: 'shoulders' })
+  it('keeps Group B ordering across different equipment without an equipment hint', () => {
     const cableInner = synth('s-c-inner', 'cable inner chest press', 'cable')
     const leverPlain = synth('0576', 'lever chest press', 'leverage machine')
-
-    const mNonChest = makeInjected({
-      'hack squat': [
-        { exercise: hackInner, score: 240 },
-        { exercise: hackPlain, score: 235 },
-      ],
-      'shoulder press': [
-        { exercise: shoulderSingle, score: 240 },
-        { exercise: shoulderPlain, score: 235 },
-      ],
-    }, [hackInner, hackPlain, shoulderSingle, shoulderPlain])
-    expect(idsOf(mNonChest.match({
-      candidates: [{ name: 'hack squat', equipment: 'sled machine', level: 'high', rationale: '哈克深蹲' }],
-      fallback: { understanding: 'x' },
-    }))).toEqual(['s-hack1'])
-    expect(idsOf(mNonChest.match({
-      candidates: [{ name: 'shoulder press', equipment: 'leverage machine', level: 'high', rationale: '肩推' }],
-      fallback: { understanding: 'x' },
-    }))).toEqual(['s-sh1'])
 
     const mDiffEq = makeInjected({
       'seated chest press': [
@@ -1103,7 +1080,7 @@ describe('AI exercise chest-press variant rule (Group C)', () => {
     }))).toEqual(['s-c-inner'])
   })
 
-  it('preserves existing cross-query raw-score ordering between flat press and incline press', () => {
+  it('ranks high-confidence generic lever chest press ahead of low-confidence incline press despite raw score', () => {
     const incline = synth('1299', 'lever incline chest press', 'leverage machine')
     const inner = synth('1301', 'lever chest press (inner)', 'leverage machine')
     const flat = synth('0576', 'lever chest press', 'leverage machine')
@@ -1121,6 +1098,182 @@ describe('AI exercise chest-press variant rule (Group C)', () => {
       ],
       fallback: { understanding: '推胸机' },
     })
-    expect(idsOf(result)).toEqual(['1299', '0576'])
+    expect(idsOf(result)).toEqual(['0576', '1299'])
+  })
+})
+
+describe('AI exercise cross-query ranking & unsupported variants (P0-A)', () => {
+  const synth = (id, n, eq, extra = {}) => ({
+    id,
+    n,
+    name: extra.name || n,
+    eq,
+    bp: extra.bp || 'chest',
+    aliases: extra.aliases || [],
+    custom: extra.custom === true,
+  })
+  const makeInjected = (resultsByQuery, pool) => createExerciseAiSearch({
+    searchScored: (_list, query) => resultsByQuery[query] || [],
+    list: pool,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+
+  it('places high-confidence 3-word generic movement ahead of low-confidence 4-word variant', () => {
+    const incline = synth('1299', 'lever incline chest press', 'leverage machine')
+    const generic = synth('0576', 'lever chest press', 'leverage machine')
+    const matcher = makeInjected({
+      'lever incline chest press': [{ exercise: incline, score: 400 }],
+      'lever chest press': [{ exercise: generic, score: 250 }],
+    }, [incline, generic])
+
+    const result = matcher.match({
+      candidates: [
+        { name: 'lever incline chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'low', rationale: '可能是上斜' },
+        { name: 'lever chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'high', rationale: '杠杆推胸' },
+      ],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(idsOf(result)).toEqual(['0576', '1299'])
+  })
+
+  it('prevents a low-confidence exact variant from outranking a high-confidence evidence-backed hit', () => {
+    const exactLow = synth('s-low-exact', 'lever decline chest press', 'leverage machine')
+    const evidenceHigh = synth('0576', 'lever chest press', 'leverage machine')
+    const matcher = makeInjected({
+      'lever decline chest press': [{ exercise: exactLow, score: 420 }],
+      'chest press': [{ exercise: evidenceHigh, score: 180 }],
+    }, [exactLow, evidenceHigh])
+
+    const result = matcher.match({
+      candidates: [
+        { name: 'lever decline chest press', equipment: 'leverage machine', level: 'low', rationale: '猜测下斜' },
+        { name: 'chest press', equipment: 'leverage machine', level: 'high', rationale: '高置信平推' },
+      ],
+      fallback: { understanding: '推胸' },
+    })
+    expect(idsOf(result)).toEqual(['0576', 's-low-exact'])
+  })
+
+  it('orders same-level candidates by exact, then equipmentMatch, then bodyPartMatch', () => {
+    const base = synth('s-base', 'cable seated row', 'cable', { bp: 'back' })
+    const bpOnly = synth('s-bp', 'cable wide row', 'cable', { bp: 'back' })
+    const eqOnly = synth('s-eq', 'cable close row', 'cable', { bp: 'upper arms' })
+    const exactHit = synth('s-exact', 'cable row', 'barbell', { bp: 'upper arms' })
+    const matcher = makeInjected({
+      'row base': [{ exercise: base, score: 300 }],
+      'row bp': [{ exercise: bpOnly, score: 250 }],
+      'row eq': [{ exercise: eqOnly, score: 200 }],
+      'cable row': [{ exercise: exactHit, score: 150 }],
+    }, [base, bpOnly, eqOnly, exactHit])
+
+    const result = matcher.match({
+      candidates: [
+        { name: 'row base', level: 'high', rationale: '基础' },
+        { name: 'row bp', bodyPart: 'back', level: 'high', rationale: '仅部位一致' },
+        { name: 'row eq', equipment: 'cable', level: 'high', rationale: '仅器械一致' },
+        { name: 'cable row', level: 'high', rationale: '精确名' },
+      ],
+      fallback: { understanding: '划船' },
+    })
+    expect(idsOf(result)).toEqual(['s-exact', 's-eq', 's-bp', 's-base'])
+  })
+
+  it('applies generic unsupported variant penalty to non-chest-press families and respects hintText', () => {
+    const hackInner = synth('s-hack1', 'sled inner hack squat', 'sled machine', { bp: 'upper legs' })
+    const hackPlain = synth('s-hack2', 'sled hack squat', 'sled machine', { bp: 'upper legs' })
+    const shoulderSingle = synth('s-sh1', 'lever single arm shoulder press', 'leverage machine', { bp: 'shoulders' })
+    const shoulderPlain = synth('s-sh2', 'lever shoulder press', 'leverage machine', { bp: 'shoulders' })
+    const rowReverse = synth('s-row1', 'cable reverse grip row', 'cable', { bp: 'back' })
+    const rowPlain = synth('s-row2', 'cable seated row', 'cable', { bp: 'back' })
+
+    const matcher = makeInjected({
+      'hack squat': [
+        { exercise: hackInner, score: 240 },
+        { exercise: hackPlain, score: 235 },
+      ],
+      'shoulder press': [
+        { exercise: shoulderSingle, score: 240 },
+        { exercise: shoulderPlain, score: 235 },
+      ],
+      'cable row': [
+        { exercise: rowReverse, score: 240 },
+        { exercise: rowPlain, score: 235 },
+      ],
+    }, [hackInner, hackPlain, shoulderSingle, shoulderPlain, rowReverse, rowPlain])
+
+    // Without hint or candidate mention, generic movements win.
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'hack squat', equipment: 'sled machine', level: 'high', rationale: '哈克深蹲' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-hack2'])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'shoulder press', equipment: 'leverage machine', level: 'high', rationale: '肩推' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-sh2'])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'cable row', equipment: 'cable', level: 'high', rationale: '划船' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-row2'])
+
+    // When hintText explicitly asks for the variant in Chinese or English, it is not penalized.
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'shoulder press', equipment: 'leverage machine', level: 'high', rationale: '肩推' }],
+      fallback: { understanding: 'x' },
+    }, { hintText: '单手推举' }))).toEqual(['s-sh1'])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'cable row', equipment: 'cable', level: 'high', rationale: '划船' }],
+      fallback: { understanding: 'x' },
+    }, { hintText: '反握划船' }))).toEqual(['s-row1'])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'hack squat', equipment: 'sled machine', level: 'high', rationale: '哈克深蹲' }],
+      fallback: { understanding: 'x' },
+    }, { hintText: 'inner stance hack squat' }))).toEqual(['s-hack1'])
+  })
+
+  it('deduplicates hits using compareRankedHits while merging rationales and stronger level', () => {
+    const press = synth('0576', 'lever chest press', 'leverage machine', { bp: 'chest' })
+    const matcher = makeInjected({
+      'seated press': [{ exercise: press, score: 300 }],
+      'lever chest press': [{ exercise: press, score: 150 }],
+    }, [press])
+
+    const result = matcher.match({
+      candidates: [
+        { name: 'seated press', equipment: 'leverage machine', level: 'low', rationale: '坐姿推举' },
+        { name: 'lever chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'high', rationale: '杠杆推胸' },
+      ],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(result.items).toHaveLength(1)
+    expect(result.items[0].exerciseId).toBe('0576')
+    expect(result.items[0].level).toBe('high')
+    expect(result.items[0].rationale).toBe('坐姿推举；杠杆推胸')
+  })
+
+  it('strips internal ranking metadata from returned items', () => {
+    const press = synth('0576', 'lever chest press', 'leverage machine', { bp: 'chest' })
+    const matcher = makeInjected({
+      'lever chest press': [{ exercise: press, score: 200 }],
+    }, [press])
+
+    const result = matcher.match({
+      candidates: [
+        { name: 'lever chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'high', rationale: '杠杆推胸' },
+      ],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(Object.keys(result.items[0]).sort()).toEqual([
+      'exercise',
+      'exerciseId',
+      'level',
+      'name',
+      'rationale',
+    ])
   })
 })

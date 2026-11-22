@@ -28,13 +28,14 @@ export const AI_MATCH_CONSTANTS = Object.freeze({
 const LEVEL_RANK = { low: 1, medium: 2, high: 3 }
 const QUERY_PICK_LIMIT = 3
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
-const CHEST_PRESS_PHRASE = /\bchest press\b/
-const CHEST_PRESS_VARIANT_GROUPS = [
-  { en: /\binner\b/, zh: '内侧' },
-  { en: /\boutdoor\b/, zh: '户外' },
-  { en: /\bincline\b/, zh: '上斜' },
-  { en: /\bdecline\b/, zh: '下斜' },
-  { en: /\b(?:single arm|one arm)\b/, zh: '单臂' },
+const UNSUPPORTED_VARIANT_GROUPS = [
+  { en: /\binner\b/, zh: ['内侧'] },
+  { en: /\boutdoor\b/, zh: ['户外'] },
+  { en: /\bincline\b/, zh: ['上斜'] },
+  { en: /\bdecline\b/, zh: ['下斜'] },
+  { en: /\b(?:single arm|one arm)\b/, zh: ['单臂', '单手'] },
+  { en: /\b(?:single leg|one leg)\b/, zh: ['单腿', '单脚'] },
+  { en: /\breverse\b/, zh: ['反向', '反握'] },
 ]
 const MACHINE_HINTS = new Set([
   'barbell', 'smith machine', 'leverage machine', 'sled machine', 'cable',
@@ -339,38 +340,39 @@ function keywordRejection(hit, exact, queries, candidateEquipment, genericWords)
   return null
 }
 
-function hasUnsupportedChestPressVariant(cataloguePhrase, primaryName, hasZh, namePhrase, nameEnPhrase) {
-  for (const group of CHEST_PRESS_VARIANT_GROUPS) {
+function unsupportedVariantCount(exercise, { primaryName = '', nameEn = '', hintText = '' } = {}) {
+  const cataloguePhrase = normalizePhrase(clean(exercise?.n) || clean(exercise?.name))
+  if (!cataloguePhrase) return 0
+  const primaryRaw = clean(primaryName)
+  const nameEnRaw = clean(nameEn)
+  const hintRaw = clean(hintText)
+  const primaryPhrase = normalizePhrase(primaryRaw)
+  const nameEnPhrase = normalizePhrase(nameEnRaw)
+  const hintPhrase = normalizePhrase(hintRaw)
+  let count = 0
+  for (const group of UNSUPPORTED_VARIANT_GROUPS) {
     if (!group.en.test(cataloguePhrase)) continue
-    const supported = group.en.test(namePhrase)
+    const supported = group.en.test(primaryPhrase)
       || group.en.test(nameEnPhrase)
-      || (hasZh && primaryName.includes(group.zh))
-    if (!supported) return true
+      || group.en.test(hintPhrase)
+      || group.zh.some(term => primaryRaw.includes(term) || nameEnRaw.includes(term) || hintRaw.includes(term))
+    if (!supported) count++
   }
-  return false
+  return count
 }
 
 function isBetterQueryHit(next, current) {
   if (next.exact !== current.exact) return next.exact
   if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
-  if (
-    next.isChestPress
-    && current.isChestPress
-    && next.eq === current.eq
-    && next.unsupportedVariant !== current.unsupportedVariant
-  ) {
-    return !next.unsupportedVariant
+  if (next.eq === current.eq && next.unsupportedVariants !== current.unsupportedVariants) {
+    return next.unsupportedVariants < current.unsupportedVariants
   }
   return false
 }
 
-function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment, genericWords) {
+function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment, genericWords, hintText) {
   const limit = Math.min(results.length, QUERY_PICK_LIMIT)
   const [primaryName = '', nameEn = ''] = names
-  const candidateIsChestPress = CHEST_PRESS_PHRASE.test(normalizePhrase(nameEn || primaryName))
-  const hasZh = isCjkName(primaryName)
-  const namePhrase = candidateIsChestPress ? normalizePhrase(primaryName) : ''
-  const nameEnPhrase = candidateIsChestPress ? normalizePhrase(nameEn) : ''
   let picked = null
   let exactConflict = null
   for (let index = 0; index < limit; index++) {
@@ -386,21 +388,15 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
       continue
     }
     const eq = clean(exercise.eq)
-    const cataloguePhrase = candidateIsChestPress
-      ? normalizePhrase(clean(exercise.n) || clean(exercise.name))
-      : ''
-    const isChestPress = candidateIsChestPress && CHEST_PRESS_PHRASE.test(cataloguePhrase)
-    const unsupportedVariant = isChestPress
-      ? hasUnsupportedChestPressVariant(cataloguePhrase, primaryName, hasZh, namePhrase, nameEnPhrase)
-      : false
+    const unsupportedVariants = unsupportedVariantCount(exercise, { primaryName, nameEn, hintText })
     const hit = {
       exercise,
       score: entry.score,
       exact,
       equipmentMatch: !!equipmentHint && eq === equipmentHint,
       eq,
-      isChestPress,
-      unsupportedVariant,
+      unsupportedVariants,
+      queryRank: index,
     }
     if (!picked || isBetterQueryHit(hit, picked)) picked = hit
   }
@@ -408,6 +404,23 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
     return { hit: null, exactConflict }
   }
   return { hit: picked, exactConflict: null }
+}
+
+function compareRankedHits(a, b) {
+  if (a.fallback !== b.fallback) return a.fallback ? 1 : -1
+  const levelDiff = (LEVEL_RANK[b.modelLevel] || 0) - (LEVEL_RANK[a.modelLevel] || 0)
+  if (levelDiff !== 0) return levelDiff
+  if (a.exact !== b.exact) return a.exact ? -1 : 1
+  if (a.equipmentMatch !== b.equipmentMatch) return a.equipmentMatch ? -1 : 1
+  if (a.bodyPartMatch !== b.bodyPartMatch) return a.bodyPartMatch ? -1 : 1
+  if (a.unsupportedVariants !== b.unsupportedVariants) {
+    return a.unsupportedVariants - b.unsupportedVariants
+  }
+  if (a.candidateIndex !== b.candidateIndex) return a.candidateIndex - b.candidateIndex
+  if (a.queryRank !== b.queryRank) return a.queryRank - b.queryRank
+  const nameDiff = a.name.localeCompare(b.name)
+  if (nameDiff !== 0) return nameDiff
+  return String(a.exerciseId).localeCompare(String(b.exerciseId))
 }
 
 function matchOne(
@@ -418,6 +431,8 @@ function matchOne(
   recorder,
   candidateIndex,
   equipmentValues,
+  bodyPartValues,
+  hintText,
 ) {
   const filterEvent = (decision, exercise) => {
     if (!recorder) return
@@ -439,6 +454,11 @@ function matchOne(
   const validCandidateEquipment = typeof candidate.equipment === 'string'
     ? filterSlugs([clean(candidate.equipment)], equipmentValues)?.[0] || ''
     : ''
+  const validCandidateBodyPart = typeof candidate.bodyPart === 'string'
+    ? filterSlugs([clean(candidate.bodyPart)], bodyPartValues)?.[0] || ''
+    : ''
+  const rawModelLevel = typeof candidate.level === 'string' ? candidate.level.trim().toLowerCase() : ''
+  const modelLevel = LEVEL_RANK[rawModelLevel] ? rawModelLevel : 'low'
   // The English query only runs for a Chinese name that also carries an
   // English one; the diagnostics tag that query as the English recall.
   const useEnglishQuery = isCjkName(name) && !!nameEn
@@ -462,12 +482,15 @@ function matchOne(
       validCandidateEquipment,
       candidate.equipment,
       genericWords,
+      hintText,
     )
     if (queryExactConflict && (!exactConflict || queryExactConflict.score > exactConflict.score)) {
       exactConflict = queryExactConflict
     }
     if (!picked) continue
-    if (!best || picked.score > best.score) best = picked
+    if (!best || (picked.exact && !best.exact) || (picked.exact === best.exact && picked.score > best.score)) {
+      best = picked
+    }
   }
   if (exactConflict && (!best || !best.exact)) {
     filterEvent('equipment_conflict', exactConflict.exercise)
@@ -542,8 +565,12 @@ function matchOne(
   if (candidate.equipment && clean(candidate.equipment) === clean(exercise.eq)) adjusted += EQ_BONUS
   if (candidate.bodyPart && clean(candidate.bodyPart) === clean(exercise.bp)) adjusted += BP_BONUS
   const exact = !fallback && exactName
-  const level = levelFor(candidate.level, { exact, fallback })
+  const level = levelFor(modelLevel, { exact, fallback })
   const rationale = clean(candidate.rationale).slice(0, 200) || name
+  const equipmentMatch = Boolean(validCandidateEquipment && clean(exercise.eq) === validCandidateEquipment)
+  const bodyPartMatch = Boolean(validCandidateBodyPart && clean(exercise.bp) === validCandidateBodyPart)
+  const unsupportedVariants = unsupportedVariantCount(exercise, { primaryName: name, nameEn, hintText })
+  const queryRank = fallback ? 0 : best.queryRank
 
   filterEvent(fallback ? 'accepted_cjk_fallback' : 'accepted', exercise)
   return {
@@ -554,6 +581,12 @@ function matchOne(
     score: adjusted,
     exact,
     fallback,
+    modelLevel,
+    equipmentMatch,
+    bodyPartMatch,
+    unsupportedVariants,
+    candidateIndex,
+    queryRank,
     exercise,
   }
 }
@@ -607,6 +640,8 @@ export function createExerciseAiSearch(options) {
           recorder,
           candidateIndex,
           equipmentValues,
+          bodyPartValues,
+          hints.hintText,
         )
         if (!hit) continue
         const current = byId.get(hit.exerciseId)
@@ -621,7 +656,7 @@ export function createExerciseAiSearch(options) {
         if (hit.rationale && !rationales.includes(hit.rationale) && rationales.length < 2) {
           rationales.push(hit.rationale)
         }
-        const better = hit.score > current.score ? hit : current
+        const better = compareRankedHits(hit, current) < 0 ? hit : current
         byId.set(hit.exerciseId, {
           ...better,
           level: strongerLevel(current.level, hit.level),
@@ -629,9 +664,21 @@ export function createExerciseAiSearch(options) {
         })
       }
       const items = [...byId.values()]
-        .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
+        .sort(compareRankedHits)
         .slice(0, 5)
-        .map(({ rationales, score: _score, exact: _exact, fallback: _fallback, ...item }) => ({
+        .map(({
+          rationales,
+          score: _score,
+          exact: _exact,
+          fallback: _fallback,
+          modelLevel: _modelLevel,
+          equipmentMatch: _equipmentMatch,
+          bodyPartMatch: _bodyPartMatch,
+          unsupportedVariants: _unsupportedVariants,
+          candidateIndex: _candidateIndex,
+          queryRank: _queryRank,
+          ...item
+        }) => ({
           ...item,
           rationale: rationales.join('；'),
         }))
