@@ -206,7 +206,18 @@ export function createExerciseSearch({
     // a body part and an equipment word would start matching as one.
     // The joined form only counts from the start of a name word, or "thigh" would find "sumo
     // deadlift high pull" through "deadlifthighpull".
-    const entry = { v, s, name, aliasKey, ...joinedOf(name), nameWords: name.split(/[\s\-‐-―()/,]+/).filter(Boolean) }
+    const metaAliasesNorm = metaAliases
+      .map(a => normalizeStr(a).replace(/[-‐-―]/g, ' ').replace(/\s+/g, ' ').trim())
+      .filter(Boolean)
+    const entry = {
+      v,
+      s,
+      name,
+      aliasKey,
+      metaAliasesNorm,
+      ...joinedOf(name),
+      nameWords: name.split(/[\s\-‐-―()/,]+/).filter(Boolean),
+    }
     for (const w of entry.nameWords) VOCAB.add(w)
     corpusCache.set(e, entry)
     return entry
@@ -391,8 +402,9 @@ export function createExerciseSearch({
       // word the name has beyond the query costs a little, more than the equipment preference.
       const plain = entry.name.split(' (')[0].replace(/[-‐-―]/g, ' ')
       const whole = wholeNameScore(plain, typedForms)
+      const metaExactBonus = entry.metaAliasesNorm?.some(a => typedForms.includes(a)) ? 120 : 0
       const extra = Math.max(0, entry.nameWords.length - tokens.length) * 3
-      return { e, i, score: tokens.reduce((sum, tok) => sum + tokenScore(entry, tok, ctx), 0) + priorOf(e) + whole - extra, len: entry.nameWords.length }
+      return { e, i, score: tokens.reduce((sum, tok) => sum + tokenScore(entry, tok, ctx), 0) + priorOf(e) + whole + metaExactBonus - extra, len: entry.nameWords.length }
     })
     scored.sort((a, b) => b.score - a.score || a.len - b.len || a.i - b.i)
     return scored

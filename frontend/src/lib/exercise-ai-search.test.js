@@ -1833,4 +1833,22 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
     expect(cleanRes.items[0]?.level).toBe('high')
     expect(cleanEvents.some(e => e.stage === 'recall' && e.queryOrigin === 'bm25')).toBe(false)
   })
+
+  it('ranks exact curated standard aliases above variant-padded matches such as lever seated chest press -> 0576', () => {
+    const scored = ZH_SEARCH.searchScored(ZH_POOL, 'lever seated chest press')
+    expect(scored[0]?.exercise?.id).toBe('0576')
+    const res = AI.zh.match({
+      candidates: [{
+        name: '坐姿器械推胸',
+        nameEn: 'lever seated chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        posture: 'seated',
+        level: 'high',
+        rationale: '插销式坐姿推胸器械',
+      }],
+    })
+    expect(res.items[0]?.exerciseId).toBe('0576')
+    expect(res.items[0]?.level).toBe('high')
+  })
 })
