@@ -101,10 +101,18 @@ export function validate(schema, value, path = '$') {
     }
   }
 
-  if (Array.isArray(value) && schema.items) {
-    for (let index = 0; index < value.length; index++) {
-      const result = validate(schema.items, value[index], `${path}[${index}]`);
-      if (!result.ok) return result;
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === 'number' && value.length < schema.minItems) {
+      return fail(path, `must have at least ${schema.minItems} items`);
+    }
+    if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) {
+      return fail(path, `must have at most ${schema.maxItems} items`);
+    }
+    if (schema.items) {
+      for (let index = 0; index < value.length; index++) {
+        const result = validate(schema.items, value[index], `${path}[${index}]`);
+        if (!result.ok) return result;
+      }
     }
   }
 

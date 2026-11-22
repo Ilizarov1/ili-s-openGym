@@ -64,3 +64,7 @@ export {
   BODY_PART_SLUGS,
   EQUIPMENT_SLUGS,
 } from './tasks/exercise-search.js';
+export {
+  CATALOGUE_SEARCH_TOOL_ID,
+  createCatalogueSearchTool,
+} from './tasks/catalogue-search-tool.js';

@@ -1,6 +1,8 @@
-// The local stub task reads the current workspace snapshot, including records
-// that have not reached a server yet.
-import { createExerciseSearchTask } from './shared';
+// The local task registry. `stub.local.v1` reads the current workspace snapshot;
+// `exercise-search.v1` injects the read-only `search_catalogue` tool over the
+// workspace exercise pool.
+import { createCatalogueSearchTool, createExerciseSearchTask } from './shared';
+import { createLibrarySearch } from '../librarySearch';
 import type { LocalState } from '../storage';
 import type { AgentTask, AgentTool } from './shared';
 
@@ -93,7 +95,8 @@ export type LocalTaskEntry = {
 
 /**
  * The local task registry. `stub.local.v1` keeps its proved behaviour; the AI
- * exercise search is the shared `exercise-search.v1` task with no tools.
+ * exercise search registers the read-only `search_catalogue` tool over the
+ * current workspace's library pool (public catalogue + user aliases/custom).
  */
 export function createTaskRegistry(
   data: LocalState,
@@ -102,9 +105,19 @@ export function createTaskRegistry(
   const stub = createLocalTask(data, options);
   const tools = createLocalTools(data, options);
   const ai = createExerciseSearchTask() as unknown as AgentTask;
+  const catalogueEntries = createLibrarySearch(data.profile).aiSearch.pool.map(item => ({
+    id: item.id,
+    n: item.n ?? item.name,
+    zh: item.name,
+    eq: item.eq ?? item.equipment ?? '',
+    bp: item.bp ?? item.bodyPart ?? '',
+    tg: item.tg ?? item.target ?? '',
+    aliases: item.aliases,
+  }));
+  const searchCatalogueTool = createCatalogueSearchTool({ entries: catalogueEntries });
   return new Map<string, LocalTaskEntry>([
     [stub.id, { task: stub, tools: tools.tools }],
-    [ai.id, { task: ai, tools: [] }],
+    [ai.id, { task: ai, tools: [searchCatalogueTool] }],
   ]);
 }
 

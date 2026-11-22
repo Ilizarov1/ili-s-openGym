@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import {
   AgentError,
   BODY_PART_SLUGS,
+  CATALOGUE_SEARCH_TOOL_ID,
   EQUIPMENT_SLUGS,
   EXERCISE_SEARCH_MAX_IMAGE_BYTES,
   EXERCISE_SEARCH_OUTPUT_SCHEMA,
@@ -12,8 +13,11 @@ import {
   EXERCISE_SEARCH_TASK_ID,
   bindContext,
   cleanExerciseSearchOutput,
+  createCatalogueSearchTool,
+  createDispatcher,
   createExerciseSearchTask,
   createProvider,
+  createToolRegistry,
   isExerciseSearchOutput,
   runAgent,
   validateExerciseImages,
@@ -547,4 +551,113 @@ test('a throwing diagnostic sink never breaks the run', async () => {
   });
   assert.equal(result.status, 'completed');
   assert.ok(Array.isArray(result.structured.candidates));
+});
+
+test('the compact catalogue snapshot matches EXDB counts, ids, equipment and body parts', () => {
+  const snapshot = JSON.parse(readFileSync(`${here}../agent-runtime/tasks/exercise-search-catalogue.json`, 'utf8'));
+  assert.equal(snapshot.length, EXDB.length);
+  assert.deepEqual(snapshot.map(row => row.id), EXDB.map(row => row.id));
+  assert.deepEqual(snapshot.map(row => row.eq), EXDB.map(row => row.eq));
+  assert.deepEqual(snapshot.map(row => row.bp), EXDB.map(row => row.bp));
+  for (const row of snapshot) {
+    assert.deepEqual(Object.keys(row).sort(), ['bp', 'eq', 'id', 'n', 'tg', 'zh']);
+    assert.ok(row.n && row.zh);
+  }
+});
+
+test('agent-runtime entry and catalogue-search-tool stay Metro-safe with no Node built-ins or static snapshot import', () => {
+  const indexSrc = readFileSync(`${here}../agent-runtime/index.js`, 'utf8');
+  const toolSrc = readFileSync(`${here}../agent-runtime/tasks/catalogue-search-tool.js`, 'utf8');
+  assert.equal(indexSrc.includes('node:'), false);
+  assert.equal(indexSrc.includes('exercise-search-catalogue.json'), false);
+  assert.equal(toolSrc.includes('node:'), false);
+  assert.equal(toolSrc.includes('exercise-search-catalogue.json'), false);
+});
+
+test('search_catalogue recalls confusable machine siblings within limit and enforces read-only tool fence', async () => {
+  const snapshot = JSON.parse(readFileSync(`${here}../agent-runtime/tasks/exercise-search-catalogue.json`, 'utf8'));
+  const beforeLength = snapshot.length;
+  const tool = createCatalogueSearchTool({ entries: snapshot });
+  assert.equal(tool.id, CATALOGUE_SEARCH_TOOL_ID);
+  const registry = createToolRegistry([tool]);
+  const task = createExerciseSearchTask();
+  const context = contextFor(task, { hintText: 'chest press' });
+
+  const dispatcher = createDispatcher({
+    registry,
+    context,
+    allowedToolIds: [CATALOGUE_SEARCH_TOOL_ID],
+    maxCalls: 5,
+  });
+
+  // 1. Chest/shoulder/pec-deck family recall includes contrasting siblings within <= 15
+  const press = await dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, {
+    queries: ['plate-loaded chest press'],
+    equipment: ['leverage machine'],
+    bodyParts: ['chest'],
+    limit: 12,
+  });
+  assert.ok(press.result.items.length <= 12);
+  assert.ok(press.result.total >= press.result.items.length);
+  const pressIds = new Set(press.result.items.map(item => item.id));
+  assert.ok(pressIds.has('0576'), 'expected lever chest press (0576)');
+  assert.ok(pressIds.has('0603'), 'expected confusable sibling lever shoulder press (0603)');
+  assert.ok(pressIds.has('1030'), 'expected confusable sibling lever pec deck fly (1030)');
+
+  // 2. Leg extension / curl family recall includes both 0585 and 0599
+  const leg = await dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, {
+    queries: ['坐姿腿屈伸'],
+    bodyParts: ['upper legs'],
+  });
+  assert.ok(leg.result.items.length <= 12);
+  const legIds = new Set(leg.result.items.map(item => item.id));
+  assert.ok(legIds.has('0585'), 'expected lever leg extension (0585)');
+  assert.ok(legIds.has('0599'), 'expected confusable sibling lever seated leg curl (0599)');
+
+  // 3. Hack squat / leg press / calf raise family recall includes sled & lever variants
+  const hack = await dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, {
+    queries: ['hack squat', 'leg press'],
+    limit: 15,
+  });
+  assert.ok(hack.result.items.length <= 15);
+  const hackIds = new Set(hack.result.items.map(item => item.id));
+  assert.ok(hackIds.has('0743'), 'expected sled hack squat (0743)');
+  assert.ok(hackIds.has('5516'), 'expected lever hack squat (5516)');
+  assert.ok(hackIds.has('0739'), 'expected sled 45° leg press (0739)');
+  assert.ok(hackIds.has('2267'), 'expected lever seated leg press (2267)');
+
+  // 4. Non-existent / out-of-catalogue query returns empty without padding
+  const empty = await dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, {
+    queries: ['espresso coffee maker'],
+  });
+  assert.deepEqual(empty.result, { items: [], total: 0 });
+
+  // 5. Fence rejects invalid args before touching budget or tool
+  const callsBeforeInvalid = dispatcher.calls;
+  for (const badArgs of [
+    {},
+    { queries: [] },
+    { queries: ['   '] },
+    { queries: ['a', 'b', 'c', 'd', 'e'] },
+    { queries: ['chest press'], equipment: ['bogus-equipment'] },
+    { queries: ['chest press'], bodyParts: ['bogus-part'] },
+    { queries: ['chest press'], limit: 16 },
+    { queries: ['chest press'], limit: 0 },
+    { queries: ['chest press'], extra: true },
+  ]) {
+    await assert.rejects(
+      dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, badArgs),
+      error => error instanceof AgentError && error.code === 'tool_args_invalid',
+    );
+  }
+  assert.equal(dispatcher.calls, callsBeforeInvalid);
+
+  // 6. Fence rejects calls beyond budget (5th call succeeded; 6th exceeds maxCalls=5)
+  await dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, { queries: ['bench press'] });
+  assert.equal(dispatcher.calls, 5);
+  await assert.rejects(
+    dispatcher.call(CATALOGUE_SEARCH_TOOL_ID, { queries: ['bench press'] }),
+    error => error instanceof AgentError && error.code === 'tool_budget_exceeded',
+  );
+  assert.equal(snapshot.length, beforeLength);
 });

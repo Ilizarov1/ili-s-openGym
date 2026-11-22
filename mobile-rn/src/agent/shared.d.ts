@@ -240,3 +240,22 @@ export function createExerciseSearchTask(): AgentTask;
 export function validateExerciseSearchInput(input: Record<string, unknown>): void;
 export function validateExerciseImages(input: Record<string, unknown>): AgentAttachment[];
 export function cleanExerciseSearchOutput(raw: unknown, input?: Record<string, unknown>): unknown;
+export const CATALOGUE_SEARCH_TOOL_ID: string;
+export type CatalogueSearchEntry = {
+  id: string;
+  n?: string;
+  zh?: string;
+  eq?: string;
+  bp?: string;
+  tg?: string;
+  nameEn?: string;
+  nameZh?: string;
+  equipment?: string;
+  bodyPart?: string;
+  target?: string;
+  aliases?: string[];
+};
+export function createCatalogueSearchTool(options?: {
+  entries?: CatalogueSearchEntry[];
+  search?: (query: string, filters?: { equipment?: string[]; bodyParts?: string[]; limit?: number }) => unknown;
+}): AgentTool;

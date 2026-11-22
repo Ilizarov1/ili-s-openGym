@@ -1,11 +1,26 @@
 /* Server task registry. The runtime core owns the task contract; this map is
  * how a host chooses a task and the tools and session projection that belong
  * to it. */
-import { createExerciseSearchTask, EXERCISE_SEARCH_TASK_ID } from '../../../agent-runtime/index.js';
+import fs from 'node:fs';
+import {
+  createCatalogueSearchTool,
+  createExerciseSearchTask,
+  EXERCISE_SEARCH_TASK_ID,
+} from '../../../agent-runtime/index.js';
 import type { TaskDefinition } from '../../../agent-runtime/contracts.js';
 import type { AgentStore } from '../agent.store.js';
 import { createStubTask, STUB_TASK_ID } from './stub-task.js';
 import { createStubTools } from '../tools/stub-tools.js';
+
+let cachedCatalogueEntries: Array<Record<string, unknown>> | null = null;
+function loadCatalogueEntries(): Array<Record<string, unknown>> {
+  if (!cachedCatalogueEntries) {
+    cachedCatalogueEntries = JSON.parse(
+      fs.readFileSync(new URL('../../../agent-runtime/tasks/exercise-search-catalogue.json', import.meta.url), 'utf8'),
+    ) as Array<Record<string, unknown>>;
+  }
+  return cachedCatalogueEntries;
+}
 
 export interface TaskMessage {
   user: { content: string; meta?: Record<string, unknown> };
@@ -48,6 +63,7 @@ export function createTaskRegistry({ store }: { store: AgentStore }): Map<string
   const stubTask = createStubTask(store) as unknown as TaskDefinition;
   const stubTools = createStubTools(store);
   const exerciseTask = createExerciseSearchTask() as unknown as TaskDefinition;
+  const searchCatalogueTool = createCatalogueSearchTool({ entries: loadCatalogueEntries() });
   return new Map<string, RegisteredTask>([
     [STUB_TASK_ID, {
       task: stubTask,
@@ -56,7 +72,7 @@ export function createTaskRegistry({ store }: { store: AgentStore }): Map<string
     }],
     [EXERCISE_SEARCH_TASK_ID, {
       task: exerciseTask,
-      tools: [],
+      tools: [searchCatalogueTool] as unknown as Record<string, unknown>[],
       messageOf: (input, result) => messageOf(exerciseTask, input, result),
     }],
   ]);

@@ -68,6 +68,8 @@ const required = [
   'agent-runtime/exercise-search-diagnostics.js',
   'agent-runtime/tasks/exercise-search.js',
   'agent-runtime/tasks/exercise-search-vocabulary.json',
+  'agent-runtime/tasks/exercise-search-catalogue.json',
+  'agent-runtime/tasks/catalogue-search-tool.js',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));

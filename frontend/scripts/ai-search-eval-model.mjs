@@ -16,17 +16,28 @@
 // inject a counting fixture provider or gateway instead of the real one.
 
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import {
   AgentError,
   OPENCODE_BASE_URL,
   PROVIDER_IDS,
   bindContext,
+  createCatalogueSearchTool,
   createExerciseSearchTask,
   createId,
   createModelGateway,
   createProvider,
   runAgent,
 } from '../../api/agent-runtime/index.js'
+
+const CATALOGUE_PATH = new URL('../../api/agent-runtime/tasks/exercise-search-catalogue.json', import.meta.url)
+let cachedCatalogueEntries = null
+function loadCatalogueEntries() {
+  if (!cachedCatalogueEntries) {
+    cachedCatalogueEntries = JSON.parse(readFileSync(CATALOGUE_PATH, 'utf8'))
+  }
+  return cachedCatalogueEntries
+}
 
 // 固定本地评估 scope 与 profileId；execution 固定 local。
 export const EVALUATION_SCOPE = 'ai-search-eval'
@@ -86,6 +97,7 @@ export function createEvaluationModelRunner(env = process.env, overrides = {}) {
     resolveProfile: async () => ({ profile, provider }),
   })
   const task = createExerciseSearchTask()
+  const tools = overrides.tools ?? [createCatalogueSearchTool({ entries: loadCatalogueEntries() })]
   return {
     /** Run the shared task once. `diagnostic` is passed through
      * bindContext.meta.exerciseSearchDiagnostic so the model-stage events are
@@ -106,7 +118,7 @@ export function createEvaluationModelRunner(env = process.env, overrides = {}) {
         targetScope: [],
         meta: diagnostic ? { exerciseSearchDiagnostic: diagnostic } : {},
       })
-      return runAgent({ task, request, context, gateway })
+      return runAgent({ task, request, context, gateway, tools })
     },
   }
 }
