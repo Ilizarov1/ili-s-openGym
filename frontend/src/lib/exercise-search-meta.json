@@ -115,7 +115,7 @@
     "0191": {"p":"bent_over"},
     "0193": {"p":"kneeling"},
     "0197": {"p":"seated","a":["cable lat pulldown pro bar"]},
-    "0198": {"p":"seated","a":["cable lat pulldown machine","lat pulldown machine","坐姿高位下拉机"]},
+    "0198": {"p":"seated","a":["cable lat pulldown","cable lat pulldown machine","lat pulldown machine","坐姿高位下拉机"]},
     "0199": {"a":["cable pushdown (straight arm)","绳索下压(直臂)"]},
     "0200": {"p":"standing","a":["rope triceps pushdown","绳索三头下压"]},
     "0201": {"p":"standing","a":["cable triceps pushdown"]},

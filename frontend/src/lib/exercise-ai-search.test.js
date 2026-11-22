@@ -1851,4 +1851,30 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
     expect(res.items[0]?.exerciseId).toBe('0576')
     expect(res.items[0]?.level).toBe('high')
   })
+
+  it('keeps candidate 0 cable lat pulldown (0198) high-confidence ahead of secondary cable seated row (0861)', () => {
+    const res = AI.zh.match({
+      candidates: [
+        {
+          name: '高位下拉',
+          nameEn: 'cable lat pulldown',
+          equipment: 'cable',
+          bodyPart: 'back',
+          level: 'high',
+          rationale: '高位下拉杆与大腿压垫',
+        },
+        {
+          name: '坐姿绳索划船',
+          nameEn: 'cable seated row',
+          equipment: 'cable',
+          bodyPart: 'back',
+          level: 'high',
+          rationale: '组合器械低位滑轮',
+        },
+      ],
+    })
+    expect(res.items[0]?.exerciseId).toBe('0198')
+    expect(res.items[0]?.level).toBe('high')
+    expect(res.items[1]?.exerciseId).toBe('0861')
+  })
 })

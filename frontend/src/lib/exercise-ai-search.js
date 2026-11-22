@@ -551,7 +551,7 @@ function compareRankedHits(a, b) {
   if (a.exact !== b.exact) return a.exact ? -1 : 1
   if (a.equipmentMatch !== b.equipmentMatch) return a.equipmentMatch ? -1 : 1
   if (a.bodyPartMatch !== b.bodyPartMatch) return a.bodyPartMatch ? -1 : 1
-  if (a.postureMatch !== b.postureMatch) return a.postureMatch ? -1 : 1
+  if (a.hintPostureMatch !== b.hintPostureMatch) return a.hintPostureMatch ? -1 : 1
   if (Boolean(a.bm25) !== Boolean(b.bm25)) return a.bm25 ? 1 : -1
   if (a.unsupportedVariants !== b.unsupportedVariants) {
     return a.unsupportedVariants - b.unsupportedVariants
@@ -598,6 +598,7 @@ function matchOne(
     ? filterSlugs([clean(candidate.bodyPart)], bodyPartValues)?.[0] || ''
     : ''
   const inferredPosture = inferCandidatePosture(candidate, hintText, validCandidateBodyPart)
+  const hintPosture = postureFromText(hintText, validCandidateBodyPart)
   const rawModelLevel = typeof candidate.level === 'string' ? candidate.level.trim().toLowerCase() : ''
   const modelLevel = LEVEL_RANK[rawModelLevel] ? rawModelLevel : 'low'
   // Run the English query whenever nameEn is present and differs from name
@@ -770,6 +771,7 @@ function matchOne(
   const equipmentMatch = Boolean(validCandidateEquipment && clean(exercise.eq) === validCandidateEquipment)
   const bodyPartMatch = Boolean(validCandidateBodyPart && clean(exercise.bp) === validCandidateBodyPart)
   const postureMatch = Boolean(inferredPosture && exercisePostureOf(exercise) === inferredPosture)
+  const hintPostureMatch = Boolean(hintPosture && exercisePostureOf(exercise) === hintPosture)
   const unsupportedVariants = unsupportedVariantCount(exercise, { primaryName: name, nameEn, hintText })
   const queryRank = fallback ? 0 : best.queryRank
 
@@ -787,6 +789,7 @@ function matchOne(
     equipmentMatch,
     bodyPartMatch,
     postureMatch,
+    hintPostureMatch,
     unsupportedVariants,
     candidateIndex,
     queryRank,
@@ -1064,6 +1067,7 @@ export function createExerciseAiSearch(options) {
           equipmentMatch: _equipmentMatch,
           bodyPartMatch: _bodyPartMatch,
           postureMatch: _postureMatch,
+          hintPostureMatch: _hintPostureMatch,
           unsupportedVariants: _unsupportedVariants,
           candidateIndex: _candidateIndex,
           queryRank: _queryRank,

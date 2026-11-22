@@ -1220,7 +1220,7 @@
 {"id":"11276","n":"cable prone single leg curl v. 3","zh":"绳索俯卧单腿弯举 v. 3","eq":"cable","bp":"upper legs","tg":"hamstrings","p":"prone","a":["cable prone single leg curl","绳索俯卧单腿弯举"]},
 {"id":"1206","n":"cable pull through","zh":"绳索穿腿拉","eq":"cable","bp":"upper legs","tg":"glutes"},
 {"id":"0196","n":"cable pull through (with rope)","zh":"绳索穿腿拉(用绳)","eq":"cable","bp":"upper legs","tg":"glutes"},
-{"id":"0198","n":"cable pulldown","zh":"绳索下拉","eq":"cable","bp":"back","tg":"lats","p":"seated","a":["cable lat pulldown machine","lat pulldown machine","坐姿高位下拉机"]},
+{"id":"0198","n":"cable pulldown","zh":"绳索下拉","eq":"cable","bp":"back","tg":"lats","p":"seated","a":["cable lat pulldown","cable lat pulldown machine","lat pulldown machine","坐姿高位下拉机"]},
 {"id":"0197","n":"cable pulldown (pro lat bar)","zh":"绳索下拉(专业背阔肌杆)","eq":"cable","bp":"back","tg":"lats","p":"seated","a":["cable lat pulldown pro bar"]},
 {"id":"1638","n":"cable pulldown bicep curl","zh":"绳索下拉二头弯举","eq":"cable","bp":"upper arms","tg":"biceps","p":"seated"},
 {"id":"0201","n":"cable pushdown","zh":"绳索下压","eq":"cable","bp":"upper arms","tg":"triceps","p":"standing","a":["cable triceps pushdown"]},
