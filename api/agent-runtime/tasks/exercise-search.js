@@ -25,6 +25,9 @@ const MAX_CANDIDATES = 5;
 const MAX_NAME = 80;
 const MAX_RATIONALE = 200;
 const MAX_UNDERSTANDING = 400;
+const MAX_CLARIFICATIONS = 3;
+const MAX_CLARIFICATION_LABEL = 16;
+const MAX_CLARIFICATION_PROMPT = 60;
 const FALLBACK_WHEN_EMPTY = '未能理解这次输入，请补充描述';
 
 export const PROMPT = `You are the exercise-recognition engine inside openGym, a self-hosted strength-training
@@ -69,6 +72,11 @@ catalogue candidates plus a fallback reading of the input.
 7. Every candidate carries a \`rationale\` naming the cue that drove it — the apparatus
    silhouette, the body position, the movement direction, or the phrase in the user's
    text. "It is a good exercise" is not a rationale.
+8. Optional \`clarifications\` (0–3 items): only when the photo or description has
+   genuine ambiguity or the top candidate \`level\` is not \`high\`, provide 2–3 concise
+   Chinese follow-up chips — each with a short \`label\` (up to 16 chars) and a
+   complete Chinese follow-up \`prompt\` (up to 60 chars) the user can tap to narrow
+   the movement or setup. Omit \`clarifications\` when the movement is already clear.
 
 ## Input
 
@@ -130,11 +138,22 @@ export const EXERCISE_SEARCH_INPUT_SCHEMA = Object.freeze({
   additionalProperties: false,
 });
 
+const CLARIFICATION_SCHEMA = Object.freeze({
+  type: 'object',
+  properties: {
+    label: { type: 'string', minLength: 1, maxLength: MAX_CLARIFICATION_LABEL },
+    prompt: { type: 'string', minLength: 1, maxLength: MAX_CLARIFICATION_PROMPT },
+  },
+  required: ['label', 'prompt'],
+  additionalProperties: false,
+});
+
 export const EXERCISE_SEARCH_OUTPUT_SCHEMA = Object.freeze({
   type: 'object',
   properties: {
     fallback: FALLBACK_SCHEMA,
     candidates: { type: 'array', items: CANDIDATE_SCHEMA },
+    clarifications: { type: 'array', maxItems: MAX_CLARIFICATIONS, items: CLARIFICATION_SCHEMA },
   },
   required: ['fallback', 'candidates'],
   additionalProperties: false,
@@ -412,6 +431,26 @@ function cleanFallback(value, input) {
   };
 }
 
+function cleanClarifications(values) {
+  if (!Array.isArray(values)) return undefined;
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    if (out.length >= MAX_CLARIFICATIONS) break;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+    const label = typeof value.label === 'string'
+      ? truncate(value.label.trim(), MAX_CLARIFICATION_LABEL).trim()
+      : '';
+    const prompt = typeof value.prompt === 'string'
+      ? truncate(value.prompt.trim(), MAX_CLARIFICATION_PROMPT).trim()
+      : '';
+    if (!label || !prompt || seen.has(label)) continue;
+    seen.add(label);
+    out.push({ label, prompt });
+  }
+  return out.length ? out : undefined;
+}
+
 export function cleanExerciseSearchOutput(raw, input = {}) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new AgentError('model_unavailable', 'the model did not return an exercise-search object');
@@ -429,9 +468,11 @@ export function cleanExerciseSearchOutput(raw, input = {}) {
       candidates.push(candidate);
     }
   }
+  const clarifications = cleanClarifications(raw.clarifications);
   return {
     candidates,
     fallback: cleanFallback(raw.fallback, input),
+    ...(clarifications ? { clarifications } : {}),
   };
 }
 

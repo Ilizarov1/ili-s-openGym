@@ -660,4 +660,72 @@ describe('ExerciseAiSearch diagnostics', () => {
     expect(end.traceId).toBe(mocks.startRun.mock.calls[0][0].requestId)
     expect(host.textContent).toContain('模型暂时不可用')
   })
+
+  it('renders disambiguation chips when ambiguous and triggers a continue follow-up on click', async () => {
+    mocks.match.mockReturnValue({
+      items: [{ exerciseId: EXERCISE.id, name: '胸部推举', rationale: '推柄位置', level: 'medium', exercise: EXERCISE }],
+      fallback: { understanding: '可能是推胸或推肩器械', bodyParts: ['chest'], equipment: ['leverage machine'] },
+      clarifications: [
+        { label: '往前推（练胸）', prompt: '这是往前推的坐姿推胸器械' },
+        { label: '往上推（练肩）', prompt: '这是往上推的坐姿推肩器械' },
+      ],
+    })
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '这是啥器械')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+
+    const box = host.querySelector('[data-ai-clarifications]')
+    expect(box).toBeTruthy()
+    expect(box.textContent).toContain('快速补充方向：')
+    const chipButtons = [...box.querySelectorAll('button.chip')]
+    expect(chipButtons.map(b => b.textContent)).toEqual(['往前推（练胸）', '往上推（练肩）'])
+
+    // Second round clears clarifications after clicking a chip
+    mocks.match.mockReturnValue({
+      items: [{ exerciseId: EXERCISE.id, name: '胸部推举', rationale: '确认坐姿推胸', level: 'high', exercise: EXERCISE }],
+      fallback: { understanding: '坐姿推胸', bodyParts: ['chest'], equipment: ['leverage machine'] },
+      clarifications: [],
+    })
+
+    await act(async () => { chipButtons[0].click() })
+    await flush()
+
+    // While running, chips hide to prevent double-clicks
+    expect(host.querySelector('[data-ai-clarifications]')).toBeNull()
+    expect(mocks.startRun).toHaveBeenCalledTimes(2)
+    const followCall = mocks.startRun.mock.calls[1][0]
+    expect(followCall.sessionMode).toBe('continue')
+    expect(followCall.sessionId).toBe(mocks.startRun.mock.calls[0][0].sessionId)
+    expect(followCall.input.hintText).toBe('这是往前推的坐姿推胸器械')
+
+    await tick()
+    expect(host.querySelector('[data-ai-clarifications]')).toBeNull()
+  })
+
+  it('hides disambiguation chips once the follow-up turn limit is reached', async () => {
+    mocks.match.mockReturnValue({
+      items: [{ exerciseId: EXERCISE.id, name: '胸部推举', rationale: '推柄位置', level: 'medium', exercise: EXERCISE }],
+      fallback: { understanding: '可能是推胸器械' },
+      clarifications: [{ label: '往前推（练胸）', prompt: '这是往前推的坐姿推胸器械' }],
+    })
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '胸推')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    await tick()
+    expect(host.querySelector('[data-ai-clarifications]')).toBeTruthy()
+
+    for (let i = 1; i < AI_SEARCH_MAX_RUNS; i++) {
+      await act(async () => {
+        host.querySelector('[data-ai-clarifications] button.chip').click()
+      })
+      await flush()
+      await tick()
+    }
+    expect(host.querySelector('[data-ai-clarifications]')).toBeNull()
+  })
 })

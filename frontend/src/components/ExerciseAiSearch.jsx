@@ -813,6 +813,9 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   const running = phase === 'running'
   const items = Array.isArray(result?.items) ? result.items.slice(0, 5).filter(item => item?.exercise) : []
   const fallback = result?.fallback || null
+  const clarifications = Array.isArray(result?.clarifications)
+    ? result.clarifications.filter(chip => chip?.label && chip?.prompt).slice(0, 3)
+    : []
   const limitReached = runCount >= AI_SEARCH_MAX_RUNS
   const activeProfile = profile
   const followLocked = running || followBusy || limitReached || !!error
@@ -862,6 +865,18 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
             aria-label={typeof quick.label === 'function' ? quick.label(item.exercise) : quick.label}
             onClick={() => handlePick(item, true)}><Icon name={quick.icon || 'plus'} /></button> : null}
         </div>)}
+      </div>
+    </div> : null}
+
+    {!followLocked && clarifications.length > 0 ? <div className="ai-clarifications" data-ai-clarifications="">
+      <p className="ai-note">{t('快速补充方向：')}</p>
+      <div className="chips wrap">
+        {clarifications.map(chip => <button
+          type="button"
+          key={chip.label}
+          className="chip"
+          onClick={() => { void sendRequest({ text: chip.prompt, surface: 'follow' }) }}
+        >{chip.label}</button>)}
       </div>
     </div> : null}
 

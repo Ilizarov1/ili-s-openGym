@@ -6,8 +6,8 @@ export {
 } from './recovery';
 export {
   AiSearchController, aiErrorMessage, exerciseOf, matchAiSearch, structuredOf,
-  type AiSearchFallback, type AiSearchImageInput, type AiSearchItem, type AiSearchLaunch, type AiSearchMatch,
-  type AiStartTurnInput, type AiTurnStart,
+  type AiClarificationChip, type AiSearchFallback, type AiSearchImageInput, type AiSearchItem,
+  type AiSearchLaunch, type AiSearchMatch, type AiStartTurnInput, type AiTurnStart,
 } from './ai-search';
 export { AgentConfig, summaryOf, type AgentLaunch, type AgentLaunchOptions, type AgentRemoteCatalog } from './config';
 export { AgentStore } from './store';

@@ -193,13 +193,14 @@ test('the task declares one JSON model round, no tools, no memories and only the
   assert.equal(task.userMessage({}), '[图片]');
   assert.equal(task.userMessage({ hintText: ' row ' }), 'row');
   assert.deepEqual(task.targetScope({}, {}), []);
-  assert.deepEqual(Object.keys(EXERCISE_SEARCH_OUTPUT_SCHEMA.properties), ['fallback', 'candidates']);
+  assert.deepEqual(Object.keys(EXERCISE_SEARCH_OUTPUT_SCHEMA.properties), ['fallback', 'candidates', 'clarifications']);
   assert.deepEqual(EXERCISE_SEARCH_OUTPUT_SCHEMA.required, ['fallback', 'candidates']);
   const instructions = task.instructions({}, {});
   assert.ok(instructions.includes('Output is JSON and nothing else'));
   assert.ok(instructions.includes('Emit `fallback` first and `candidates` second'));
   assert.ok(instructions.includes('written before `candidates`'));
   assert.ok(instructions.includes('drive mechanism'));
+  assert.ok(instructions.includes('clarifications'));
   assert.ok(instructions.includes('Never invent, guess or reference catalogue'));
   assert.ok(instructions.includes('## Allowed body part slugs'));
   assert.ok(instructions.includes('## Allowed equipment slugs'));
@@ -660,4 +661,74 @@ test('search_catalogue recalls confusable machine siblings within limit and enfo
     error => error instanceof AgentError && error.code === 'tool_budget_exceeded',
   );
   assert.equal(snapshot.length, beforeLength);
+});
+
+test('clarifications schema stays optional and cleans invalid, oversized, and duplicate entries', () => {
+  const withoutClarifications = {
+    fallback: { understanding: '胸推器械' },
+    candidates: [],
+  };
+  assert.equal(isExerciseSearchOutput(withoutClarifications), true);
+  assert.equal('clarifications' in cleanExerciseSearchOutput(withoutClarifications), false);
+
+  const validWithClarifications = {
+    fallback: { understanding: '可能是推胸或推肩' },
+    candidates: [{ name: '坐姿推胸', rationale: '推柄位置', level: 'medium' }],
+    clarifications: [
+      { label: '往前推（练胸）', prompt: '这是往前推的坐姿推胸器械' },
+      { label: '往上推（练肩）', prompt: '这是往上推的坐姿推肩器械' },
+    ],
+  };
+  assert.equal(isExerciseSearchOutput(validWithClarifications), true);
+
+  // Over-limit (>3) or empty label fails raw schema check, while cleaner truncates & caps cleanly
+  assert.equal(isExerciseSearchOutput({
+    ...validWithClarifications,
+    clarifications: [
+      { label: '1', prompt: 'p1' },
+      { label: '2', prompt: 'p2' },
+      { label: '3', prompt: 'p3' },
+      { label: '4', prompt: 'p4' },
+    ],
+  }), false);
+  assert.equal(isExerciseSearchOutput({
+    ...validWithClarifications,
+    clarifications: [{ label: '', prompt: 'p1' }],
+  }), false);
+
+  const task = createExerciseSearchTask();
+  const dirty = task.parseOutput({
+    structured: {
+      fallback: { understanding: '模糊机器照片' },
+      candidates: [],
+      clarifications: [
+        null,
+        'bad',
+        { label: '   ', prompt: '空标签应过滤' },
+        { label: '缺少提示', prompt: '   ' },
+        { label: '  往前推的动作超出十六个字的超级长标签截断测试  ', prompt: `  ${'这是超长追问句'.repeat(12)}  ` },
+        { label: '往前推的动作超出十六个字的超级长标签截断测试重复', prompt: '截断后与前一条同名应去重' },
+        { label: '往上推（练肩）', prompt: '这是往上推的坐姿推肩器械' },
+        { label: '双臂夹胸', prompt: '这是双臂向中间夹胸的蝴蝶机' },
+        { label: '第四条超出上限', prompt: '不应保留第四条' },
+      ],
+    },
+  }, { input: { hintText: '胸肌器械' } });
+
+  assert.equal(dirty.clarifications.length, 3);
+  assert.equal(dirty.clarifications[0].label, '往前推的动作超出十六个字的超级长');
+  assert.equal(dirty.clarifications[0].label.length, 16);
+  assert.equal(dirty.clarifications[0].prompt.length, 60);
+  assert.deepEqual(dirty.clarifications[1], { label: '往上推（练肩）', prompt: '这是往上推的坐姿推肩器械' });
+  assert.deepEqual(dirty.clarifications[2], { label: '双臂夹胸', prompt: '这是双臂向中间夹胸的蝴蝶机' });
+  assert.equal(isExerciseSearchOutput(dirty), true);
+
+  // Empty or all-invalid clarifications omits the field for backwards compatibility
+  const allInvalid = cleanExerciseSearchOutput({
+    fallback: { understanding: '固定器械' },
+    candidates: [],
+    clarifications: [null, { label: '', prompt: 'x' }, { label: 'y' }],
+  });
+  assert.equal('clarifications' in allInvalid, false);
+  assert.equal(isExerciseSearchOutput(allInvalid), true);
 });

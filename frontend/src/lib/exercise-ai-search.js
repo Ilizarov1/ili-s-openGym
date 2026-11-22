@@ -613,6 +613,191 @@ function matchOne(
   }
 }
 
+const MAX_CLARIFICATIONS = 3
+const MAX_CLARIFICATION_LABEL = 16
+const MAX_CLARIFICATION_PROMPT = 60
+
+const CLARIFICATION_PRESS_FLY = Object.freeze([
+  Object.freeze({ label: '往前推（练胸）', prompt: '这是往前推的坐姿推胸器械' }),
+  Object.freeze({ label: '往上推（练肩）', prompt: '这是往上推的坐姿推肩器械' }),
+  Object.freeze({ label: '双臂夹胸（蝴蝶机）', prompt: '这是双臂向中间夹胸的蝴蝶机' }),
+])
+
+const CLARIFICATION_LEG_EXT_CURL = Object.freeze([
+  Object.freeze({ label: '大腿前侧（腿屈伸）', prompt: '这是踢腿练大腿前侧的坐姿腿屈伸' }),
+  Object.freeze({ label: '大腿后侧（腿弯举）', prompt: '这是屈膝练大腿后侧的坐姿腿弯举' }),
+])
+
+const CLARIFICATION_HACK_LEG_PRESS = Object.freeze([
+  Object.freeze({ label: '站姿斜板下蹲（哈克）', prompt: '这是肩垫顶肩下蹲的哈克深蹲器械' }),
+  Object.freeze({ label: '坐姿/斜躺蹬腿（腿举）', prompt: '这是脚踩踏板蹬腿的腿举器械' }),
+])
+
+const CLARIFICATION_GENERIC_MACHINE = Object.freeze([
+  Object.freeze({ label: '固定器械（挂片/插销）', prompt: '这是一台商用固定器械' }),
+  Object.freeze({ label: '绳索/龙门架', prompt: '这是用绳索滑轮的龙门架动作' }),
+])
+
+const FITNESS_CLUE_PATTERN = /\b(?:machine|cable|pulley|lever|sled|smith|press|row|pull|pulldown|curl|extension|squat|raise|fly|pec|chest|shoulder|back|leg|quad|hamstring|calf|glute|arm|bicep|tricep|gym|workout)\b|器械|机器|绳索|滑轮|龙门架|史密斯|推胸|推肩|卧推|划船|下拉|弯举|屈伸|深蹲|腿举|夹胸|蝴蝶机|飞鸟|胸|肩|背|腿|臂|健身/i
+const NON_FITNESS_NEGATION_PATTERN = /没有看到|未见|并未看到|并不是|不是.*(?:健身|器械|训练|运动)|非健身|与健身无关|与训练无关|no\s+(?:gym|fitness|exercise|workout)\s+equipment/i
+
+function clipClarificationText(value, max) {
+  const text = clean(value)
+  if (!text) return ''
+  return (text.length > max ? text.slice(0, max) : text).trim()
+}
+
+function cleanClarificationList(rawList) {
+  if (!Array.isArray(rawList)) return []
+  const out = []
+  const seen = new Set()
+  for (const entry of rawList) {
+    if (out.length >= MAX_CLARIFICATIONS) break
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const label = clipClarificationText(entry.label, MAX_CLARIFICATION_LABEL)
+    const prompt = clipClarificationText(entry.prompt, MAX_CLARIFICATION_PROMPT)
+    if (!label || !prompt || seen.has(label)) continue
+    seen.add(label)
+    out.push({ label, prompt })
+  }
+  return out
+}
+
+function itemSignalText(item) {
+  const ex = item?.exercise
+  return [
+    item?.name,
+    item?.nameEn,
+    ex?.name,
+    ex?.n,
+    ex?.nameEn,
+    ...(Array.isArray(ex?.aliases) ? ex.aliases : []),
+  ]
+    .map(clean)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+}
+
+function confusableRoleOf(item) {
+  const text = itemSignalText(item)
+  const bodyPart = clean(item?.exercise?.bodyPart || item?.bodyPart).toLowerCase()
+  if (/leg extension|腿屈伸/.test(text)) return 'leg-ext'
+  if (/leg curl|腿弯举/.test(text)) return 'leg-curl'
+  if (/hack squat|哈克深蹲|哈克/.test(text)) return 'hack-squat'
+  if (/leg press|腿举|蹬腿/.test(text)) return 'leg-press'
+  if (/pec deck|pec fly|chest fly|seated fly|蝴蝶|夹胸/.test(text)) return 'pec-deck'
+  if ((bodyPart === 'chest' && /\bpress\b|推胸|卧推/.test(text)) || /chest press|推胸/.test(text)) {
+    return 'chest-press'
+  }
+  if ((bodyPart === 'shoulders' && /\bpress\b|推肩|推举/.test(text)) || /shoulder press|推肩/.test(text)) {
+    return 'shoulder-press'
+  }
+  return ''
+}
+
+function hasConfusablePair(items) {
+  if (!Array.isArray(items) || items.length < 2) return false
+  const r0 = confusableRoleOf(items[0])
+  const r1 = confusableRoleOf(items[1])
+  if (!r0 || !r1 || r0 === r1) return false
+  const pressFly = new Set(['chest-press', 'shoulder-press', 'pec-deck'])
+  if (pressFly.has(r0) && pressFly.has(r1)) return true
+  const legExtCurl = new Set(['leg-ext', 'leg-curl'])
+  if (legExtCurl.has(r0) && legExtCurl.has(r1)) return true
+  const hackLegPress = new Set(['hack-squat', 'leg-press'])
+  return hackLegPress.has(r0) && hackLegPress.has(r1)
+}
+
+function fallbackChipsFor(items, source, hintText) {
+  const list = Array.isArray(items) ? items : []
+  const fb = source?.fallback && typeof source.fallback === 'object' ? source.fallback : {}
+  const candidates = Array.isArray(source?.candidates) ? source.candidates : []
+  const bodyParts = new Set([
+    ...(Array.isArray(fb.bodyParts) ? fb.bodyParts : []),
+    ...list.map(item => clean(item?.exercise?.bodyPart || item?.bodyPart).toLowerCase()),
+    ...candidates.map(c => clean(c?.bodyPart).toLowerCase()),
+  ].filter(Boolean))
+  const equipment = new Set([
+    ...(Array.isArray(fb.equipment) ? fb.equipment : []),
+    ...list.map(item => clean(item?.exercise?.equipment || item?.equipment).toLowerCase()),
+    ...candidates.map(c => clean(c?.equipment).toLowerCase()),
+  ].filter(Boolean))
+  const textBlob = [
+    hintText,
+    fb.understanding,
+    ...list.map(itemSignalText),
+    ...candidates.map(c => [c?.name, c?.nameEn].map(clean).filter(Boolean).join(' ')),
+  ]
+    .map(clean)
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+
+  const roles = new Set(list.slice(0, 3).map(confusableRoleOf).filter(Boolean))
+  if (
+    roles.has('hack-squat') || roles.has('leg-press')
+    || /hack squat|leg press|哈克|腿举|蹬腿|倒蹬/.test(textBlob)
+    || (equipment.has('sled machine') && bodyParts.has('upper legs'))
+  ) {
+    return CLARIFICATION_HACK_LEG_PRESS.map(chip => ({ ...chip }))
+  }
+  if (
+    roles.has('leg-ext') || roles.has('leg-curl')
+    || /leg extension|leg curl|腿屈伸|腿弯举/.test(textBlob)
+  ) {
+    return CLARIFICATION_LEG_EXT_CURL.map(chip => ({ ...chip }))
+  }
+  const hasFreeWeightPressOnly = (equipment.has('barbell') || equipment.has('dumbbell'))
+    && !equipment.has('leverage machine')
+    && !equipment.has('cable')
+    && !equipment.has('smith machine')
+    && !/\bmachine|lever|器械|蝴蝶机|夹胸/.test(textBlob)
+  if (
+    roles.has('chest-press') || roles.has('shoulder-press') || roles.has('pec-deck')
+    || /chest press|shoulder press|pec deck|pec fly|chest fly|推胸|推肩|蝴蝶机|夹胸/.test(textBlob)
+    || (!hasFreeWeightPressOnly
+      && equipment.has('leverage machine')
+      && (bodyParts.has('chest') || bodyParts.has('shoulders'))
+      && !/\b(?:pull|row|pulldown|raise|拉|划船)/.test(textBlob))
+  ) {
+    return CLARIFICATION_PRESS_FLY.map(chip => ({ ...chip }))
+  }
+
+  const hintRaw = clean(hintText)
+  const understandingRaw = clean(fb.understanding)
+  const hasFitnessClues = list.length > 0
+    || bodyParts.size > 0
+    || equipment.size > 0
+    || FITNESS_CLUE_PATTERN.test(hintRaw)
+    || (FITNESS_CLUE_PATTERN.test(understandingRaw) && !NON_FITNESS_NEGATION_PATTERN.test(understandingRaw))
+  return hasFitnessClues ? CLARIFICATION_GENERIC_MACHINE.map(chip => ({ ...chip })) : []
+}
+
+/**
+ * Derive up to 3 one-tap Chinese disambiguation chips for ambiguous AI search results.
+ * Returns [] when the top match is clear high-confidence without a confusable neighbour,
+ * or when an empty result has no gym/fitness clues.
+ */
+export function deriveClarificationChips(items, source, hintText = '') {
+  const list = Array.isArray(items) ? items : []
+  if (list.length > 0 && list[0]?.level === 'high' && !hasConfusablePair(list)) {
+    return []
+  }
+  const chips = cleanClarificationList(source?.clarifications)
+  if (chips.length >= 2) return chips
+  const fallback = fallbackChipsFor(list, source, hintText)
+  if (!fallback.length) return chips
+  const seen = new Set(chips.map(chip => chip.label))
+  for (const chip of fallback) {
+    if (chips.length >= MAX_CLARIFICATIONS) break
+    if (seen.has(chip.label)) continue
+    seen.add(chip.label)
+    chips.push(chip)
+  }
+  return chips
+}
+
 /**
  * @param {{
  *   searchScored: (list: object[], query: string) => { exercise: object, score: number }[],
@@ -720,9 +905,15 @@ export function createExerciseAiSearch(options) {
           elapsedMs: Date.now() - startedAt,
         })
       }
+      const clarifications = deriveClarificationChips(
+        items,
+        { ...(source && typeof source === 'object' ? source : {}), fallback },
+        hints.hintText,
+      )
       return {
         items,
         fallback,
+        clarifications,
       }
     },
   }

@@ -121,6 +121,8 @@
 .ai-fallback .sec { margin: 0 0 8px; }
 .ai-understanding { color: var(--label-2); font-size: var(--fs-subhead); line-height: 1.45; margin: 0 0 10px; text-wrap: pretty; }
 .ai-fallback .chips { padding-inline: 0; }
+.ai-clarifications { display: flex; flex-direction: column; gap: 6px; }
+.ai-clarifications .chips { padding-inline: 0; }
 
 .ai-error-card {
   background: color-mix(in srgb, var(--red) 9%, var(--surface));

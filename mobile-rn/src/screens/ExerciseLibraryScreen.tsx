@@ -55,8 +55,8 @@ import {
   structuredOf,
 } from '../agent';
 import type {
-  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AgentRunRow, AiRunRecovery,
-  AiSearchFallback, AiSearchItem,
+  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AgentRunRow, AiClarificationChip,
+  AiRunRecovery, AiSearchFallback, AiSearchItem,
 } from '../agent';
 import type { AiTurnDiagnostics, AiTurnEnd } from '../agent/ai-search';
 import { ExerciseDetailScreen } from './ExerciseDetailScreen';
@@ -96,6 +96,7 @@ type AiView = {
   latestImage: AgentAiImageRow | null;
   items: AiSearchItem[];
   fallback: AiSearchFallback | null;
+  clarifications: AiClarificationChip[];
   error: { code?: string; message: string } | null;
   fallbackOpen: boolean;
   cancelled: boolean;
@@ -106,6 +107,7 @@ type AiView = {
     latestImage: AgentAiImageRow | null;
     items: AiSearchItem[];
     fallback: AiSearchFallback | null;
+    clarifications: AiClarificationChip[];
   } | null;
 };
 
@@ -381,6 +383,7 @@ export function ExerciseLibraryScreen({
           latestImage: before?.latestImage ?? view.latestImage,
           items: before?.items ?? view.items,
           fallback: before?.fallback ?? view.fallback,
+          clarifications: before?.clarifications ?? view.clarifications,
           previous: null,
         };
       });
@@ -504,6 +507,7 @@ export function ExerciseLibraryScreen({
         latestImage: current.latestImage,
         items: current.items,
         fallback: current.fallback,
+        clarifications: current.clarifications,
       }
       : null;
     const trimmed = text.trim();
@@ -515,6 +519,7 @@ export function ExerciseLibraryScreen({
         latestImage: null,
         items: [],
         fallback: null,
+        clarifications: [],
         error: null,
         fallbackOpen: false,
         cancelled: false,
@@ -575,6 +580,7 @@ export function ExerciseLibraryScreen({
           status: 'ready',
           items: matched.items,
           fallback: matched.fallback,
+          clarifications: matched.clarifications ?? [],
           error: null,
           cancelled: false,
           latestText: trimmed || view.latestText,
@@ -599,6 +605,7 @@ export function ExerciseLibraryScreen({
             latestImage: before?.latestImage ?? view.latestImage,
             items: before?.items ?? view.items,
             fallback: before?.fallback ?? view.fallback,
+            clarifications: before?.clarifications ?? view.clarifications,
             previous: null,
           };
         });
@@ -714,6 +721,7 @@ export function ExerciseLibraryScreen({
         latestImage: before?.latestImage ?? view.latestImage,
         items: before?.items ?? view.items,
         fallback: before?.fallback ?? view.fallback,
+        clarifications: before?.clarifications ?? view.clarifications,
         previous: null,
       };
     });
@@ -725,22 +733,30 @@ export function ExerciseLibraryScreen({
     runAiTurn(current.controller, current.latestText, undefined, current.fixtureCase).catch(() => undefined);
   }
 
-  function sendAiFollowUp(): void {
+  function sendAiFollowUpText(text: string, image?: AgentAiImageInput, mediaAttemptId?: string): void {
     const current = aiRef.current;
     if (!current || current.status === 'running') return;
     if (!current.controller.canContinue) {
       setAi(view => (view ? { ...view, status: 'error', error: { code: 'turn_limit', message: 'follow-up limit' } } : view));
       return;
     }
-    const text = aiFollowUpText.trim();
-    if (!text && !aiFollowUpImage) return;
+    const trimmed = text.trim();
+    if (!trimmed && !image) return;
     runAiTurn(
       current.controller,
-      text,
-      aiFollowUpImage ?? undefined,
+      trimmed,
+      image,
       current.fixtureCase,
-      aiFollowUpImage ? mediaAttemptOf(aiFollowUpImage) : undefined,
+      mediaAttemptId,
     ).catch(() => undefined);
+  }
+
+  function sendAiFollowUp(): void {
+    sendAiFollowUpText(
+      aiFollowUpText,
+      aiFollowUpImage ?? undefined,
+      aiFollowUpImage ? mediaAttemptOf(aiFollowUpImage) : undefined,
+    );
   }
 
   function exitAi(): void {
@@ -1129,6 +1145,24 @@ export function ExerciseLibraryScreen({
           </View>
         ) : null}
         {ai.items.map(renderAiCandidate)}
+        {ai.status === 'ready' && ai.controller.canContinue && ai.clarifications.length > 0 ? (
+          <View style={{ gap: theme.space.sm }} testID="ai-clarification-chips">
+            <Text tone="secondary" variant="footnote">
+              快速补充方向：
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              {ai.clarifications.map(chip => (
+                <Chip
+                  key={chip.label}
+                  onPress={() => sendAiFollowUpText(chip.prompt)}
+                  tone="neutral"
+                >
+                  {chip.label}
+                </Chip>
+              ))}
+            </View>
+          </View>
+        ) : null}
         {ai.items.length > 0 && ai.fallback && !ai.fallbackOpen ? (
           <Button onPress={() => setAi(view => (view ? { ...view, fallbackOpen: true } : view))} variant="ghost">
             都不对？继续追问，或看看建议筛选

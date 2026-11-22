@@ -38,9 +38,15 @@ export type AiSearchFallback = {
   equipment?: string[];
 };
 
+export type AiClarificationChip = {
+  label: string;
+  prompt: string;
+};
+
 export type AiSearchMatch = {
   items: AiSearchItem[];
   fallback: AiSearchFallback;
+  clarifications?: AiClarificationChip[];
 };
 
 export function structuredOf(run: AgentRunRow | null | undefined): unknown {

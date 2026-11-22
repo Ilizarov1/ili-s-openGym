@@ -21,6 +21,7 @@ import {
   CJK_MARGIN,
   EQ_BONUS,
   createExerciseAiSearch,
+  deriveClarificationChips,
   diceCoefficient,
   longestCommonSubstring,
 } from './exercise-ai-search.js'
@@ -1529,5 +1530,113 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
       candidates: [{ name: 'barbell squat', equipment: 'barbell', level: 'high', rationale: 'x' }],
       fallback: { understanding: 'x' },
     }))).toEqual(['s-oly'])
+  })
+
+  it('derives up to 3 disambiguation chips for ambiguous or confusable results and hides on clear high confidence', () => {
+    const chestPress = { id: '2144', name: 'lever chest press', equipment: 'leverage machine', bodyPart: 'chest' }
+    const shoulderPress = { id: '0586', name: 'lever shoulder press', equipment: 'leverage machine', bodyPart: 'shoulders' }
+    const legExt = { id: '0585', name: 'lever leg extension', equipment: 'leverage machine', bodyPart: 'upper legs' }
+    const legCurl = { id: '0599', name: 'lever seated leg curl', equipment: 'leverage machine', bodyPart: 'upper legs' }
+    const hackSquat = { id: '0743', name: 'sled hack squat', equipment: 'sled machine', bodyPart: 'upper legs' }
+    const legPress = { id: '0739', name: 'sled 45° leg press', equipment: 'sled machine', bodyPart: 'upper legs' }
+    const barbellBench = { id: '0025', name: 'barbell bench press', equipment: 'barbell', bodyPart: 'chest' }
+
+    // Clear high-confidence match with non-confusable neighbour returns [] even if model returned clarifications
+    expect(deriveClarificationChips(
+      [
+        { exerciseId: '0025', name: barbellBench.name, level: 'high', exercise: barbellBench },
+        { exerciseId: '0585', name: legExt.name, level: 'low', exercise: legExt },
+      ],
+      {
+        clarifications: [{ label: '不应该出现', prompt: '高置信清晰结果应隐藏' }],
+        fallback: { understanding: '杠铃卧推', bodyParts: ['chest'], equipment: ['barbell'] },
+      },
+      '杠铃卧推',
+    )).toEqual([])
+
+    // Confusable high-confidence pair (chest press vs shoulder press) keeps chips and prioritizes model-supplied ones
+    expect(deriveClarificationChips(
+      [
+        { exerciseId: '2144', name: chestPress.name, level: 'high', exercise: chestPress },
+        { exerciseId: '0586', name: shoulderPress.name, level: 'medium', exercise: shoulderPress },
+      ],
+      {
+        clarifications: [
+          { label: '自定义1', prompt: '补充角度为斜上推' },
+          { label: '自定义1', prompt: '重复标签会被去重' },
+          { label: '自定义2', prompt: '补充手柄是独立双臂' },
+          { label: '自定义3', prompt: '补充手柄为固定横杠' },
+          { label: '超出第4条', prompt: '超过3条会被截断' },
+        ],
+        fallback: { understanding: '推举固定器械' },
+      },
+    )).toEqual([
+      { label: '自定义1', prompt: '补充角度为斜上推' },
+      { label: '自定义2', prompt: '补充手柄是独立双臂' },
+      { label: '自定义3', prompt: '补充手柄为固定横杠' },
+    ])
+
+    // Deterministic fallbacks across the 4 Chinese confusable/generic families
+    const pressChips = deriveClarificationChips(
+      [{ exerciseId: '2144', name: chestPress.name, level: 'medium', exercise: chestPress }],
+      { fallback: { understanding: '不确定推胸还是推肩', bodyParts: ['chest'], equipment: ['leverage machine'] } },
+    )
+    expect(pressChips.map(c => c.label)).toEqual(['往前推（练胸）', '往上推（练肩）', '双臂夹胸（蝴蝶机）'])
+
+    const legExtCurlChips = deriveClarificationChips(
+      [
+        { exerciseId: '0585', name: legExt.name, level: 'high', exercise: legExt },
+        { exerciseId: '0599', name: legCurl.name, level: 'medium', exercise: legCurl },
+      ],
+      { fallback: { understanding: '腿部固定器械', bodyParts: ['upper legs'], equipment: ['leverage machine'] } },
+    )
+    expect(legExtCurlChips.map(c => c.label)).toEqual(['大腿前侧（腿屈伸）', '大腿后侧（腿弯举）'])
+
+    const hackChips = deriveClarificationChips(
+      [
+        { exerciseId: '0743', name: hackSquat.name, level: 'medium', exercise: hackSquat },
+        { exerciseId: '0739', name: legPress.name, level: 'medium', exercise: legPress },
+      ],
+      { fallback: { understanding: '斜板腿部器械', bodyParts: ['upper legs'], equipment: ['sled machine'] } },
+    )
+    expect(hackChips.map(c => c.label)).toEqual(['站姿斜板下蹲（哈克）', '坐姿/斜躺蹬腿（腿举）'])
+
+    const genericChips = deriveClarificationChips(
+      [],
+      { fallback: { understanding: '一台健身房器械', equipment: ['leverage machine'] } },
+    )
+    expect(genericChips.map(c => c.label)).toEqual(['固定器械（挂片/插销）', '绳索/龙门架'])
+
+    // Unrelated non-fitness empty result produces no chips
+    expect(deriveClarificationChips(
+      [],
+      { fallback: { understanding: '这是一碗拉面，没有看到健身器械' } },
+      '',
+    )).toEqual([])
+
+    // match() integration: attaches clarifications cleanly on ambiguous match and [] on clear high match
+    const matcher = createExerciseAiSearch({
+      searchScored: (_list, query) => {
+        if (query === 'lever chest press') return [{ exercise: chestPress, score: 250 }]
+        if (query === 'barbell bench press') return [{ exercise: barbellBench, score: 250 }]
+        return []
+      },
+      list: [chestPress, barbellBench],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+    })
+
+    const clearRes = matcher.match({
+      candidates: [{ name: 'barbell bench press', equipment: 'barbell', bodyPart: 'chest', level: 'high', rationale: '杠铃' }],
+      fallback: { understanding: '杠铃卧推', bodyParts: ['chest'], equipment: ['barbell'] },
+    })
+    expect(clearRes.clarifications).toEqual([])
+
+    const ambigRes = matcher.match({
+      candidates: [{ name: 'lever chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'medium', rationale: '机械' }],
+      fallback: { understanding: '可能是坐姿推胸或推肩', bodyParts: ['chest'], equipment: ['leverage machine'] },
+    })
+    expect(ambigRes.clarifications).toHaveLength(3)
+    expect(ambigRes.clarifications[0].label).toBe('往前推（练胸）')
   })
 })
