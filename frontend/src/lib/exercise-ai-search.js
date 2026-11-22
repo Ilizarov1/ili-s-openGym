@@ -28,6 +28,14 @@ export const AI_MATCH_CONSTANTS = Object.freeze({
 const LEVEL_RANK = { low: 1, medium: 2, high: 3 }
 const QUERY_PICK_LIMIT = 3
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
+const CHEST_PRESS_PHRASE = /\bchest press\b/
+const CHEST_PRESS_VARIANT_GROUPS = [
+  { en: /\binner\b/, zh: '内侧' },
+  { en: /\boutdoor\b/, zh: '户外' },
+  { en: /\bincline\b/, zh: '上斜' },
+  { en: /\bdecline\b/, zh: '下斜' },
+  { en: /\b(?:single arm|one arm)\b/, zh: '单臂' },
+]
 const MACHINE_HINTS = new Set([
   'barbell', 'smith machine', 'leverage machine', 'sled machine', 'cable',
   'dumbbell', 'ez barbell', 'olympic barbell', 'trap bar', 'kettlebell',
@@ -50,6 +58,13 @@ const normalize = value => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
   .toLowerCase()
+  .replace(/\s+/g, ' ')
+  .trim()
+const normalizePhrase = value => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/-/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
 
@@ -324,14 +339,38 @@ function keywordRejection(hit, exact, queries, candidateEquipment, genericWords)
   return null
 }
 
+function hasUnsupportedChestPressVariant(cataloguePhrase, primaryName, hasZh, namePhrase, nameEnPhrase) {
+  for (const group of CHEST_PRESS_VARIANT_GROUPS) {
+    if (!group.en.test(cataloguePhrase)) continue
+    const supported = group.en.test(namePhrase)
+      || group.en.test(nameEnPhrase)
+      || (hasZh && primaryName.includes(group.zh))
+    if (!supported) return true
+  }
+  return false
+}
+
 function isBetterQueryHit(next, current) {
   if (next.exact !== current.exact) return next.exact
   if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
+  if (
+    next.isChestPress
+    && current.isChestPress
+    && next.eq === current.eq
+    && next.unsupportedVariant !== current.unsupportedVariant
+  ) {
+    return !next.unsupportedVariant
+  }
   return false
 }
 
 function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment, genericWords) {
   const limit = Math.min(results.length, QUERY_PICK_LIMIT)
+  const [primaryName = '', nameEn = ''] = names
+  const candidateIsChestPress = CHEST_PRESS_PHRASE.test(normalizePhrase(nameEn || primaryName))
+  const hasZh = isCjkName(primaryName)
+  const namePhrase = candidateIsChestPress ? normalizePhrase(primaryName) : ''
+  const nameEnPhrase = candidateIsChestPress ? normalizePhrase(nameEn) : ''
   let picked = null
   for (let index = 0; index < limit; index++) {
     const entry = results[index]
@@ -339,11 +378,22 @@ function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment
     const exercise = entry.exercise
     const exact = exactNameMatch(exercise, names)
     if (keywordRejection(entry, exact, queries, candidateEquipment, genericWords)) continue
+    const eq = clean(exercise.eq)
+    const cataloguePhrase = candidateIsChestPress
+      ? normalizePhrase(clean(exercise.n) || clean(exercise.name))
+      : ''
+    const isChestPress = candidateIsChestPress && CHEST_PRESS_PHRASE.test(cataloguePhrase)
+    const unsupportedVariant = isChestPress
+      ? hasUnsupportedChestPressVariant(cataloguePhrase, primaryName, hasZh, namePhrase, nameEnPhrase)
+      : false
     const hit = {
       exercise,
       score: entry.score,
       exact,
-      equipmentMatch: !!equipmentHint && clean(exercise.eq) === equipmentHint,
+      equipmentMatch: !!equipmentHint && eq === equipmentHint,
+      eq,
+      isChestPress,
+      unsupportedVariant,
     }
     if (!picked || isBetterQueryHit(hit, picked)) picked = hit
   }
