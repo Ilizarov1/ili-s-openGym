@@ -99,12 +99,15 @@ docs/
     CANDIDATE_EQUIPMENT_EXECUTION.md      D 组候选级器械选优、配对回放和验收
     P1_RECALL_EXECUTION.md               P1 本地召回补强三阶段实施计划、评测矩阵与验收门槛
     P2_RETRIEVE_SELECT_EXECUTION.md      P2 两阶段闭集多选重排与一键消歧 Chip 方案及执行计划
+    P3_METADATA_BM25_EXECUTION.md        P3 标准别名表、姿势打标、跨部位保护与 BM25 零结果兜底计划
     eval/
       manifest.json                      hinted / photo-only / edge 三组评估样本清单
+      manifest-p3.json                   P3 扩展评估清单（含 test_pic 新增 5 图，共 10 器械）
       edge-responses.json                edge 组固定结构化回放
       README.md                           评估 CLI runbook：模式、参数、退出码与日志开关
       ACCEPTANCE.md                       A1–A7 验收证据、命令与报告路径
       P2_RESULTS.md                      P2 检索基建、两阶段重排对照与消歧 Chip 验收结果
+      P3_RESULTS.md                      P3 元数据、姿势、跨部位保护、BM25 与阶段对比 RN 验收结果
     test_pic/                            真实器械照片 smoke 素材
   rn-p2/
     README.md                            P2 功能导航、当前范围和共用流程
