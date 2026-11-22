@@ -641,3 +641,238 @@ describe('AI exercise matcher diagnostics (D04)', () => {
     expect(broken).toEqual(plain)
   })
 })
+
+describe('AI exercise within-query top-3 selection (Group B)', () => {
+  const synth = (id, n, eq, extra = {}) => ({
+    id,
+    n,
+    name: extra.name || n,
+    eq,
+    bp: extra.bp || 'chest',
+    aliases: extra.aliases || [],
+    custom: extra.custom === true,
+  })
+  const makeInjected = (resultsByQuery, pool) => createExerciseAiSearch({
+    searchScored: (_list, query) => resultsByQuery[query] || [],
+    list: pool,
+    bodyPartValues: BODYPARTS,
+    equipmentValues: EQUIPMENTS,
+    isPublicExercise: exercise => exercise.custom !== true,
+  })
+  const collectEvents = (matcher, output) => {
+    const events = []
+    const result = matcher.match(output, { diagnostics: { emit: event => events.push(event) } })
+    return { events, result }
+  }
+
+  it('picks a rank-2 hit whose equipment matches the hint even when rank 1 passes', () => {
+    const cable = synth('s-cable', 'cable seated chest press', 'cable')
+    const lever = synth('s-lever', 'lever seated chest press', 'leverage machine')
+    const matcher = makeInjected({
+      'seated chest press': [
+        { exercise: cable, score: 303 },
+        { exercise: lever, score: 297 },
+      ],
+    }, [cable, lever])
+    const result = matcher.match({
+      candidates: [{ name: 'seated chest press', equipment: 'leverage machine', level: 'high', rationale: '坐姿推胸' }],
+      fallback: { understanding: '推胸机' },
+    })
+    expect(idsOf(result)).toEqual(['s-lever'])
+  })
+
+  it('reviews ranks 2 and 3 when earlier items are rejected, and ignores rank 4', () => {
+    const unrelated = synth('s-bad', 'barbell bent over row', 'barbell', { bp: 'back' })
+    const lowScore = synth('s-low', 'cable chest press', 'cable')
+    const rank3 = synth('s-r3', 'lever chest press', 'leverage machine')
+    const rank4 = synth('s-r4', 'smith chest press', 'smith machine')
+
+    const m3 = makeInjected({
+      'chest press': [
+        { exercise: unrelated, score: 90 },
+        { exercise: lowScore, score: BASE_FLOOR - 1 },
+        { exercise: rank3, score: 75 },
+        { exercise: rank4, score: 74 },
+      ],
+    }, [unrelated, lowScore, rank3, rank4])
+    expect(idsOf(m3.match({
+      candidates: [{ name: 'chest press', equipment: 'smith machine', level: 'high', rationale: '推胸' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-r3'])
+
+    const m4Only = makeInjected({
+      'chest press': [
+        { exercise: unrelated, score: 90 },
+        { exercise: lowScore, score: BASE_FLOOR - 1 },
+        { exercise: synth('s-bw', 'chest press push-up', 'body weight'), score: 80 },
+        { exercise: rank4, score: 79 },
+      ],
+    }, [unrelated, lowScore, rank4])
+    const { events, result } = collectEvents(m4Only, {
+      candidates: [{ name: 'chest press', equipment: 'smith machine', level: 'high', rationale: '推胸' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(result)).toEqual([])
+    expect(events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'no_name_evidence', id: 's-bad' },
+    ])
+  })
+
+  it('keeps original rank order without an equipment hint or with multi-value fallback equipment', () => {
+    const cable = synth('s-cable', 'cable seated chest press', 'cable')
+    const lever = synth('s-lever', 'lever seated chest press', 'leverage machine')
+    const matcher = makeInjected({
+      'seated chest press': [
+        { exercise: cable, score: 303 },
+        { exercise: lever, score: 297 },
+      ],
+    }, [cable, lever])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'seated chest press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-cable'])
+
+    expect(idsOf(matcher.match({
+      candidates: [{ name: 'seated chest press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x', equipment: ['leverage machine', 'cable'] },
+    }))).toEqual(['s-cable'])
+  })
+
+  it('uses single-value fallback equipment only for within-query ordering, never conflict or bonus', () => {
+    const cable = synth('s-cable', 'cable seated chest press', 'cable')
+    const lever = synth('s-lever', 'lever seated chest press', 'leverage machine')
+    const bw = synth('s-bw', 'push-up', 'body weight')
+    const other = synth('s-other', 'cable fly', 'cable')
+    const matcher = makeInjected({
+      'seated chest press': [
+        { exercise: cable, score: 200 },
+        { exercise: lever, score: 190 },
+      ],
+      'push-up': [{ exercise: bw, score: 120 }],
+      'cable fly': [{ exercise: other, score: 195 }],
+    }, [cable, lever, bw, other])
+
+    // Single deduplicated valid fallback equipment orders rank 2 ahead of rank 1,
+    // while keeping its raw score (190 < 195) without adding EQ_BONUS.
+    const ordered = matcher.match({
+      candidates: [
+        { name: 'seated chest press', level: 'high', rationale: 'a' },
+        { name: 'cable fly', level: 'high', rationale: 'b' },
+      ],
+      fallback: { understanding: 'x', equipment: ['leverage machine', 'leverage machine', 'not-a-slug'] },
+    })
+    expect(idsOf(ordered)).toEqual(['s-other', 's-lever'])
+
+    // Single fallback equipment must not trigger hard bodyweight conflict.
+    const noConflict = matcher.match({
+      candidates: [{ name: 'push-up', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x', equipment: ['smith machine'] },
+    })
+    expect(idsOf(noConflict)).toEqual(['s-bw'])
+  })
+
+  it('prefers a rank-2 exact name or saved alias over a rank-1 non-exact hit, and still rejects conflicting exact hits', () => {
+    const nonExact = synth('s-r1', 'lever seated chest press', 'leverage machine')
+    const exactName = synth('s-r2', 'chest press', 'cable')
+    const exactAlias = synth('s-alias', 'machine press', 'cable', { aliases: ['my press'] })
+    const bwExact = synth('s-bw', 'chest press', 'body weight')
+
+    const mExact = makeInjected({
+      'chest press': [
+        { exercise: nonExact, score: 300 },
+        { exercise: exactName, score: 50 },
+      ],
+    }, [nonExact, exactName])
+    expect(idsOf(mExact.match({
+      candidates: [{ name: 'chest press', equipment: 'leverage machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-r2'])
+
+    const mAlias = makeInjected({
+      'my press': [
+        { exercise: nonExact, score: 300 },
+        { exercise: exactAlias, score: 40 },
+      ],
+    }, [nonExact, exactAlias])
+    expect(idsOf(mAlias.match({
+      candidates: [{ name: 'my press', equipment: 'leverage machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-alias'])
+
+    const mConflict = makeInjected({
+      'chest press': [
+        { exercise: bwExact, score: 350 },
+      ],
+    }, [bwExact])
+    const { events, result } = collectEvents(mConflict, {
+      candidates: [{ name: 'chest press', equipment: 'leverage machine', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(result)).toEqual([])
+    expect(events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'equipment_conflict', id: 's-bw' },
+    ])
+  })
+
+  it('chooses the higher raw score across English and primary queries, keeping query order on ties', () => {
+    const enHit = synth('s-en', 'lever chest press', 'leverage machine', { name: '推胸甲' })
+    const zhHit = synth('s-zh', 'seated machine chest press', 'leverage machine', { name: '推胸乙' })
+
+    const zhHigher = makeInjected({
+      'chest press': [{ exercise: enHit, score: 150 }],
+      '器械推胸': [{ exercise: zhHit, score: 180 }],
+    }, [enHit, zhHit])
+    expect(idsOf(zhHigher.match({
+      candidates: [{ name: '器械推胸', nameEn: 'chest press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-zh'])
+
+    const tied = makeInjected({
+      'chest press': [{ exercise: enHit, score: 180 }],
+      '器械推胸': [{ exercise: zhHit, score: 180 }],
+    }, [enHit, zhHit])
+    expect(idsOf(tied.match({
+      candidates: [{ name: '器械推胸', nameEn: 'chest press', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    }))).toEqual(['s-en'])
+  })
+
+  it('preserves CJK exact match, character fallback, and ambiguity paths', () => {
+    const exact = synth('s-exact', 'lever chest press', 'leverage machine', { name: '坐姿推胸机' })
+    const near1 = synth('s-near1', 'kettlebell seated press', 'kettlebell', { name: '壶铃坐姿推举' })
+    const near2 = synth('s-near2', 'barbell seated press', 'barbell', { name: '杠铃坐姿推举' })
+
+    const mExact = makeInjected({
+      '坐姿推胸机': [{ exercise: exact, score: 80 }],
+    }, [exact, near1])
+    const resExact = mExact.match({
+      candidates: [{ name: '坐姿推胸机', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(resExact)).toEqual(['s-exact'])
+    expect(resExact.items[0].level).toBe('high')
+
+    const mFallback = makeInjected({
+      '坐姿推举': [],
+    }, [near1])
+    const resFallback = mFallback.match({
+      candidates: [{ name: '坐姿推举', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(resFallback)).toEqual(['s-near1'])
+    expect(resFallback.items[0].level).toBe('low')
+
+    const mAmbig = makeInjected({
+      '坐姿推举': [],
+    }, [near1, near2])
+    const { events, result } = collectEvents(mAmbig, {
+      candidates: [{ name: '坐姿推举', level: 'high', rationale: 'x' }],
+      fallback: { understanding: 'x' },
+    })
+    expect(idsOf(result)).toEqual([])
+    expect(events.filter(e => e.stage === 'filter')).toEqual([
+      { stage: 'filter', candidateIndex: 0, decision: 'cjk_ambiguous' },
+    ])
+  })
+})

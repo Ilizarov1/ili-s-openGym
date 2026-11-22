@@ -26,6 +26,7 @@ export const AI_MATCH_CONSTANTS = Object.freeze({
 })
 
 const LEVEL_RANK = { low: 1, medium: 2, high: 3 }
+const QUERY_PICK_LIMIT = 3
 const CJK = /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/
 const MACHINE_HINTS = new Set([
   'barbell', 'smith machine', 'leverage machine', 'sled machine', 'cable',
@@ -314,7 +315,51 @@ function recallEvent(recorder, candidateIndex, query, queryOrigin, results) {
   recorder.emit(event)
 }
 
-function matchOne(candidate, pool, searchScored, genericWords, recorder, candidateIndex) {
+function keywordRejection(hit, exact, queries, candidateEquipment, genericWords) {
+  if (!exact) {
+    if (hit.score < BASE_FLOOR) return 'below_floor'
+    if (!hasNameEvidence(queries, hit.exercise, genericWords)) return 'no_name_evidence'
+  }
+  if (conflictFor(candidateEquipment, hit.exercise)) return 'equipment_conflict'
+  return null
+}
+
+function isBetterQueryHit(next, current) {
+  if (next.exact !== current.exact) return next.exact
+  if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
+  return false
+}
+
+function pickQueryHit(results, queries, names, equipmentHint, candidateEquipment, genericWords) {
+  const limit = Math.min(results.length, QUERY_PICK_LIMIT)
+  let picked = null
+  for (let index = 0; index < limit; index++) {
+    const entry = results[index]
+    if (!entry || !entry.exercise) continue
+    const exercise = entry.exercise
+    const exact = exactNameMatch(exercise, names)
+    if (keywordRejection(entry, exact, queries, candidateEquipment, genericWords)) continue
+    const hit = {
+      exercise,
+      score: entry.score,
+      exact,
+      equipmentMatch: !!equipmentHint && clean(exercise.eq) === equipmentHint,
+    }
+    if (!picked || isBetterQueryHit(hit, picked)) picked = hit
+  }
+  return picked
+}
+
+function matchOne(
+  candidate,
+  pool,
+  searchScored,
+  genericWords,
+  recorder,
+  candidateIndex,
+  equipmentValues,
+  fallbackEquipmentHint,
+) {
   const filterEvent = (decision, exercise) => {
     if (!recorder) return
     const event = { stage: 'filter', candidateIndex, decision }
@@ -331,24 +376,34 @@ function matchOne(candidate, pool, searchScored, genericWords, recorder, candida
     return null
   }
   const nameEn = clean(candidate.nameEn)
+  const names = [name, nameEn]
+  const validCandidateEquipment = typeof candidate.equipment === 'string'
+    ? filterSlugs([clean(candidate.equipment)], equipmentValues)?.[0] || ''
+    : ''
+  const equipmentHint = validCandidateEquipment || fallbackEquipmentHint
   // The English query only runs for a Chinese name that also carries an
   // English one; the diagnostics tag that query as the English recall.
   const useEnglishQuery = isCjkName(name) && !!nameEn
   const queries = useEnglishQuery ? [nameEn, name] : [name]
   const queryOrigins = useEnglishQuery ? ['english', 'primary'] : ['primary']
   let best = null
+  let firstBest = null
   for (let index = 0; index < queries.length; index++) {
     const query = queries[index]
     const results = searchScored(pool, query) || []
     if (recorder) recallEvent(recorder, candidateIndex, query, queryOrigins[index], results)
     const first = results[0]
-    if (!first || !first.exercise) continue
-    if (!best || first.score > best.score) best = { exercise: first.exercise, score: first.score }
+    if (first && first.exercise && (!firstBest || first.score > firstBest.score)) {
+      firstBest = { exercise: first.exercise, score: first.score }
+    }
+    const picked = pickQueryHit(results, queries, names, equipmentHint, candidate.equipment, genericWords)
+    if (!picked) continue
+    if (!best || picked.score > best.score) best = picked
   }
 
   // An exact name or saved alias is authoritative even when the shared engine
   // scores it below a name word (aliases live in the corpus, not in nameWords).
-  const exactName = !!best && exactNameMatch(best.exercise, [name, nameEn])
+  const exactName = !!best && best.exact
   let fallback = false
   // Why a null `best` was dropped; only read at the `!best` return, where the
   // candidate is actually rejected.
@@ -366,31 +421,49 @@ function matchOne(candidate, pool, searchScored, genericWords, recorder, candida
       best = { exercise: pick.exercise, score: 0 }
       fallback = true
     } else if (!best || !hasNameEvidence(queries, best.exercise, genericWords)) {
-      rejection = pick.ambiguous ? 'cjk_ambiguous' : best ? 'no_name_evidence' : 'no_hit'
-      rejectedExercise = pick.ambiguous || !best ? null : best.exercise
+      if (pick.ambiguous) {
+        rejection = 'cjk_ambiguous'
+        rejectedExercise = null
+      } else if (best) {
+        rejection = 'no_name_evidence'
+        rejectedExercise = best.exercise
+      } else if (firstBest) {
+        const firstExact = exactNameMatch(firstBest.exercise, names)
+        rejection = !firstExact && !hasNameEvidence(queries, firstBest.exercise, genericWords)
+          ? 'no_name_evidence'
+          : keywordRejection(firstBest, firstExact, queries, candidate.equipment, genericWords) || 'no_hit'
+        rejectedExercise = firstBest.exercise
+      }
       best = null
     }
   }
   if (!best) {
+    if (rejection === 'no_hit' && firstBest) {
+      rejection = keywordRejection(
+        firstBest,
+        exactNameMatch(firstBest.exercise, names),
+        queries,
+        candidate.equipment,
+        genericWords,
+      ) || 'no_hit'
+      rejectedExercise = firstBest.exercise
+    }
     filterEvent(rejection, rejectedExercise)
     return null
   }
-  if (!fallback && !exactName) {
-    if (best.score < BASE_FLOOR) {
-      filterEvent('below_floor', best.exercise)
-      return null
-    }
-    if (!hasNameEvidence(queries, best.exercise, genericWords)) {
-      filterEvent('no_name_evidence', best.exercise)
-      return null
-    }
+  const finalRejection = keywordRejection(
+    best,
+    fallback || exactName,
+    queries,
+    candidate.equipment,
+    genericWords,
+  )
+  if (finalRejection) {
+    filterEvent(finalRejection, best.exercise)
+    return null
   }
 
   const exercise = best.exercise
-  if (conflictFor(candidate.equipment, exercise)) {
-    filterEvent('equipment_conflict', exercise)
-    return null
-  }
 
   let adjusted = fallback ? 0 : best.score
   if (candidate.equipment && clean(candidate.equipment) === clean(exercise.eq)) adjusted += EQ_BONUS
@@ -449,10 +522,21 @@ export function createExerciseAiSearch(options) {
         ? output.structured
         : output && typeof output === 'object' ? output : {}
       const candidates = Array.isArray(source.candidates) ? source.candidates : []
+      const fallback = cleanFallback(source.fallback, hints.hintText, bodyPartValues, equipmentValues)
+      const fallbackEquipmentHint = fallback.equipment?.length === 1 ? fallback.equipment[0] : ''
       const pool = poolOf()
       const byId = new Map()
       for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex++) {
-        const hit = matchOne(candidates[candidateIndex], pool, searchScored, genericWords, recorder, candidateIndex)
+        const hit = matchOne(
+          candidates[candidateIndex],
+          pool,
+          searchScored,
+          genericWords,
+          recorder,
+          candidateIndex,
+          equipmentValues,
+          fallbackEquipmentHint,
+        )
         if (!hit) continue
         const current = byId.get(hit.exerciseId)
         if (!current) {
@@ -498,7 +582,7 @@ export function createExerciseAiSearch(options) {
       }
       return {
         items,
-        fallback: cleanFallback(source.fallback, hints.hintText, bodyPartValues, equipmentValues),
+        fallback,
       }
     },
   }
