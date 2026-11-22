@@ -1639,4 +1639,131 @@ describe('AI exercise equipment conflict matrix (P1-C)', () => {
     expect(ambigRes.clarifications).toHaveLength(3)
     expect(ambigRes.clarifications[0].label).toBe('往前推（练胸）')
   })
+
+  it('P3-A: promotes non-semantic parenthetical matches to high while preserving semantic variants', () => {
+    const lyingPress = AI.zh.match({
+      candidates: [{
+        name: '杠杆仰卧推胸',
+        nameEn: 'lever lying chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '平躺挂片式推胸机',
+      }],
+      fallback: { understanding: '杠杆仰卧推胸机' },
+    })
+    expect(lyingPress.items[0].exerciseId).toBe('1041')
+    expect(lyingPress.items[0].level).toBe('high')
+    expect('postureMatch' in lyingPress.items[0]).toBe(false)
+
+    // Semantic variant suffixes such as (inner) must never be stripped to claim exact high confidence.
+    const innerEx = {
+      id: 'synthetic-inner',
+      n: 'lever chest press (inner)',
+      name: '杠杆内侧推胸(内侧)',
+      eq: 'leverage machine',
+      bp: 'chest',
+      aliases: [],
+      custom: true,
+    }
+    const localSearch = searchOf(exercise => `${exercise.name} ${exercise.n}`, exercise => exercise.aliases, label)
+    const localAi = aiOf(localSearch, [innerEx])
+    const innerRes = localAi.match({
+      candidates: [{
+        name: 'lever chest press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '内侧变式不应剥离为精确匹配',
+      }],
+    })
+    expect(innerRes.items[0]?.exerciseId).toBe('synthetic-inner')
+    expect(innerRes.items[0]?.level).toBe('medium')
+  })
+
+  it('P3-A: rejects cross-body-part false hits while allowing synergistic muscles', () => {
+    const events = []
+    const res = AI.zh.match({
+      candidates: [{
+        name: 'lever bench press',
+        equipment: 'leverage machine',
+        bodyPart: 'chest',
+        level: 'high',
+        rationale: '胸部卧推器械',
+      }],
+      fallback: { understanding: '固定卧推机', bodyParts: ['chest'], equipment: ['leverage machine'] },
+    }, {
+      diagnostics: { emit: event => events.push(event) },
+    })
+    // Must not falsely match 1221 (back shrug), 1220 (lower legs calf), or 1625 (upper arms triceps)
+    expect(idsOf(res)).toEqual([])
+    expect(events.some(e => e.stage === 'filter' && e.decision === 'body_part_conflict')).toBe(true)
+
+    // Synergistic body parts remain permitted: chest -> shoulders, upper arms -> chest
+    const chestShoulder = EXDB.find(e => e.id === '0603')
+    const upperArmChest = EXDB.find(e => e.id === '0251')
+    const synAi = createExerciseAiSearch({
+      searchScored: (_pool, q) => {
+        if (q === 'overhead press') return [{ exercise: chestShoulder, score: 250 }]
+        if (q === 'chest dip') return [{ exercise: upperArmChest, score: 250 }]
+        return []
+      },
+      list: [chestShoulder, upperArmChest],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+    })
+    expect(synAi.match({
+      candidates: [{ name: 'overhead press', bodyPart: 'chest', level: 'medium', rationale: 'synergy' }],
+    }).items[0]?.exerciseId).toBe('0603')
+    expect(synAi.match({
+      candidates: [{ name: 'chest dip', bodyPart: 'upper arms', level: 'medium', rationale: 'synergy' }],
+    }).items[0]?.exerciseId).toBe('0251')
+  })
+
+  it('P3-A: breaks posture ties deterministically between seated, supine, and prone siblings', () => {
+    const lyingChest = EXDB.find(e => e.id === '1041')
+    const seatedChest = EXDB.find(e => e.id === '0576')
+    const proneCurl = EXDB.find(e => e.id === '0586')
+    const seatedCurl = EXDB.find(e => e.id === '0599')
+    const postureAi = createExerciseAiSearch({
+      searchScored: (_pool, q) => {
+        if (q === 'machine chest press') {
+          return [
+            { exercise: seatedChest, score: 260 },
+            { exercise: lyingChest, score: 250 },
+          ]
+        }
+        if (q === 'leg curl') {
+          return [
+            { exercise: seatedCurl, score: 260 },
+            { exercise: proneCurl, score: 250 },
+          ]
+        }
+        return []
+      },
+      list: [lyingChest, seatedChest, proneCurl, seatedCurl],
+      bodyPartValues: BODYPARTS,
+      equipmentValues: EQUIPMENTS,
+    })
+
+    const supineRes = postureAi.match({
+      candidates: [{ name: 'machine chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'medium', rationale: 'supine' }],
+    }, { hintText: '仰卧推胸' })
+    expect(supineRes.items[0].exerciseId).toBe('1041')
+
+    const seatedRes = postureAi.match({
+      candidates: [{ name: 'machine chest press', equipment: 'leverage machine', bodyPart: 'chest', level: 'medium', rationale: 'seated' }],
+    }, { hintText: '坐姿推胸' })
+    expect(seatedRes.items[0].exerciseId).toBe('0576')
+
+    const proneRes = postureAi.match({
+      candidates: [{ name: 'leg curl', posture: 'prone', equipment: 'leverage machine', bodyPart: 'upper legs', level: 'medium', rationale: 'prone' }],
+    })
+    expect(proneRes.items[0].exerciseId).toBe('0586')
+
+    const seatedCurlRes = postureAi.match({
+      candidates: [{ name: 'leg curl', posture: 'seated', equipment: 'leverage machine', bodyPart: 'upper legs', level: 'medium', rationale: 'seated' }],
+    })
+    expect(seatedCurlRes.items[0].exerciseId).toBe('0599')
+  })
 })

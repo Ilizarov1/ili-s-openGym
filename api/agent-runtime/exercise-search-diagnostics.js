@@ -38,6 +38,7 @@ const FILTER_DECISIONS = new Set([
   'no_name_evidence',
   'below_floor',
   'equipment_conflict',
+  'body_part_conflict',
   'accepted',
   'accepted_cjk_fallback',
   'deduplicated',

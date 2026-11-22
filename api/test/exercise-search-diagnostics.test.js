@@ -464,3 +464,17 @@ test('the web legacy trace id also carries run events', () => {
   emit({ stage: 'end', status: 'completed', phase: 'poll', elapsedMs: 1 });
   assert.equal(parsed(sink)[0].traceId, LEGACY_TRACE);
 });
+
+test('filter accepts body_part_conflict while preserving schemaVersion 1', () => {
+  const { emit, sink } = traceFor('rn');
+  emit({ stage: 'filter', candidateIndex: 0, decision: 'body_part_conflict', id: '1221' });
+  assert.equal(sink.lines.length, 1);
+  const event = parsed(sink)[0];
+  assert.equal(event.schemaVersion, 1);
+  assert.deepEqual(fieldsOf(event), {
+    stage: 'filter',
+    candidateIndex: 0,
+    decision: 'body_part_conflict',
+    id: '1221',
+  });
+});

@@ -9,6 +9,8 @@
 // `searchScored` function and the allowed fallback slugs. Fuse.js stays out of
 // this path; it only powers the keyword zero-result suggestions.
 
+import SEARCH_META from './exercise-search-meta.json' with { type: 'json' }
+
 export const BASE_FLOOR = 60
 export const EQ_BONUS = 25
 export const BP_BONUS = 15
@@ -47,6 +49,20 @@ const FIXED_MACHINES = new Set(['leverage machine', 'sled machine', 'smith machi
 const FREE_WEIGHTS = new Set([
   'barbell', 'ez barbell', 'olympic barbell', 'trap bar', 'dumbbell', 'kettlebell', 'weight plate',
 ])
+const POSTURE_SLUGS = new Set(SEARCH_META?.postures || [
+  'seated', 'standing', 'supine', 'prone', 'side_lying', 'kneeling', 'bent_over', 'hanging',
+])
+const COMPATIBLE_BODY_PARTS = {
+  chest: new Set(['chest', 'shoulders']),
+  shoulders: new Set(['shoulders', 'chest', 'upper arms', 'back']),
+  back: new Set(['back', 'shoulders', 'upper arms', 'waist']),
+  'upper arms': new Set(['upper arms', 'chest', 'back', 'shoulders', 'lower arms']),
+  'lower arms': new Set(['lower arms', 'upper arms']),
+  'upper legs': new Set(['upper legs', 'lower legs', 'waist']),
+  'lower legs': new Set(['lower legs', 'upper legs']),
+  waist: new Set(['waist', 'back', 'upper legs']),
+  neck: new Set(['neck', 'shoulders', 'back']),
+}
 const STOP_WORDS = new Set([
   'a', 'an', 'the', 'of', 'on', 'in', 'with', 'for', 'and', 'or', 'to', 'at', 'by', 'from',
   'is', 'are', 'this', 'that', 'your', 'you', 'my', 'me', 'it', 'its',
@@ -72,6 +88,77 @@ const normalizePhrase = value => String(value || '')
   .replace(/-/g, ' ')
   .replace(/\s+/g, ' ')
   .trim()
+
+export function stripNonSemanticSuffix(name) {
+  let cur = clean(name)
+  while (cur) {
+    const next = cur
+      .replace(/\s*\((?:plate[- ]?loaded|pin[- ]?loaded|selectorized|version\s*\d+|v\.?\s*\d+|male|female|挂片式|插销式|男|女)\)\s*$/i, '')
+      .replace(/\s+v\.?\s*\d+\s*$/i, '')
+      .trim()
+    if (next === cur) break
+    cur = next
+  }
+  return cur
+}
+
+function builtInAliasesOf(exercise) {
+  if (!exercise || exercise.custom || !exercise.id) return []
+  const aliases = SEARCH_META?.byId?.[exercise.id]?.a
+  return Array.isArray(aliases) ? aliases : []
+}
+
+function exercisePostureOf(exercise) {
+  if (!exercise) return ''
+  if (!exercise.custom && exercise.id) {
+    const metaPosture = SEARCH_META?.byId?.[exercise.id]?.p
+    if (POSTURE_SLUGS.has(metaPosture)) return metaPosture
+  }
+  const direct = clean(exercise.posture || exercise.p)
+  return POSTURE_SLUGS.has(direct) ? direct : ''
+}
+
+function postureFromText(text, bodyPartHint = '') {
+  const raw = clean(text)
+  if (!raw) return ''
+  const lower = normalizePhrase(raw)
+  if (/\bside lying\b|\blateral lying\b/.test(lower) || /侧卧/.test(raw)) return 'side_lying'
+  if (/\b(?:half )?kneeling\b|\bon knees\b|\bquadruped\b/.test(lower) || /跪姿|半跪/.test(raw)) return 'kneeling'
+  if (/\bhanging\b|\bsuspended\b/.test(lower) || /悬垂/.test(raw)) return 'hanging'
+  if (/\b(?:seated|sitting)\b/.test(lower) || /坐姿/.test(raw)) return 'seated'
+  if (/\bstanding\b|\bupright\b/.test(lower) || /站姿/.test(raw)) return 'standing'
+  if (/\bprone\b|\bface down\b|\bchest supported\b/.test(lower) || /俯卧/.test(raw)) return 'prone'
+  if (/\bsupine\b|\breclined\b|\bflat bench\b/.test(lower) || /仰卧|平躺/.test(raw)) return 'supine'
+  if (/\bbent over\b|\bromanian\b|\bgood morning\b|\bhip hinge\b/.test(lower) || /俯身/.test(raw)) return 'bent_over'
+  if (/\blying\b/.test(lower)) {
+    if (
+      (bodyPartHint === 'upper legs' && /\b(?:leg curl|curl|hamstring)\b/.test(lower))
+      || /\b(?:leg curl|reverse fly|rear delt|back extension|hyperextension|seal row)\b/.test(lower)
+    ) {
+      return 'prone'
+    }
+    return 'supine'
+  }
+  return ''
+}
+
+function inferCandidatePosture(candidate, hintText, validBodyPart = '') {
+  const explicit = clean(candidate?.posture)
+  if (POSTURE_SLUGS.has(explicit)) return explicit
+  const fromNames = postureFromText(`${clean(candidate?.name)} ${clean(candidate?.nameEn)}`, validBodyPart)
+  if (fromNames) return fromNames
+  return postureFromText(hintText, validBodyPart)
+}
+
+function bodyPartConflictFor(hintBodyPart, exercise) {
+  const bp = clean(hintBodyPart)
+  if (!bp) return false
+  const compatible = COMPATIBLE_BODY_PARTS[bp]
+  if (!compatible) return false
+  const exBp = clean(exercise?.bp || exercise?.bodyPart)
+  if (!exBp) return false
+  return !compatible.has(exBp)
+}
 
 function nameOf(exercise) {
   return clean(exercise?.name || exercise?.n || exercise?.id || '')
@@ -116,7 +203,7 @@ function editDistance(a, b, max) {
 // single fuzzy token must be at least five characters, so "bnech" still
 // finds "bench press" while "food" does not become "hood stones".
 function hasNameEvidence(queries, exercise, genericWords) {
-  const nameWords = [...new Set(namesOf(exercise).flatMap(name =>
+  const nameWords = [...new Set([...namesOf(exercise), ...builtInAliasesOf(exercise)].flatMap(name =>
     normalize(name).split(/[^a-z0-9\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]+/).filter(Boolean)))]
   if (!nameWords.length) return false
   for (const query of queries) {
@@ -186,11 +273,18 @@ export function longestCommonSubstring(a, b) {
 
 // The level rule speaks of an exact name or alias, not of a score: a typo
 // ("bnech press") and a shorter common name ("bench press") score high while
-// pointing at a variant, and must not be shown as "high".
+// pointing at a variant, and must not be shown as "high". Non-semantic wrapper
+// suffixes (e.g. "(plate loaded)", "v. 2") and curated standard aliases qualify.
 function exactNameMatch(exercise, values) {
   const wanted = values.map(normalize).filter(Boolean)
   if (!wanted.length) return false
-  return namesOf(exercise).some(candidate => wanted.includes(normalize(candidate)))
+  const candidates = [...namesOf(exercise), ...builtInAliasesOf(exercise)]
+  for (const candidate of candidates) {
+    if (wanted.includes(normalize(candidate))) return true
+    const stripped = stripNonSemanticSuffix(candidate)
+    if (stripped && stripped !== candidate && wanted.includes(normalize(stripped))) return true
+  }
+  return false
 }
 
 function levelFor(modelLevel, { exact, fallback }) {
@@ -340,12 +434,13 @@ function recallEvent(recorder, candidateIndex, query, queryOrigin, results) {
   recorder.emit(event)
 }
 
-function keywordRejection(hit, exact, queries, candidateEquipment, genericWords) {
+function keywordRejection(hit, exact, queries, candidateEquipment, validBodyPart, genericWords) {
   if (!exact) {
     if (hit.score < BASE_FLOOR) return 'below_floor'
     if (!hasNameEvidence(queries, hit.exercise, genericWords)) return 'no_name_evidence'
   }
   if (conflictFor(candidateEquipment, hit.exercise)) return 'equipment_conflict'
+  if (bodyPartConflictFor(validBodyPart, hit.exercise)) return 'body_part_conflict'
   return null
 }
 
@@ -373,8 +468,12 @@ function unsupportedVariantCount(exercise, { primaryName = '', nameEn = '', hint
 function isBetterQueryHit(next, current) {
   if (next.exact !== current.exact) return next.exact
   if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
-  if (next.eq === current.eq && next.unsupportedVariants !== current.unsupportedVariants) {
-    return next.unsupportedVariants < current.unsupportedVariants
+  if (next.bodyPartMatch !== current.bodyPartMatch) return next.bodyPartMatch
+  if (next.eq === current.eq) {
+    if (next.postureMatch !== current.postureMatch) return next.postureMatch
+    if (next.unsupportedVariants !== current.unsupportedVariants) {
+      return next.unsupportedVariants < current.unsupportedVariants
+    }
   }
   return false
 }
@@ -383,6 +482,7 @@ function isBetterCandidateQueryHit(next, current) {
   if (next.exact !== current.exact) return next.exact
   if (next.equipmentMatch !== current.equipmentMatch) return next.equipmentMatch
   if (next.bodyPartMatch !== current.bodyPartMatch) return next.bodyPartMatch
+  if (next.postureMatch !== current.postureMatch) return next.postureMatch
   if (next.unsupportedVariants !== current.unsupportedVariants) {
     return next.unsupportedVariants < current.unsupportedVariants
   }
@@ -390,7 +490,17 @@ function isBetterCandidateQueryHit(next, current) {
   return false
 }
 
-function pickQueryHit(results, queries, names, equipmentHint, bodyPartHint, candidateEquipment, genericWords, hintText) {
+function pickQueryHit(
+  results,
+  queries,
+  names,
+  equipmentHint,
+  bodyPartHint,
+  candidateEquipment,
+  genericWords,
+  hintText,
+  inferredPosture = '',
+) {
   const limit = Math.min(results.length, QUERY_PICK_LIMIT)
   const [primaryName = '', nameEn = ''] = names
   let picked = null
@@ -400,7 +510,7 @@ function pickQueryHit(results, queries, names, equipmentHint, bodyPartHint, cand
     if (!entry || !entry.exercise) continue
     const exercise = entry.exercise
     const exact = exactNameMatch(exercise, names)
-    const rejection = keywordRejection(entry, exact, queries, candidateEquipment, genericWords)
+    const rejection = keywordRejection(entry, exact, queries, candidateEquipment, bodyPartHint, genericWords)
     if (rejection) {
       if (exact && rejection === 'equipment_conflict' && !exactConflict) {
         exactConflict = { exercise, score: entry.score }
@@ -415,6 +525,7 @@ function pickQueryHit(results, queries, names, equipmentHint, bodyPartHint, cand
       exact,
       equipmentMatch: !!equipmentHint && eq === equipmentHint,
       bodyPartMatch: !!bodyPartHint && clean(exercise.bp) === bodyPartHint,
+      postureMatch: Boolean(inferredPosture && exercisePostureOf(exercise) === inferredPosture),
       eq,
       unsupportedVariants,
       queryRank: index,
@@ -434,6 +545,7 @@ function compareRankedHits(a, b) {
   if (a.exact !== b.exact) return a.exact ? -1 : 1
   if (a.equipmentMatch !== b.equipmentMatch) return a.equipmentMatch ? -1 : 1
   if (a.bodyPartMatch !== b.bodyPartMatch) return a.bodyPartMatch ? -1 : 1
+  if (a.postureMatch !== b.postureMatch) return a.postureMatch ? -1 : 1
   if (a.unsupportedVariants !== b.unsupportedVariants) {
     return a.unsupportedVariants - b.unsupportedVariants
   }
@@ -478,6 +590,7 @@ function matchOne(
   const validCandidateBodyPart = typeof candidate.bodyPart === 'string'
     ? filterSlugs([clean(candidate.bodyPart)], bodyPartValues)?.[0] || ''
     : ''
+  const inferredPosture = inferCandidatePosture(candidate, hintText, validCandidateBodyPart)
   const rawModelLevel = typeof candidate.level === 'string' ? candidate.level.trim().toLowerCase() : ''
   const modelLevel = LEVEL_RANK[rawModelLevel] ? rawModelLevel : 'low'
   // Run the English query whenever nameEn is present and differs from name
@@ -505,6 +618,7 @@ function matchOne(
       candidate.equipment,
       genericWords,
       hintText,
+      inferredPosture,
     )
     if (queryExactConflict && (!exactConflict || queryExactConflict.score > exactConflict.score)) {
       exactConflict = queryExactConflict
@@ -549,7 +663,14 @@ function matchOne(
         const firstExact = exactNameMatch(firstBest.exercise, names)
         rejection = !firstExact && !hasNameEvidence(queries, firstBest.exercise, genericWords)
           ? 'no_name_evidence'
-          : keywordRejection(firstBest, firstExact, queries, candidate.equipment, genericWords) || 'no_hit'
+          : keywordRejection(
+            firstBest,
+            firstExact,
+            queries,
+            candidate.equipment,
+            validCandidateBodyPart,
+            genericWords,
+          ) || 'no_hit'
         rejectedExercise = firstBest.exercise
       }
       best = null
@@ -562,6 +683,7 @@ function matchOne(
         exactNameMatch(firstBest.exercise, names),
         queries,
         candidate.equipment,
+        validCandidateBodyPart,
         genericWords,
       ) || 'no_hit'
       rejectedExercise = firstBest.exercise
@@ -574,6 +696,7 @@ function matchOne(
     fallback || exactName,
     queries,
     candidate.equipment,
+    validCandidateBodyPart,
     genericWords,
   )
   if (finalRejection) {
@@ -591,6 +714,7 @@ function matchOne(
   const rationale = clean(candidate.rationale).slice(0, 200) || name
   const equipmentMatch = Boolean(validCandidateEquipment && clean(exercise.eq) === validCandidateEquipment)
   const bodyPartMatch = Boolean(validCandidateBodyPart && clean(exercise.bp) === validCandidateBodyPart)
+  const postureMatch = Boolean(inferredPosture && exercisePostureOf(exercise) === inferredPosture)
   const unsupportedVariants = unsupportedVariantCount(exercise, { primaryName: name, nameEn, hintText })
   const queryRank = fallback ? 0 : best.queryRank
 
@@ -606,6 +730,7 @@ function matchOne(
     modelLevel,
     equipmentMatch,
     bodyPartMatch,
+    postureMatch,
     unsupportedVariants,
     candidateIndex,
     queryRank,
@@ -881,6 +1006,7 @@ export function createExerciseAiSearch(options) {
           modelLevel: _modelLevel,
           equipmentMatch: _equipmentMatch,
           bodyPartMatch: _bodyPartMatch,
+          postureMatch: _postureMatch,
           unsupportedVariants: _unsupportedVariants,
           candidateIndex: _candidateIndex,
           queryRank: _queryRank,
