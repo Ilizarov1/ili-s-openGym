@@ -15,10 +15,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Crypto from 'expo-crypto';
-import { cleanUrl, mediaOf } from '../../frontend/src/lib/media-refs.js';
+import { cleanUrl, mediaOf, normalizeMediaRef } from '../../frontend/src/lib/media-refs.js';
+import { photoDirectory } from './body/photos';
 import { catalogueClip, catalogueExercise, catalogueStill } from './catalogue';
 import type { Connection } from './server';
-import type { CustomExercise, Profile } from './training';
+import type { CustomExercise, MediaRefLike, Profile } from './training';
 
 export type ExerciseMediaKind = 'video' | 'gif' | 'image' | 'none';
 
@@ -304,6 +305,107 @@ function toHex(buffer: ArrayBuffer) {
   return out;
 }
 
+const CUSTOM_IMAGE_MIME_EXT: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
+const BASE64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+const BASE64_LOOKUP = (() => {
+  const table = new Int16Array(256).fill(-1);
+  for (let index = 0; index < BASE64_ALPHABET.length; index++) {
+    table[BASE64_ALPHABET.charCodeAt(index)] = index;
+  }
+  return table;
+})();
+
+function decodeBase64(base64: string): Uint8Array<ArrayBuffer> {
+  const cleaned = base64.replace(/\s+/g, '');
+  if (!cleaned || cleaned.length % 4 !== 0) {
+    throw new Error('无效的图片 Base64 数据');
+  }
+  let padding = 0;
+  if (cleaned.endsWith('==')) padding = 2;
+  else if (cleaned.endsWith('=')) padding = 1;
+  const byteLength = (cleaned.length / 4) * 3 - padding;
+  const out = new Uint8Array(new ArrayBuffer(byteLength));
+  let offset = 0;
+  for (let index = 0; index < cleaned.length; index += 4) {
+    const c0 = BASE64_LOOKUP[cleaned.charCodeAt(index)];
+    const c1 = BASE64_LOOKUP[cleaned.charCodeAt(index + 1)];
+    const c2Char = cleaned.charCodeAt(index + 2);
+    const c3Char = cleaned.charCodeAt(index + 3);
+    const c2 = c2Char === 61 ? 0 : BASE64_LOOKUP[c2Char];
+    const c3 = c3Char === 61 ? 0 : BASE64_LOOKUP[c3Char];
+    if (c0 < 0 || c1 < 0 || (c2Char !== 61 && c2 < 0) || (c3Char !== 61 && c3 < 0)) {
+      throw new Error('无效的图片 Base64 编码');
+    }
+    const triple = (c0 << 18) | (c1 << 12) | (c2 << 6) | c3;
+    out[offset++] = (triple >> 16) & 0xff;
+    if (c2Char !== 61 && offset < byteLength) out[offset++] = (triple >> 8) & 0xff;
+    if (c3Char !== 61 && offset < byteLength) out[offset++] = triple & 0xff;
+  }
+  return out;
+}
+
+/**
+ * Resolves the private workspace file URI for a custom exercise media ref if
+ * it has already been written locally, or null when absent.
+ */
+export function localCustomMediaUri(
+  ref: NormalizedMediaRef | MediaRefLike | null | undefined,
+  connection: Connection | null,
+): string | null {
+  const normalized = ref ? (normalizeMediaRef(ref) as NormalizedMediaRef | null) : null;
+  if (!normalized) return null;
+  const extension = MIME_EXT[normalized.mime];
+  if (!extension) return null;
+  try {
+    const file = new File(photoDirectory(connection), `${normalized.hash}.${extension}`);
+    return file.exists ? file.uri : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Decodes an AI-captured image dataUrl, computes its SHA-256 hash, persists it
+ * to `photoDirectory(connection)`, and returns a standard `MediaRefLike`.
+ */
+export async function saveCustomExerciseImage(
+  image: { mime: string; width: number; height: number; dataUrl: string },
+  connection: Connection | null,
+): Promise<{ ref: MediaRefLike; fileUri: string }> {
+  const extension = CUSTOM_IMAGE_MIME_EXT[image.mime];
+  if (!extension) {
+    throw new Error(`不支持的图片格式：${image.mime}`);
+  }
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(image.dataUrl.trim());
+  if (!match) {
+    throw new Error('图片数据格式无效');
+  }
+  const bytes = decodeBase64(match[2]);
+  if (bytes.byteLength === 0) {
+    throw new Error('图片内容为空');
+  }
+  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+  const hash = toHex(digest);
+  const file = new File(photoDirectory(connection), `${hash}.${extension}`);
+  file.write(bytes);
+  const ref: MediaRefLike = {
+    kind: image.mime === 'image/gif' ? 'gif' : 'image',
+    hash,
+    mime: image.mime,
+    size: bytes.byteLength,
+    width: Math.max(1, Math.round(image.width)),
+    height: Math.max(1, Math.round(image.height)),
+    at: Date.now(),
+  };
+  return { ref, fileUri: file.uri };
+}
+
 type UseExerciseMediaOptions = {
   profile: Profile;
   connection: Connection | null;
@@ -320,8 +422,18 @@ function initialState(
   exerciseId: string,
   ref: NormalizedMediaRef | null,
   hasConnection: boolean,
+  localCustomUri: string | null,
 ): ExerciseMediaState {
   if (!custom) return builtinMedia(server, exerciseId);
+  if (ref && localCustomUri) {
+    return {
+      kind: ref.kind,
+      uri: localCustomUri,
+      posterUri: localCustomUri,
+      loading: false,
+      origin: 'custom',
+    };
+  }
   return {
     kind: ref?.kind ?? 'none',
     uri: null,
@@ -333,8 +445,8 @@ function initialState(
 
 /**
  * Resolves what the detail should show. Built-in clips are played straight from
- * the server (the same files the list thumbnails use); custom media is fetched
- * only when the detail is open, then deleted by this hook's cleanup.
+ * the server (the same files the list thumbnails use); custom media checks the
+ * private local directory first, then fetches from the paired server when needed.
  */
 export function useExerciseMedia({
   profile,
@@ -347,6 +459,7 @@ export function useExerciseMedia({
     ? (profile.customEx ?? []).find(exercise => exercise?.id === exerciseId)
     : undefined;
   const ref = customExercise ? (mediaOf(customExercise) as NormalizedMediaRef | null) : null;
+  const localCustomUri = custom && ref ? localCustomMediaUri(ref, connection) : null;
   const mediaKey = ref
     ? [ref.kind, ref.hash, ref.mime, ref.size, ref.poster?.hash ?? '', ref.poster?.size ?? ''].join('|')
     : '';
@@ -354,7 +467,7 @@ export function useExerciseMedia({
     ? `${connection.server}|${connection.user.id}|${connection.token}`
     : 'practice';
   const scope = [custom ? 'custom' : 'builtin', exerciseId, server ?? '', connectionKey, mediaKey].join('\u0000');
-  const initial = initialState(custom, server, exerciseId, ref, !!connection);
+  const initial = initialState(custom, server, exerciseId, ref, !!connection, localCustomUri);
   const [stored, setStored] = useState<StoredMediaState>(() => ({ ...initial, scope }));
   // The effect reads the current custom exercise through this ref so an
   // unrelated profile update (a favourite toggle, a background sync) does not
@@ -386,6 +499,17 @@ export function useExerciseMedia({
         loading: false,
         origin: 'custom',
         unavailable: 'missing',
+      });
+      return () => controller.abort();
+    }
+    const localUri = localCustomMediaUri(mediaRef, connection);
+    if (localUri) {
+      write({
+        kind: mediaRef.kind,
+        uri: localUri,
+        posterUri: localUri,
+        loading: false,
+        origin: 'custom',
       });
       return () => controller.abort();
     }

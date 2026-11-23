@@ -23,7 +23,13 @@ import type { Connection } from '../server';
 // evaluation can load it without this module's Expo, SQLite and session
 // dependencies. Re-exported here so every existing call site keeps its
 // import source.
-export { matchAiSearch, matcherFor, type AiSearchDiagnostics } from './ai-search-matcher';
+export {
+  AI_SEARCH_DISPLAY_LIMIT,
+  expandAiSearchMatch,
+  matchAiSearch,
+  matcherFor,
+  type AiSearchDiagnostics,
+} from './ai-search-matcher';
 
 export type AiSearchItem = {
   exerciseId: string;

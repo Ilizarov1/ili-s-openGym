@@ -13,6 +13,8 @@ export type MediaThumbProps = {
   exerciseId: string;
   /** Paired server base URL; when absent the neutral placeholder is shown. */
   server?: string | null;
+  /** Local file URI for a custom exercise image; takes priority over built-in/server sources. */
+  customUri?: string | null;
   size?: number;
   radius?: number;
   style?: StyleProp<ViewStyle>;
@@ -40,6 +42,7 @@ const styles = StyleSheet.create({
 export function MediaThumb({
   exerciseId,
   server,
+  customUri,
   size = 56,
   radius = 10,
   style,
@@ -50,7 +53,7 @@ export function MediaThumb({
 
   useEffect(() => {
     setFailed(false);
-  }, [exerciseId, server]);
+  }, [customUri, exerciseId, server]);
 
   const url = useMemo(() => {
     const base = server?.trim().replace(/\/+$/, '') ?? '';
@@ -60,7 +63,7 @@ export function MediaThumb({
   }, [exerciseId, server]);
 
   const local = useMemo(() => catalogueStill(exerciseId), [exerciseId]);
-  const source = local ?? (url ? { uri: url } : null);
+  const source = customUri ? { uri: customUri } : (local ?? (url ? { uri: url } : null));
   const showPlaceholder = source === null || failed;
 
   return (

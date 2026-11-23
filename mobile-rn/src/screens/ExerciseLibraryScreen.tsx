@@ -1,9 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { randomUUID } from 'expo-crypto';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { isFav } from '../../../frontend/src/lib/favourites.js';
+import { mediaOf } from '../../../frontend/src/lib/media-refs.js';
 import { logExerciseSearchMedia, safeExerciseSearchError } from '../../../api/agent-runtime/exercise-search-diagnostics.js';
 import type { ExerciseSearchMediaMetrics } from '../../../api/agent-runtime/exercise-search-diagnostics.js';
 import {
@@ -39,10 +50,12 @@ import {
 import { createFuseSuggestionIndex } from '../fuseSuggestionIndex';
 import { createLibrarySearch } from '../librarySearch';
 import type { LibraryExercise } from '../librarySearch';
+import { localCustomMediaUri, saveCustomExerciseImage } from '../exerciseMedia';
 import type { Connection } from '../server';
-import type { LocalState } from '../storage';
-import type { CustomExercise, Profile, RoutineExercise } from '../training';
+import type { LocalState, PhotoUpload } from '../storage';
+import { localDate, type CustomExercise, type MediaRefLike, type Profile, type RoutineExercise } from '../training';
 import {
+  AI_SEARCH_DISPLAY_LIMIT,
   AiSearchController,
   aiErrorMessage,
   clearAiRunReference,
@@ -66,7 +79,7 @@ export type ExerciseLibraryScreenProps = {
   server: string | null;
   connection?: Connection | null;
   onPick: (exercise: RoutineExercise) => void;
-  onCustom: (exercise: CustomExercise, create: boolean) => void;
+  onCustom: (exercise: CustomExercise, create: boolean, photoUpload?: PhotoUpload) => void;
   onFavorite: (id: string, favourite: boolean) => void;
   /** Shown as a back button when the library is used as a full-screen picker. */
   onBack?: () => void;
@@ -185,6 +198,11 @@ function customName(exercise: CustomExercise) {
   return exercise.n ?? exercise.name ?? exercise.id;
 }
 
+function suggestCustomNameFromAi(text: string): string {
+  const firstClause = text.trim().split(/[，。、；！？,.;!?\n]/)[0]?.trim() ?? '';
+  return firstClause.slice(0, 24).trim();
+}
+
 export function ExerciseLibraryScreen({
   profile,
   server,
@@ -198,7 +216,11 @@ export function ExerciseLibraryScreen({
   onOpenAgentProfiles,
 }: ExerciseLibraryScreenProps) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
   const submittedRef = useRef(false);
+  const libraryBodyRef = useRef<View | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const [query, setQuery] = useState('');
   const [bodyPart, setBodyPart] = useState<string | null>(null);
   const [equipment, setEquipment] = useState<string | null>(null);
@@ -208,7 +230,15 @@ export function ExerciseLibraryScreen({
   const [limit, setLimit] = useState(SEARCH_LIMIT);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [editing, setEditing] = useState<CustomExercise | null>(null);
+  const [customFromAi, setCustomFromAi] = useState(false);
   const [customNameValue, setCustomNameValue] = useState('');
+  const [customDescValue, setCustomDescValue] = useState('');
+  const [customBodyPart, setCustomBodyPart] = useState('full body');
+  const [customEquipment, setCustomEquipment] = useState('other');
+  const [customAiImage, setCustomAiImage] = useState<AgentAiImageRow | null>(null);
+  const [customAiUnderstanding, setCustomAiUnderstanding] = useState('');
+  const [customSaving, setCustomSaving] = useState(false);
+  const [customSaveError, setCustomSaveError] = useState('');
   const [detail, setDetail] = useState<{ id: string; custom: boolean } | null>(null);
 
   // AI recognition state. The launch panel, the active session and the
@@ -284,7 +314,15 @@ export function ExerciseLibraryScreen({
     setDetail(null);
     setFiltersOpen(false);
     setEditing(null);
+    setCustomFromAi(false);
     setCustomNameValue('');
+    setCustomDescValue('');
+    setCustomBodyPart('full body');
+    setCustomEquipment('other');
+    setCustomAiImage(null);
+    setCustomAiUnderstanding('');
+    setCustomSaving(false);
+    setCustomSaveError('');
     setQuery('');
     setBodyPart(null);
     setEquipment(null);
@@ -292,6 +330,33 @@ export function ExerciseLibraryScreen({
     setOneLimb(false);
     setFavouritesOnly(false);
   }, [workspaceKey]);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, event => {
+      setKeyboardVisible(true);
+      if (Platform.OS !== 'android') return;
+      const screenY = event?.endCoordinates?.screenY;
+      const kbHeight = event?.endCoordinates?.height ?? 0;
+      libraryBodyRef.current?.measure((_x, _y, _w, h, _pageX, pageY) => {
+        if (!Number.isFinite(h) || h <= 0) return;
+        const containerBottom = pageY + h;
+        const kbTop = typeof screenY === 'number' && screenY > 0
+          ? screenY
+          : containerBottom - kbHeight;
+        setKeyboardOverlap(Math.max(0, Math.round(containerBottom - kbTop)));
+      });
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardOverlap(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -573,6 +638,7 @@ export function ExerciseLibraryScreen({
           structured,
           trimmed,
           diagnostics ? { emit: diagnostics.emit } : undefined,
+          { maxItems: AI_SEARCH_DISPLAY_LIMIT },
         );
         diagnostics?.end({ status: 'completed', phase: 'match' });
         setAi(view => (view ? {
@@ -645,7 +711,7 @@ export function ExerciseLibraryScreen({
 
   async function submitAiSheet(): Promise<void> {
     const text = aiSheetText.trim();
-    if (!text && !aiDraftImage) return;
+    if (!text) return;
     setAiPickerBusy(true);
     setAiSheetError(null);
     setAiRecovery(null);
@@ -741,7 +807,7 @@ export function ExerciseLibraryScreen({
       return;
     }
     const trimmed = text.trim();
-    if (!trimmed && !image) return;
+    if (!trimmed) return;
     runAiTurn(
       current.controller,
       trimmed,
@@ -920,21 +986,102 @@ export function ExerciseLibraryScreen({
   };
 
   const startEdit = (exercise?: CustomExercise) => {
+    setCustomFromAi(false);
     setEditing(exercise ?? { id: '', bp: 'full body', eq: 'other' });
     setCustomNameValue(exercise ? customName(exercise) : '');
+    setCustomDescValue(exercise ? (exercise.desc ?? exercise.note ?? '') : '');
+    setCustomBodyPart(exercise?.bp && BODY_PARTS.includes(exercise.bp) ? exercise.bp : 'full body');
+    setCustomEquipment(exercise?.eq && EQUIPMENT_OPTIONS.includes(exercise.eq) ? exercise.eq : 'other');
+    setCustomAiImage(null);
+    setCustomAiUnderstanding('');
+    setCustomSaveError('');
+  };
+
+  const openCustomFromAi = () => {
+    if (!ai) return;
+    const defaultBp = ai.fallback?.bodyParts?.find(bp => BODY_PARTS.includes(bp)) ?? 'full body';
+    const defaultEq = ai.fallback?.equipment?.find(eq => EQUIPMENT_OPTIONS.includes(eq)) ?? 'other';
+    const trimmedHint = ai.latestText.trim();
+    const understanding = (ai.fallback?.understanding ?? '').trim();
+    setCustomFromAi(true);
+    setEditing({ id: '', bp: defaultBp, eq: defaultEq });
+    setCustomNameValue(suggestCustomNameFromAi(trimmedHint));
+    setCustomDescValue(trimmedHint ? `用户描述：${trimmedHint}` : '');
+    setCustomBodyPart(defaultBp);
+    setCustomEquipment(defaultEq);
+    setCustomAiImage(ai.latestImage ?? null);
+    setCustomAiUnderstanding(understanding && understanding !== trimmedHint ? understanding : '');
+    setCustomSaveError('');
   };
 
   const closeEdit = () => {
     setEditing(null);
+    setCustomFromAi(false);
     setCustomNameValue('');
+    setCustomDescValue('');
+    setCustomBodyPart('full body');
+    setCustomEquipment('other');
+    setCustomAiImage(null);
+    setCustomAiUnderstanding('');
+    setCustomSaving(false);
+    setCustomSaveError('');
   };
 
-  const saveCustom = () => {
-    if (!editing) return;
+  const saveCustom = async () => {
+    if (!editing || customSaving) return;
     const name = customNameValue.trim();
     if (!name) return;
-    onCustom({ ...editing, id: editing.id || `custom-${randomUUID()}`, n: name }, !editing.id);
-    closeEdit();
+    setCustomSaving(true);
+    setCustomSaveError('');
+    try {
+      const desc = customDescValue.trim();
+      const id = editing.id || `custom-${randomUUID()}`;
+      const isCreate = !editing.id;
+      let media = editing.media;
+      let photoUpload: PhotoUpload | undefined;
+      if (customAiImage) {
+        const saved = await saveCustomExerciseImage(
+          {
+            mime: customAiImage.mime,
+            width: customAiImage.width,
+            height: customAiImage.height,
+            dataUrl: customAiImage.dataUrl,
+          },
+          connection,
+        );
+        media = saved.ref;
+        photoUpload = {
+          hash: saved.ref.hash,
+          ref: saved.ref,
+          d: localDate(Date.now()),
+          fileUri: saved.fileUri,
+          createdAt: Date.now(),
+        };
+      }
+      const nextExercise: CustomExercise = {
+        ...editing,
+        id,
+        n: name,
+        bp: customBodyPart,
+        eq: customEquipment,
+        ...(desc ? { desc } : {}),
+        ...(media ? { media } : {}),
+      };
+      if (!desc && 'desc' in nextExercise) {
+        delete nextExercise.desc;
+      }
+      onCustom(nextExercise, isCreate, photoUpload);
+      const shouldOpenDetail = customFromAi;
+      closeEdit();
+      if (shouldOpenDetail) {
+        exitAi();
+        setDetail({ id, custom: true });
+      }
+    } catch (error) {
+      setCustomSaveError(error instanceof Error ? error.message : '保存失败，请重试。');
+    } finally {
+      setCustomSaving(false);
+    }
   };
 
   function rowView(item: Row) {
@@ -958,50 +1105,42 @@ export function ExerciseLibraryScreen({
             onPress={() => submitPick(exercise.id, item.kind === 'custom')}
             size="sm"
           />
-        ) : (
+        ) : item.kind === 'custom' ? (
           <>
             <IconButton
-              accessibilityLabel={`查看详情 ${name}`}
-              name="info"
-              onPress={() => setDetail({ id: exercise.id, custom: item.kind === 'custom' })}
+              accessibilityLabel={`编辑 ${name}`}
+              name="pencil"
+              onPress={() => startEdit(item.exercise)}
               size="sm"
-              testID={`library-detail-${exercise.id}`}
             />
-            {item.kind === 'custom' ? (
-              <IconButton
-                accessibilityLabel={`编辑 ${name}`}
-                name="pencil"
-                onPress={() => startEdit(item.exercise)}
-                size="sm"
-              />
-            ) : (
-              <IconButton
-                accessibilityLabel={`选择 ${name}`}
-                name="plus"
-                onPress={() => pickCatalogue(item.exercise)}
-                size="sm"
-              />
-            )}
+            <IconButton
+              accessibilityLabel={`选择 ${name}`}
+              name="plus"
+              onPress={() => pickCustom(item.exercise)}
+              size="sm"
+            />
           </>
+        ) : (
+          <IconButton
+            accessibilityLabel={`选择 ${name}`}
+            name="plus"
+            onPress={() => pickCatalogue(item.exercise)}
+            size="sm"
+          />
         )}
       </View>
     );
 
     if (item.kind === 'custom') {
       const custom = item.exercise;
+      const customRef = mediaOf(custom) as MediaRefLike | null;
+      const customUri = customRef ? localCustomMediaUri(customRef, connection) : null;
       return (
         <Card padded={false}>
           <ListRow
-            {...(replacing
-              ? {
-                accessibilityLabel: `查看详情 ${name}`,
-                onPressBody: () => setDetail({ id: custom.id, custom: true }),
-              }
-              : {
-                accessibilityLabel: `选择 ${name}`,
-                onPress: () => pickCustom(custom),
-              })}
-            leading={<MediaThumb exerciseId={custom.id} server={null} size={44} radius={theme.radius.lg} />}
+            accessibilityLabel={`查看详情 ${name}`}
+            leading={<MediaThumb customUri={customUri} exerciseId={custom.id} server={null} size={44} radius={theme.radius.lg} />}
+            onPressBody={() => setDetail({ id: custom.id, custom: true })}
             subtitle={subtitleOf(custom.bp, custom.eq)}
             testID={`library-ex-${custom.id}`}
             title={name}
@@ -1015,16 +1154,9 @@ export function ExerciseLibraryScreen({
     return (
       <Card padded={false}>
         <ListRow
-          {...(replacing
-            ? {
-              accessibilityLabel: `查看详情 ${name}`,
-              onPressBody: () => setDetail({ id: builtin.id, custom: false }),
-            }
-            : {
-              accessibilityLabel: `选择 ${name}`,
-              onPress: () => pickCatalogue(builtin),
-            })}
+          accessibilityLabel={`查看详情 ${name}`}
           leading={<MediaThumb exerciseId={builtin.id} server={server} size={44} radius={theme.radius.lg} />}
+          onPressBody={() => setDetail({ id: builtin.id, custom: false })}
           subtitle={subtitleOf(builtin.bodyPart, builtin.equipment)}
           testID={`library-ex-${builtin.id}`}
           title={name}
@@ -1044,12 +1176,17 @@ export function ExerciseLibraryScreen({
   function renderAiCandidate(item: AiSearchItem) {
     const exercise = exerciseOf(librarySearch, item);
     if (!exercise) return null;
+    const customRef = exercise.custom && exercise.customExercise
+      ? (mediaOf(exercise.customExercise) as MediaRefLike | null)
+      : null;
+    const customUri = customRef ? localCustomMediaUri(customRef, connection) : null;
     return (
       <Card key={`ai-${item.exerciseId}`} padded={false}>
         <ListRow
           accessibilityLabel={`查看 ${item.name} 详情`}
           leading={(
             <MediaThumb
+              customUri={customUri}
               exerciseId={exercise.id}
               radius={theme.radius.lg}
               server={exercise.custom ? null : server}
@@ -1175,6 +1312,18 @@ export function ExerciseLibraryScreen({
             {ai.cancelled ? '这次检索已取消。' : '没有匹配到动作。'}
           </Text>
         ) : null}
+        {ai.status !== 'running' ? (
+          <Card padded={false}>
+            <ListRow
+              chevron
+              leading={<IconTile name="plusCircle" size="md" tone="soft" />}
+              onPress={openCustomFromAi}
+              subtitle={ai.latestImage ? '将结合你的描述和已选图片创建' : '将结合你的描述快速创建'}
+              testID="ai-create-custom"
+              title="没找到合适的？新建自定义动作"
+            />
+          </Card>
+        ) : null}
       </View>
     );
   }
@@ -1190,7 +1339,7 @@ export function ExerciseLibraryScreen({
   function renderAiSummary() {
     if (!ai) return null;
     return (
-      <Card>
+      <Card style={{ marginBottom: theme.space.md }}>
         <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.md }}>
           {ai.latestImage ? (
             <Image
@@ -1220,9 +1369,22 @@ export function ExerciseLibraryScreen({
     if (!ai) return null;
     const running = ai.status === 'running';
     const limitReached = !ai.controller.canContinue;
-    const canSend = !running && !limitReached && (aiFollowUpText.trim().length > 0 || !!aiFollowUpImage);
+    const hasText = aiFollowUpText.trim().length > 0;
+    const canSend = !running && !limitReached && hasText;
     return (
-      <View style={{ gap: theme.space.sm, marginTop: theme.space.md }}>
+      <View
+        style={{
+          backgroundColor: theme.colors.bgEl,
+          borderTopWidth: theme.sizes.hairline,
+          borderTopColor: theme.colors.sep,
+          paddingHorizontal: theme.layout.pagePadding,
+          paddingTop: theme.space.sm,
+          paddingBottom: keyboardVisible
+            ? theme.space.sm
+            : (onBack ? Math.max(theme.space.sm, insets.bottom) : theme.space.sm),
+          gap: theme.space.sm,
+        }}
+      >
         {aiFollowUpImage ? (
           <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
             <Image
@@ -1230,7 +1392,7 @@ export function ExerciseLibraryScreen({
               source={{ uri: aiFollowUpImage.dataUrl }}
               style={{ width: 44, height: 44, borderRadius: theme.radius.lg }}
             />
-            <Text tone="secondary" variant="footnote">
+            <Text style={{ flex: 1 }} tone="secondary" variant="footnote">
               发送后随本轮一起提交
             </Text>
             <IconButton
@@ -1244,12 +1406,17 @@ export function ExerciseLibraryScreen({
             />
           </View>
         ) : null}
+        {aiFollowUpImage && !hasText ? (
+          <Text tone="secondary" variant="footnote">
+            已选择图片，请输入补充描述后发送
+          </Text>
+        ) : null}
         {aiFollowUpError ? (
           <Text tone="danger" variant="footnote">
             {aiErrorMessage(aiFollowUpError.code, aiFollowUpError.message)}
           </Text>
         ) : null}
-        <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.xs }}>
+        <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
           <IconButton
             accessibilityLabel="拍照或从相册选择"
             disabled={running || limitReached}
@@ -1366,15 +1533,16 @@ export function ExerciseLibraryScreen({
         )}
       />
 
-      <SearchField
-        editable={!ai}
-        onChangeText={setQuery}
-        onAiPress={() => { openAiSheet().catch(() => undefined); }}
-        placeholder={ai ? 'AI 检索中，文字输入已禁用' : '搜索动作'}
-        resultCount={!ai && !aiNeedsConfig && narrowed ? total : undefined}
-        testID="library-search"
-        value={query}
-      />
+      {!ai && !aiNeedsConfig ? (
+        <SearchField
+          onChangeText={setQuery}
+          onAiPress={() => { openAiSheet().catch(() => undefined); }}
+          placeholder="搜索动作"
+          resultCount={narrowed ? total : undefined}
+          testID="library-search"
+          value={query}
+        />
+      ) : null}
 
       {ai ? renderAiSummary() : null}
       {!ai && aiRecovery ? <View style={{ marginTop: theme.space.md }}>{renderRecovery()}</View> : null}
@@ -1485,53 +1653,61 @@ export function ExerciseLibraryScreen({
 
   const library = (
     <Screen scroll={false} testID="library-screen">
-      <FlatList
-        contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: theme.layout.listBottomPadding }}
-        data={ai || aiNeedsConfig ? [] : rows}
-        initialNumToRender={12}
-        keyboardDismissMode="on-drag"
-        keyboardShouldPersistTaps="handled"
-        keyExtractor={item => `${item.kind}-${item.exercise.id}`}
-        ListEmptyComponent={
-          aiNeedsConfig ? renderConfigEmpty() : ai ? renderAiContent() : (
-            <View>
-              <EmptyState
-                icon={noFavourites ? 'star' : 'magnifier'}
-                text={noFavourites
-                  ? '点动作右侧的星标收藏动作，之后可以在这里快速找到。'
-                  : '换个关键词，或者清除筛选后再试。'}
-                title={noFavourites ? '还没有收藏的动作' : '没有匹配的动作'}
-              >
-                {narrowed ? (
-                  <Button onPress={clearFilters} variant="secondary">
-                    清除筛选
-                  </Button>
-                ) : null}
-              </EmptyState>
-              {suggestionRows.length > 0 ? (
-                <View style={{ gap: theme.space.sm, marginTop: theme.space.lg }}>
-                  <SectionHeader title="你可能在找" />
-                  {suggestionRows.map(row => (
-                    <View key={`${row.kind}-${row.exercise.id}`}>{rowView(row)}</View>
-                  ))}
+      <View ref={libraryBodyRef} style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1, paddingBottom: Platform.OS === 'android' && ai ? keyboardOverlap : 0 }}
+        >
+          <FlatList
+            contentContainerStyle={{ padding: theme.layout.pagePadding, paddingBottom: theme.layout.listBottomPadding }}
+            data={ai || aiNeedsConfig ? [] : rows}
+            initialNumToRender={12}
+            keyboardDismissMode="on-drag"
+            keyboardShouldPersistTaps="handled"
+            keyExtractor={item => `${item.kind}-${item.exercise.id}`}
+            ListEmptyComponent={
+              aiNeedsConfig ? renderConfigEmpty() : ai ? renderAiContent() : (
+                <View>
+                  <EmptyState
+                    icon={noFavourites ? 'star' : 'magnifier'}
+                    text={noFavourites
+                      ? '点动作右侧的星标收藏动作，之后可以在这里快速找到。'
+                      : '换个关键词，或者清除筛选后再试。'}
+                    title={noFavourites ? '还没有收藏的动作' : '没有匹配的动作'}
+                  >
+                    {narrowed ? (
+                      <Button onPress={clearFilters} variant="secondary">
+                        清除筛选
+                      </Button>
+                    ) : null}
+                  </EmptyState>
+                  {suggestionRows.length > 0 ? (
+                    <View style={{ gap: theme.space.sm, marginTop: theme.space.lg }}>
+                      <SectionHeader title="你可能在找" />
+                      {suggestionRows.map(row => (
+                        <View key={`${row.kind}-${row.exercise.id}`}>{rowView(row)}</View>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
-              ) : null}
-            </View>
-          )
-        }
-        ListFooterComponent={ai ? renderFollowUp() : (aiNeedsConfig ? null : result.items.length < result.total ? (
-          <Button
-            onPress={() => setLimit(value => value + SEARCH_LIMIT)}
-            variant="secondary"
-          >
-            显示更多
-          </Button>
-        ) : null)}
-        ListHeaderComponent={listHeader}
-        renderItem={({ item }) => rowView(item)}
-        style={{ flex: 1 }}
-        windowSize={7}
-      />
+              )
+            }
+            ListFooterComponent={ai || aiNeedsConfig ? null : result.items.length < result.total ? (
+              <Button
+                onPress={() => setLimit(value => value + SEARCH_LIMIT)}
+                variant="secondary"
+              >
+                显示更多
+              </Button>
+            ) : null}
+            ListHeaderComponent={listHeader}
+            renderItem={({ item }) => rowView(item)}
+            style={{ flex: 1 }}
+            windowSize={7}
+          />
+          {ai ? renderFollowUp() : null}
+        </KeyboardAvoidingView>
+      </View>
 
       <Sheet
         footer={(
@@ -1683,10 +1859,16 @@ export function ExerciseLibraryScreen({
       <Sheet
         footer={(
           <View style={{ gap: theme.space.sm }}>
-            <Button disabled={!customNameValue.trim()} onPress={saveCustom} variant="primary">
+            <Button
+              disabled={customSaving || !customNameValue.trim()}
+              loading={customSaving}
+              onPress={() => { saveCustom().catch(() => undefined); }}
+              testID="custom-exercise-save"
+              variant="primary"
+            >
               保存
             </Button>
-            <Button onPress={closeEdit} variant="secondary">
+            <Button disabled={customSaving} onPress={closeEdit} variant="secondary">
               取消
             </Button>
           </View>
@@ -1696,22 +1878,99 @@ export function ExerciseLibraryScreen({
         title={editing?.id ? '编辑自定义动作' : '新建自定义动作'}
         visible={editing !== null}
       >
-        <TextField
-          autoFocus
-          label="动作名称"
-          maxLength={80}
-          onChangeText={setCustomNameValue}
-          placeholder="例如：杠铃深蹲"
-          value={customNameValue}
-        />
-        <View style={{ height: theme.space.md }} />
+        <View style={{ gap: theme.space.md, paddingBottom: theme.space.sm }}>
+          <TextField
+            autoFocus={!customFromAi}
+            label="动作名称"
+            maxLength={80}
+            onChangeText={setCustomNameValue}
+            placeholder="例如：杠铃深蹲"
+            testID="custom-exercise-name"
+            value={customNameValue}
+          />
+          <TextField
+            autoCapitalize="sentences"
+            helper={customAiUnderstanding ? `AI 识别参考：${customAiUnderstanding}` : undefined}
+            label="动作描述 / 备注"
+            maxLength={500}
+            multiline
+            onChangeText={setCustomDescValue}
+            placeholder="填写动作要点、器械调节或备注（选填）"
+            testID="custom-exercise-desc"
+            value={customDescValue}
+          />
+          {customAiImage ? (
+            <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
+              <Image
+                contentFit="cover"
+                source={{ uri: customAiImage.dataUrl }}
+                style={{ width: 56, height: 56, borderRadius: theme.radius.lg }}
+              />
+              <View style={{ flex: 1, gap: theme.space.xxs }}>
+                <Text variant="subhead">已附带检索图片</Text>
+                <Text tone="secondary" variant="footnote">
+                  保存后将显示在详情页与动作库列表
+                </Text>
+              </View>
+              <Button
+                onPress={() => setCustomAiImage(null)}
+                size="sm"
+                testID="custom-exercise-remove-image"
+                variant="secondary"
+              >
+                移除图片
+              </Button>
+            </View>
+          ) : null}
+          <View style={{ gap: theme.space.xs }}>
+            <Text tone="secondary" variant="footnote">
+              部位
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              {BODY_PARTS.map(part => (
+                <Chip
+                  key={part}
+                  onPress={() => setCustomBodyPart(part)}
+                  selected={customBodyPart === part}
+                  size="sm"
+                  tone="neutral"
+                >
+                  {bodyPartName(part)}
+                </Chip>
+              ))}
+            </View>
+          </View>
+          <View style={{ gap: theme.space.xs }}>
+            <Text tone="secondary" variant="footnote">
+              器械
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+              {EQUIPMENT_OPTIONS.map(value => (
+                <Chip
+                  key={value}
+                  onPress={() => setCustomEquipment(value)}
+                  selected={customEquipment === value}
+                  size="sm"
+                  tone="neutral"
+                >
+                  {equipmentName(value)}
+                </Chip>
+              ))}
+            </View>
+          </View>
+          {customSaveError ? (
+            <Text tone="danger" variant="footnote">
+              {customSaveError}
+            </Text>
+          ) : null}
+        </View>
       </Sheet>
 
       <Sheet
         footer={(
           <View style={{ gap: theme.space.sm }}>
             <Button
-              disabled={aiPickerBusy || (!aiSheetText.trim() && !aiDraftImage)}
+              disabled={aiPickerBusy || !aiSheetText.trim()}
               loading={aiPickerBusy}
               onPress={() => { submitAiSheet().catch(() => undefined); }}
               testID="ai-submit"
@@ -1729,96 +1988,103 @@ export function ExerciseLibraryScreen({
         title="AI 检索动作"
         visible={aiSheetOpen}
       >
-        <TextField
-          autoCapitalize="sentences"
-          label="描述"
-          maxLength={500}
-          multiline
-          onChangeText={setAiSheetText}
-          placeholder="描述想找的动作或器械，可加上你的条件（如：肩膀不适、只有哑铃）"
-          testID="ai-hint"
-          value={aiSheetText}
-        />
-        <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.md }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              disabled={aiPickerBusy}
-              fullWidth
-              icon="camera"
-              onPress={() => { pickAiImage('camera', 'sheet').catch(() => undefined); }}
-              variant="secondary"
-            >
-              拍照
-            </Button>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              disabled={aiPickerBusy}
-              fullWidth
-              icon="image"
-              onPress={() => { pickAiImage('library', 'sheet').catch(() => undefined); }}
-              variant="secondary"
-            >
-              从相册选择
-            </Button>
-          </View>
-        </View>
-        {aiDraftImage ? (
-          <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.md }}>
-            <Image
-              contentFit="cover"
-              source={{ uri: aiDraftImage.dataUrl }}
-              style={{ width: 56, height: 56, borderRadius: theme.radius.lg }}
-            />
-            <Text style={{ flex: 1 }} tone="secondary" variant="footnote">
-              已选 1 张图片
-            </Text>
-            <IconButton
-              accessibilityLabel="移除已选图片"
-              name="xmark"
-              onPress={() => {
-                setAiDraftImage(null);
-                setAiImageNotice('');
-                aiSheetMediaRef.current = null;
-              }}
-            />
-          </View>
-        ) : null}
-        {aiImageNotice ? (
-          <Text style={{ marginTop: theme.space.sm }} tone="secondary" variant="footnote">
-            {aiImageNotice}
-          </Text>
-        ) : null}
-        {aiLaunch?.profile.provider === 'fixture' ? (
-          <View style={{ marginTop: theme.space.md, gap: theme.space.xs }}>
-            <Text tone="secondary" variant="footnote">
-              Fixture 用例
-            </Text>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
-              <Chip onPress={() => setAiFixtureCase('candidates')} selected={aiFixtureCase === 'candidates'} size="sm" tone="neutral">
-                候选
-              </Chip>
-              <Chip onPress={() => setAiFixtureCase('fallback-only')} selected={aiFixtureCase === 'fallback-only'} size="sm" tone="neutral">
-                仅兜底
-              </Chip>
-              <Chip onPress={() => setAiFixtureCase('error')} selected={aiFixtureCase === 'error'} size="sm" tone="neutral">
-                错误
-              </Chip>
+        <View style={{ gap: theme.space.md, paddingBottom: theme.space.sm }}>
+          <TextField
+            autoCapitalize="sentences"
+            helper="请填写简短描述（例如：坐姿推胸机、哑铃侧平举），可同时附带照片。"
+            label="描述（必填）"
+            maxLength={500}
+            multiline
+            onChangeText={setAiSheetText}
+            placeholder="描述想找的动作或器械，可加上你的条件（如：肩膀不适、只有哑铃）"
+            testID="ai-hint"
+            value={aiSheetText}
+          />
+          <View style={{ flexDirection: 'row', gap: theme.space.sm }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                disabled={aiPickerBusy}
+                fullWidth
+                icon="camera"
+                onPress={() => { pickAiImage('camera', 'sheet').catch(() => undefined); }}
+                variant="secondary"
+              >
+                拍照
+              </Button>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button
+                disabled={aiPickerBusy}
+                fullWidth
+                icon="image"
+                onPress={() => { pickAiImage('library', 'sheet').catch(() => undefined); }}
+                variant="secondary"
+              >
+                从相册选择
+              </Button>
             </View>
           </View>
-        ) : null}
-        {aiSheetError ? (
-          <View style={{ marginTop: theme.space.md, gap: theme.space.sm }}>
-            <Text tone="danger" variant="footnote">
-              {aiErrorMessage(aiSheetError.code, aiSheetError.message)}
+          {aiDraftImage ? (
+            <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
+              <Image
+                contentFit="cover"
+                source={{ uri: aiDraftImage.dataUrl }}
+                style={{ width: 56, height: 56, borderRadius: theme.radius.lg }}
+              />
+              <Text style={{ flex: 1 }} tone="secondary" variant="footnote">
+                已选 1 张图片
+              </Text>
+              <IconButton
+                accessibilityLabel="移除已选图片"
+                name="xmark"
+                onPress={() => {
+                  setAiDraftImage(null);
+                  setAiImageNotice('');
+                  aiSheetMediaRef.current = null;
+                }}
+              />
+            </View>
+          ) : null}
+          {aiDraftImage && !aiSheetText.trim() ? (
+            <Text tone="secondary" variant="footnote">
+              已选择图片，请再输入一句简短描述后开始检索。
             </Text>
-            {aiSheetError.code === 'profile_capability_missing' && connection ? (
-              <Button onPress={() => { restartOnServer().catch(() => undefined); }} size="sm" variant="tinted">
-                在服务端重新发起
-              </Button>
-            ) : null}
-          </View>
-        ) : null}
+          ) : aiImageNotice ? (
+            <Text tone="secondary" variant="footnote">
+              {aiImageNotice}
+            </Text>
+          ) : null}
+          {aiLaunch?.profile.provider === 'fixture' ? (
+            <View style={{ gap: theme.space.xs }}>
+              <Text tone="secondary" variant="footnote">
+                Fixture 用例
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm }}>
+                <Chip onPress={() => setAiFixtureCase('candidates')} selected={aiFixtureCase === 'candidates'} size="sm" tone="neutral">
+                  候选
+                </Chip>
+                <Chip onPress={() => setAiFixtureCase('fallback-only')} selected={aiFixtureCase === 'fallback-only'} size="sm" tone="neutral">
+                  仅兜底
+                </Chip>
+                <Chip onPress={() => setAiFixtureCase('error')} selected={aiFixtureCase === 'error'} size="sm" tone="neutral">
+                  错误
+                </Chip>
+              </View>
+            </View>
+          ) : null}
+          {aiSheetError ? (
+            <View style={{ gap: theme.space.sm }}>
+              <Text tone="danger" variant="footnote">
+                {aiErrorMessage(aiSheetError.code, aiSheetError.message)}
+              </Text>
+              {aiSheetError.code === 'profile_capability_missing' && connection ? (
+                <Button onPress={() => { restartOnServer().catch(() => undefined); }} size="sm" variant="tinted">
+                  在服务端重新发起
+                </Button>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
       </Sheet>
 
       <Sheet

@@ -14,10 +14,11 @@ import {
   Text,
   useTheme,
 } from '../design';
+import { mediaOf } from '../../../frontend/src/lib/media-refs.js';
 import { bodyPartName, catalogueContent, catalogueExercise, equipmentName } from '../catalogue';
-import { customExerciseLink, useExerciseMedia } from '../exerciseMedia';
+import { customExerciseLink, localCustomMediaUri, useExerciseMedia } from '../exerciseMedia';
 import type { Connection } from '../server';
-import { exerciseName, type Profile } from '../training';
+import { exerciseName, type MediaRefLike, type Profile } from '../training';
 
 export type ExerciseDetailScreenProps = {
   profile: Profile;
@@ -73,6 +74,15 @@ export function ExerciseDetailScreen({
   const description = content?.description ?? '';
   const instructions = content?.instructions ?? [];
   const media = useExerciseMedia({ profile, connection, server, exerciseId, custom });
+  const customRef = custom && customExercise ? (mediaOf(customExercise) as MediaRefLike | null) : null;
+  const localCustomUri = customRef ? localCustomMediaUri(customRef, connection) : null;
+  const customThumbUri = custom
+    ? (localCustomUri ?? (
+      media.kind !== 'video' && typeof (media.posterUri ?? media.uri) === 'string'
+        ? (media.posterUri ?? media.uri) as string
+        : null
+    ))
+    : null;
   const backRef = useRef(onBack);
   backRef.current = onBack;
 
@@ -126,6 +136,7 @@ export function ExerciseDetailScreen({
         <ListRow
           leading={(
             <MediaThumb
+              customUri={customThumbUri}
               exerciseId={exerciseId}
               radius={theme.radius.lg}
               server={custom ? null : server}

@@ -14,7 +14,7 @@ import {
 import { RestTimer } from './src/restTimer';
 import { workoutSummary, type WorkoutSummary } from './src/progress';
 import { useGym } from './src/useGym';
-import { readLocal, workspaceScope } from './src/storage';
+import { readLocal, workspaceScope, type PhotoUpload } from './src/storage';
 import { activeRunIds, recoverAgentRuns } from './src/agent';
 import { advanceRotation, applyChanges, prepareChanges, recommendedRoutines } from './src/profileChanges';
 import { exportBackup, pickBackup, restoreBackup, snapshotOf } from './src/backups';
@@ -403,8 +403,15 @@ function AppScreen() {
     openWorkout(startWorkout({ id: '', name: '自由训练', ex: [target] }, profile, queue));
   };
 
-  const onCustom = (exercise: CustomExercise, create: boolean) => {
-    gym.commit([{ kind: 'custom', exercise, create }]);
+  const onCustom = (exercise: CustomExercise, create: boolean, photoUpload?: PhotoUpload) => {
+    if (!gym.commit([{ kind: 'custom', exercise, create }])) return;
+    if (connection && photoUpload) {
+      gym.change(data => {
+        const existing = data.photoUploads ?? [];
+        if (existing.some(item => item.hash === photoUpload.hash)) return data;
+        return { ...data, photoUploads: [...existing, photoUpload] };
+      });
+    }
   };
 
   const onFavorite = (id: string, favourite: boolean) => {

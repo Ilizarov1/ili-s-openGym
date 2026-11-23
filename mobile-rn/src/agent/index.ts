@@ -5,7 +5,8 @@ export {
   type AiRunReference, type AiRunRecovery,
 } from './recovery';
 export {
-  AiSearchController, aiErrorMessage, exerciseOf, matchAiSearch, structuredOf,
+  AI_SEARCH_DISPLAY_LIMIT,
+  AiSearchController, aiErrorMessage, exerciseOf, expandAiSearchMatch, matchAiSearch, structuredOf,
   type AiClarificationChip, type AiSearchFallback, type AiSearchImageInput, type AiSearchItem,
   type AiSearchLaunch, type AiSearchMatch, type AiStartTurnInput, type AiTurnStart,
 } from './ai-search';

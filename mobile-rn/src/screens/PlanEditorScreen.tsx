@@ -21,6 +21,7 @@ import {
 import { ExerciseLibraryScreen } from './ExerciseLibraryScreen';
 import type { Connection } from '../server';
 import type { ProfileChange } from '../profileChanges';
+import type { PhotoUpload } from '../storage';
 import { reorderRoutineUnitOrder, reorderRoutineUnits } from '../planReorder';
 import {
   DEFAULT_REST_PAUSE_SEC,
@@ -274,7 +275,7 @@ export type PlanEditorScreenProps = {
   /** The routine is gone (deleted here or removed by a sync): leave and explain. */
   onMissing: () => void;
   onClose: () => void;
-  onCustom: (exercise: CustomExercise, create: boolean) => void;
+  onCustom: (exercise: CustomExercise, create: boolean, photoUpload?: PhotoUpload) => void;
   onFavorite: (id: string, favourite: boolean) => void;
   /** Lets the hosting Modal route hardware back through the editor's unsaved-input guard. */
   registerClose?: (close: () => void) => () => void;
