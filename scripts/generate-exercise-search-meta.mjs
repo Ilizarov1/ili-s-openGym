@@ -314,7 +314,7 @@ if (invokedDirectly) {
     : {};
   const meta = buildExerciseSearchMeta({ overrides });
   const serialized = serializeExerciseSearchMeta(meta);
-  const current = fs.existsSync(OUT_PATH) ? fs.readFileSync(OUT_PATH, 'utf8') : null;
+  const current = fs.existsSync(OUT_PATH) ? fs.readFileSync(OUT_PATH, 'utf8').replace(/\r\n/g, '\n') : null;
 
   const entries = Object.values(meta.byId);
   const withPosture = entries.filter(x => x.p).length;

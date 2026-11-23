@@ -52,7 +52,7 @@ const invokedDirectly = process.argv[1]
 if (invokedDirectly) {
   const entries = buildCompactCatalogue();
   const next = serializeCompactCatalogue(entries);
-  const current = fs.existsSync(OUT_PATH) ? fs.readFileSync(OUT_PATH, 'utf8') : null;
+  const current = fs.existsSync(OUT_PATH) ? fs.readFileSync(OUT_PATH, 'utf8').replace(/\r\n/g, '\n') : null;
 
   if (checkOnly) {
     if (current !== next) {
