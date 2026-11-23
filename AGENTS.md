@@ -100,6 +100,8 @@ docs/
     P1_RECALL_EXECUTION.md               P1 本地召回补强三阶段实施计划、评测矩阵与验收门槛
     P2_RETRIEVE_SELECT_EXECUTION.md      P2 两阶段闭集多选重排与一键消歧 Chip 方案及执行计划
     P3_METADATA_BM25_EXECUTION.md        P3 标准别名表、姿势打标、跨部位保护与 BM25 零结果兜底计划
+    RN_UI_AND_SEARCH_UX_DESIGN.md        RN 智能检索与动作库交互优化设计（仅 RN 端）
+    RN_UI_AND_SEARCH_UX_EXECUTION.md     RN 智能检索与动作库交互优化执行与验收计划
     eval/
       manifest.json                      hinted / photo-only / edge 三组评估样本清单
       manifest-p3.json                   P3 扩展评估清单（含 test_pic 新增 5 图，共 10 器械）
