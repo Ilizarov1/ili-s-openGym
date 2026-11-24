@@ -28,7 +28,8 @@ import { AgentProposalStore } from './agent-proposal.store.js';
 import { AgentRunStore, requestFingerprint } from './agent-run.store.js';
 import { AgentSessionStore } from './agent-session.store.js';
 import { AgentStore } from './agent.store.js';
-import { agentEnabled, exerciseSearchVersion, fixtureAllowed } from './agent.flags.js';
+import { agentEnabled, agentServerEngine, exerciseSearchVersion, fixtureAllowed } from './agent.flags.js';
+import { runServerAgentWithLangChain, sanitizeErrorText } from './langchain/index.js';
 import { createTaskRegistry, type RegisteredTask } from './tasks/index.js';
 import { EXERCISE_SEARCH_V2_TASK_ID, type ExerciseSearchHistory } from './tasks/exercise-search-v2.js';
 import { RetrievalService } from './retrieval/index.js';
@@ -353,25 +354,38 @@ export class AgentService implements OnModuleInit {
         exerciseHistory = result.historyMeta;
         return result.structured;
       } : undefined;
-      const result = await runAgent({
-        task,
-        request: {
-          taskId: request.taskId,
-          requestId: request.requestId,
-          profileId: request.profileId,
-          input: request.input,
-          ...(request.sessionId ? { sessionId: request.sessionId } : {}),
-          ...(request.sessionMode ? { sessionMode: request.sessionMode } : {}),
-          ...(request.attachmentIds ? { attachmentIds: request.attachmentIds } : {}),
-        },
-        context,
-        gateway: this.gateway.forAccount(uid),
-        tools: registered.tools as never,
-        proposals: this.proposalCreator(uid, run.runId) as unknown as ProposalService,
-        state,
-        signal: controller.signal,
-        postProcess,
-      });
+      const runRequest = {
+        taskId: request.taskId,
+        requestId: request.requestId,
+        profileId: request.profileId,
+        input: request.input,
+        ...(request.sessionId ? { sessionId: request.sessionId } : {}),
+        ...(request.sessionMode ? { sessionMode: request.sessionMode } : {}),
+        ...(request.attachmentIds ? { attachmentIds: request.attachmentIds } : {}),
+      };
+      const result = agentServerEngine() === 'legacy'
+        ? await runAgent({
+            task,
+            request: runRequest,
+            context,
+            gateway: this.gateway.forAccount(uid),
+            tools: registered.tools as never,
+            proposals: this.proposalCreator(uid, run.runId) as unknown as ProposalService,
+            state,
+            signal: controller.signal,
+            postProcess,
+          })
+        : await runServerAgentWithLangChain({
+            task,
+            request: runRequest,
+            context,
+            gateway: this.gateway.forAccountLangChain(uid),
+            tools: registered.tools as never,
+            proposals: this.proposalCreator(uid, run.runId) as unknown as ProposalService,
+            state,
+            signal: controller.signal,
+            postProcess,
+          });
       if (session && state.status() === 'completed') {
         const projection = registered.messageOf(request.input, result, exerciseHistory);
         const images = projection.assistant.meta?.images;
@@ -414,7 +428,7 @@ export class AgentService implements OnModuleInit {
       if (!state.isTerminal()) {
         state.failed({
           code: error instanceof AgentError ? error.code : 'model_unavailable',
-          message: error instanceof Error ? error.message : 'run failed',
+          message: sanitizeErrorText(error instanceof Error ? error.message : 'run failed') || 'run failed',
         });
       }
       try {

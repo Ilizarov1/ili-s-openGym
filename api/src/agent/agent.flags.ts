@@ -26,6 +26,13 @@ export function exerciseSearchVersion(): 'v1' | 'v2' {
   return retrievalConfigured() ? 'v2' : 'v1';
 }
 
+export type AgentServerEngine = 'langchain' | 'legacy';
+
+export function agentServerEngine(): AgentServerEngine {
+  const raw = String(process.env.AGENT_SERVER_ENGINE || '').trim().toLowerCase();
+  return raw === 'legacy' ? 'legacy' : 'langchain';
+}
+
 export function agentPublicConfig(): { enabled: boolean; exerciseSearchVersion: 'v1' | 'v2' } {
   return { enabled: agentEnabled(), exerciseSearchVersion: exerciseSearchVersion() };
 }

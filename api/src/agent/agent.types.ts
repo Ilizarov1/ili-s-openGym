@@ -58,7 +58,13 @@ export interface AgentRunResult {
   structured?: unknown;
   proposal?: AgentProposal;
   evidence?: Array<{ evidenceId: string; objectId: string; version?: string | number }>;
-  usage?: { rounds: number; toolCalls: number };
+  usage?: {
+    rounds: number;
+    toolCalls: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    totalTokens?: number;
+  };
   profile?: AgentProfileSummary;
 }
 

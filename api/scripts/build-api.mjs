@@ -79,6 +79,8 @@ const required = [
   'src/agent/retrieval/catalogue.js',
   'src/agent/retrieval/models.js',
   'src/agent/retrieval/fixture-retrieval.js',
+  'src/agent/langchain/index.js',
+  'src/agent/langchain/graph-runner.js',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));
