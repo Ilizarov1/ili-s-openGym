@@ -7,7 +7,7 @@ import { useAgent } from '../agent/store.js'
 import { agentApi } from '../agent/api.js'
 import '../agent/agent.css'
 
-const PROVIDERS = ['fixture', 'openai', 'opencode']
+const PROVIDERS = ['fixture', 'openai', 'deepseek']
 
 export default function AgentSetup() {
   const nav = useNavigate()
@@ -27,6 +27,7 @@ export default function AgentSetup() {
   const [imageCapable, setImageCapable] = useState(false)
   const [busy, setBusy] = useState(false)
   const enabled = config?.agent?.enabled !== false
+  const requiresKey = provider !== 'fixture' && (!editing || provider !== editing.provider)
 
   useEffect(() => {
     if (!user) return
@@ -52,10 +53,11 @@ export default function AgentSetup() {
 
   const beginEdit = profile => {
     setEditing(profile)
-    setProvider(profile.provider === 'fixture' ? 'fixture' : profile.provider === 'opencode' ? 'opencode' : 'openai')
-    setModel(profile.model || '')
+    const supported = PROVIDERS.includes(profile.provider)
+    setProvider(supported ? profile.provider : 'deepseek')
+    setModel(supported ? profile.model || '' : 'deepseek-flash')
     setApiKey('')
-    setImageCapable(profile.capabilities?.image === true)
+    setImageCapable(supported ? profile.capabilities?.image === true : true)
   }
 
   const save = async event => {
@@ -144,17 +146,17 @@ export default function AgentSetup() {
           <h2>{editing ? t('Edit configuration') : t('Add a configuration')}</h2>
           <div className="agent-field">
             <label htmlFor="agent-provider">{t('Provider')}</label>
-            <select id="agent-provider" className="agent-select" value={provider} onChange={event => setProvider(event.target.value)}>
+            <select id="agent-provider" className="agent-select" value={provider} onChange={event => { setProvider(event.target.value); setApiKey('') }}>
               {PROVIDERS.map(id => <option key={id} value={id}>{id}</option>)}
             </select>
           </div>
           <div className="agent-field">
             <label htmlFor="agent-model">{t('Model')}</label>
-            <input id="agent-model" value={model} onChange={event => setModel(event.target.value)} placeholder={provider === 'fixture' ? 'fixture' : provider === 'opencode' ? 'deepseek-v4.1-flash-1017' : 'gpt-5.6'} required />
+            <input id="agent-model" value={model} onChange={event => setModel(event.target.value)} placeholder={provider === 'fixture' ? 'fixture' : provider === 'deepseek' ? 'deepseek-flash' : 'gpt-5.6'} required />
           </div>
           {provider !== 'fixture' ? <div className="agent-field">
-            <label htmlFor="agent-key">{editing ? t('Replace API key (leave blank to keep it)') : t('API key')}</label>
-            <input id="agent-key" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} autoComplete="off" required={!editing} />
+            <label htmlFor="agent-key">{editing && !requiresKey ? t('Replace API key (leave blank to keep it)') : t('API key')}</label>
+            <input id="agent-key" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} autoComplete="off" required={requiresKey} />
           </div> : null}
           <div className="agent-field">
             <label htmlFor="agent-image" style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--label)', fontSize: '14.5px' }}>
@@ -165,7 +167,7 @@ export default function AgentSetup() {
           </div>
           <p className="agent-note">{t('The key is encrypted on the server and only its last four characters are shown again.')}</p>
           <div className="agent-actions" style={{ marginTop: 12 }}>
-            <button type="submit" className="btn tinted" disabled={busy || !model.trim() || (provider !== 'fixture' && !editing && apiKey.trim().length < 8)}>{busy ? t('Saving…') : t('Save')}</button>
+            <button type="submit" className="btn tinted" disabled={busy || !model.trim() || (requiresKey && apiKey.trim().length < 8)}>{busy ? t('Saving…') : t('Save')}</button>
             {editing ? <button type="button" className="btn" onClick={reset}>{t('Cancel')}</button> : null}
           </div>
         </form>

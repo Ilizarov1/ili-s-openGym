@@ -89,10 +89,11 @@ export function buildOpenAIRequest({ model, modelInput, maxTokens = DEFAULT_MAX_
  *   AbortControllerImpl?: typeof AbortController,
  *   timeoutMs?: number,
  *   maxTokens?: number,
+ *   imageCapable?: boolean,
  * }} config
  */
 export function createOpenAIProvider(config = {}) {
-  const id = config.id === 'compatible' || config.id === 'opencode' ? config.id : 'openai';
+  const id = config.id === 'compatible' || config.id === 'deepseek' ? config.id : 'openai';
   const baseUrl = validateBaseUrl(config.baseUrl);
   if (!baseUrl.ok) throw new AgentError('invalid_request', baseUrl.error);
   if (!baseUrl.value) throw new AgentError('invalid_request', 'an OpenAI endpoint needs a base URL');
@@ -104,24 +105,18 @@ export function createOpenAIProvider(config = {}) {
 
   return {
     id,
-    capabilities: { text: true, image: true, tools: true },
+    capabilities: { text: true, image: config.imageCapable ?? true, tools: true },
     async invoke(input = {}) {
       const body = buildOpenAIRequest({
         model: config.model,
         modelInput: input.modelInput,
         maxTokens,
       });
+      if (id === 'deepseek') body.thinking = { type: 'disabled' };
       const headers = {
         'content-type': 'application/json',
         ...(config.headers || {}),
         ...(config.apiKey ? { authorization: `Bearer ${config.apiKey}` } : {}),
-        ...(id === 'opencode' ? {
-          'x-opencode-session': String(
-            input.modelInput?.sessionId
-            || input.sessionId
-            || `opengym-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
-          ).slice(0, 128),
-        } : {}),
       };
       const response = await request(endpoint, { method: 'POST', headers, body: JSON.stringify(body) }, {
         timeoutMs,

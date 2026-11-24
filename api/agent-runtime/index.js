@@ -39,8 +39,8 @@ export {
   createProvider,
   isProviderId,
   PROVIDER_IDS,
-  OPENCODE_BASE_URL,
-  OPENCODE_CREDITS_BASE_URL,
+  DEEPSEEK_BASE_URL,
+  DEEPSEEK_DEFAULT_MODEL,
 } from './providers/index.js';
 export { createFixtureProvider } from './providers/fixture.js';
 export { createOpenAIProvider, buildOpenAIRequest } from './providers/openai.js';

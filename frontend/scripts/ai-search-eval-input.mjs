@@ -27,6 +27,8 @@ import {
 
 const MANIFEST_SCHEMA_VERSION = 1
 const EXPECTATIONS = new Set(['match', 'empty'])
+const SAFE_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/
+const SAFE_LEVELS = new Set(['high', 'medium', 'low'])
 const SAMPLE_FIELDS = new Set([
   'id', 'group', 'expectation', 'expectedIds', 'expectedEquipment', 'family',
   'image', 'hintText', 'replay',
@@ -212,4 +214,86 @@ export async function loadModelInput(sample) {
     input.images = [`data:${mime};base64,${bytes.toString('base64')}`]
   }
   return input
+}
+
+function safeToken(value) {
+  return typeof value === 'string' && SAFE_TOKEN.test(value) ? value : null
+}
+
+function safeTokenArray(value) {
+  if (!Array.isArray(value)) return []
+  const out = []
+  for (const item of value) {
+    const token = safeToken(item)
+    if (token && !out.includes(token)) out.push(token)
+  }
+  return out
+}
+
+/** Read non-sensitive structured benchmark metadata (groundTruthId,
+ * visibleFeatures enums, expectedTrajectory and expectedBehavior). Free text
+ * fields (hintText, description, etc.) are intentionally discarded. */
+export async function loadBenchmarkMetadata(benchmarkPath) {
+  let raw
+  try {
+    raw = await readFile(benchmarkPath, 'utf8')
+  } catch (error) {
+    throw evaluationError('manifest', fileErrorCode(error))
+  }
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    throw evaluationError('manifest', 'invalid_request')
+  }
+  if (!Array.isArray(parsed)) {
+    throw evaluationError('manifest', 'invalid_request')
+  }
+  const byId = new Map()
+  for (const entry of parsed) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      throw evaluationError('manifest', 'invalid_request')
+    }
+    const id = requireString(entry.id)
+    if (!id || byId.has(id)) {
+      throw evaluationError('manifest', 'invalid_request')
+    }
+    const groundTruthId = safeToken(entry.ground_truth_id)
+    const alternativeGroundTruthIds = safeTokenArray(entry.alternative_ground_truth_ids)
+    const rawFeatures = entry.visible_features && typeof entry.visible_features === 'object' && !Array.isArray(entry.visible_features)
+      ? entry.visible_features
+      : {}
+    const visibleFeatures = {
+      loadingType: safeToken(rawFeatures.loading_type),
+      frameArchetype: safeToken(rawFeatures.frame_archetype),
+      occlusion: safeToken(rawFeatures.occlusion),
+      angle: safeToken(rawFeatures.angle),
+    }
+    const rawBehavior = entry.expected_behavior && typeof entry.expected_behavior === 'object' && !Array.isArray(entry.expected_behavior)
+      ? entry.expected_behavior
+      : {}
+    const maxLevel = typeof rawBehavior.max_allowed_level_if_nonempty === 'string' && SAFE_LEVELS.has(rawBehavior.max_allowed_level_if_nonempty)
+      ? rawBehavior.max_allowed_level_if_nonempty
+      : null
+    byId.set(id, {
+      id,
+      groundTruthId,
+      alternativeGroundTruthIds,
+      groupId: safeToken(entry.group_id),
+      sampleType: safeToken(entry.sample_type),
+      isOod: entry.is_ood === true,
+      visibleFeatures,
+      expectedTrajectory: safeTokenArray(entry.expected_trajectory),
+      expectedBehavior: {
+        outcome: safeToken(rawBehavior.outcome),
+        requireClarificationsOnPhotoOnly: rawBehavior.require_clarifications_on_photo_only === true,
+        forbidHighConfidenceOnPhotoOnly: rawBehavior.forbid_high_confidence_on_photo_only === true,
+        forbidHighConfidence: rawBehavior.forbid_high_confidence === true,
+        expectShortCircuitRetrieval: rawBehavior.expect_short_circuit_retrieval === true,
+        expectFallbackOnly: rawBehavior.expect_fallback_only === true,
+        maxAllowedLevelIfNonempty: maxLevel,
+      },
+    })
+  }
+  return { byId }
 }

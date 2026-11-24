@@ -2,7 +2,7 @@
 
 [执行文档](../EVAL_CLI_EXECUTION.md) · [runbook](README.md)
 
-状态：离线矩阵、fixture 整链路与真实模型（OpenCode Go 端点）均已执行并留有报告；A5 的双进程实时浏览器拼接与 RN 设备端轨迹按待验记录。命令均在 `D:\dev\open-gym`（分支 `main`，HEAD `19b57a8da`）以 PowerShell 执行，2026-11-22。
+本页保留 2026-11-22 的离线、fixture 与真实模型报告。A5 双进程浏览器拼接和 RN 设备端轨迹按原记录标注。命令在 `D:\dev\open-gym`（`main`，`19b57a8da`）使用 PowerShell 执行。当前真实模型配置见 [评估 CLI](README.md)。
 
 ## 环境
 
@@ -11,7 +11,7 @@
 | 工作树 | `D:\dev\open-gym`，HEAD `19b57a8da`，本任务改动未提交前记录 |
 | Node / npm | v24.18.0 / 11.16.0 |
 | frontend 依赖 | 已安装（未重跑 `npm ci`，D14 仅在未装依赖时要求） |
-| 真实模型 | `opencode` / `deepseek-v4.1-flash`，Go 端点，密钥取自 git 忽略的 `api/.env`（`OPENCODE_API_KEY`），未写入任何报告、日志或文档 |
+| 真实模型 | 当时网关上的 DeepSeek V4.1 Flash，凭据由彼时的本机环境文件提供 |
 | Android | 真机 `10AD3Z1EPU0029R` 在线；本记录未做设备端轨迹（见待验） |
 
 ## 命令矩阵
@@ -30,8 +30,8 @@
 | 10 | `npm.cmd --prefix api run build` | 0 | `dist ready`；`dist/agent-runtime/exercise-search-diagnostics.js` 存在（D03 验收） |
 | 11 | `git diff --check` | 0 | 无空白错误 |
 | 12 | Metro 打包：`npx.cmd expo export --platform android`（mobile-rn） | 0 | `index-3539bb855ac7ef7070770fecbe67b559.hbc`，SHA-256 `603F65B2D01D6169BC8421B193BB3689267E7697CC57EFEFF32DCA7319F89FFC`；导出目录已清理 |
-| 13 | 真实视觉：`--mode vision --sample photo-chest-press --out .codex/ai-search-eval/real-vision.json`（opencode） | 0 | 1 样本，模型 15001ms，3 候选，equipment=`leverage machine`；报告 [real-vision.json](../../../.codex/ai-search-eval/real-vision.json) |
-| 14 | 真实整链路：`--mode e2e --sample photo-chest-press --sample hinted-chest-press --out .codex/ai-search-eval/real-e2e.json`（opencode） | 0 | hinted 12543ms → 双端 `["0576","1301","2659"]`，firstExpectedRank=1；photo-only 18703ms → 双端 `["0791","1941"]`，first=null；两组独立聚合；报告 [real-e2e.json](../../../.codex/ai-search-eval/real-e2e.json) |
+| 13 | 真实视觉 `--mode vision --sample photo-chest-press` | 0 | 1 样本，模型 15001ms，3 候选，equipment=`leverage machine`。 [历史报告](../../../.codex/ai-search-eval/real-vision.json) |
+| 14 | 真实整链路 `--mode e2e --sample photo-chest-press --sample hinted-chest-press` | 0 | hinted 12543ms，双端 `["0576","1301","2659"]`，firstExpectedRank=1。photo-only 18703ms，双端 `["0791","1941"]`，first=null。 [历史报告](../../../.codex/ai-search-eval/real-e2e.json) |
 
 四份生成报告（`real-vision/real-e2e/replay/fixture-e2e.json`）均不含密钥、Data URL、图片路径或文件名（脚本断言 `privacy-ok`）；`.codex/` 已加入 `.gitignore`，报告不提交。
 

@@ -39,7 +39,7 @@ flowchart TD
 
 1. **两阶段驱动方式：编排器条件驱动 Round 2（推荐） vs 模型原生 `tool_calls`**
    - **推荐方案（编排器条件驱动 + `agent-runtime` 只读工具围栏）**：
-     - Round 1 与 Round 2 均使用纯 `response_format: json_object`，**100% 兼容所有视觉模型**（包括不支持或不稳定支持「图像 + 原生 function calling + `json_object`」组合的 OpenAI-compatible / `opencode` 网关）；
+     - Round 1 与 Round 2 均使用 `response_format: json_object`，兼容支持 JSON 输出的视觉模型。
      - **触发完全确定性可控**：`hinted` 高置信轮次 100% 保持 1 轮直接返回，仅对纯图/低置信/歧义轮次触发 Round 2；
      - **仍严格走 `agent-runtime` 只读工具围栏**：`search_catalogue` 注册为标准 `AgentTool`，经 `dispatcher.call('search_catalogue', ...)` 校验参数、结果与 `budgets.toolCalls`；
      - **优雅降级**：Round 2 若遇上游 >30s 超时或 `model_unavailable`，自动安全回退到 Round 1 已通过校验的结构化输出，不向用户报错。

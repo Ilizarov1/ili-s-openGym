@@ -2,14 +2,16 @@
 import { createFixtureProvider } from './fixture.js';
 import { createOpenAIProvider } from './openai.js';
 
-/** The one OpenCode Go inference endpoint. It is fixed here, never supplied by
- *  an account, so "opencode" cannot become a custom-endpoint bypass. The
- *  credit-billed Console endpoint is a different product and returns 402 when
- *  the account only has a Go subscription. */
-export const OPENCODE_BASE_URL = 'https://opencode.ai/inference/go/v1';
-export const OPENCODE_CREDITS_BASE_URL = 'https://opencode.ai/inference/openai/v1';
+export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-flash';
 
-export const PROVIDER_IDS = Object.freeze(['fixture', 'openai', 'compatible', 'opencode']);
+export const PROVIDER_IDS = Object.freeze(['fixture', 'openai', 'compatible', 'deepseek']);
+
+export function deepseekSupportsImages(model) {
+  return model === DEEPSEEK_DEFAULT_MODEL
+    || model === 'deepseek-v4-flash'
+    || model === 'deepseek-v4-flash-vision-exp';
+}
 
 export function createProvider(provider, config = {}) {
   switch (provider) {
@@ -18,11 +20,12 @@ export function createProvider(provider, config = {}) {
     case 'openai':
     case 'compatible':
       return createOpenAIProvider({ ...config, id: provider });
-    case 'opencode':
+    case 'deepseek':
       return createOpenAIProvider({
         ...config,
-        id: 'opencode',
-        baseUrl: OPENCODE_BASE_URL,
+        id: 'deepseek',
+        baseUrl: DEEPSEEK_BASE_URL,
+        imageCapable: deepseekSupportsImages(config.model),
       });
     default:
       throw new Error(`unknown agent provider: ${String(provider)}`);

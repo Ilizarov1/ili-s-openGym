@@ -16,9 +16,11 @@
 // server, and the caller closes it through `close` in a finally.
 
 import { fileURLToPath } from 'node:url'
+import { AgentError } from '../../api/agent-runtime/index.js'
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const WEB_LOCALES = new Set(['en', 'zh'])
+const SERVER_V2_MODES = new Set(['live', 'fixture'])
 
 async function createEvaluationServer() {
   // Resolved from this file's location: the script lives in frontend/scripts,
@@ -33,8 +35,8 @@ async function createEvaluationServer() {
   })
 }
 
-// id → equipment slug, from the Web CATALOGUE export. The catalogue adapter
-// logic is never re-implemented or re-scanned anywhere else.
+// id → equipment / bodyPart slug, from the Web CATALOGUE export. The catalogue
+// adapter logic is never re-implemented or re-scanned anywhere else.
 function equipmentById(catalogue) {
   const out = {}
   for (const exercise of Array.isArray(catalogue) ? catalogue : []) {
@@ -44,11 +46,98 @@ function equipmentById(catalogue) {
   return out
 }
 
-/** Load the real Web and RN matchers through one SSR pass. */
-export async function openEvaluationAdapters({ webLocale = 'zh' } = {}) {
+function bodyPartById(catalogue) {
+  const out = {}
+  for (const exercise of Array.isArray(catalogue) ? catalogue : []) {
+    if (!exercise || typeof exercise !== 'object' || typeof exercise.id !== 'string') continue
+    out[exercise.id] = typeof exercise.bp === 'string' ? exercise.bp : ''
+  }
+  return out
+}
+
+async function openServerV2Adapter({ mode = 'live', env = process.env } = {}) {
+  if (!SERVER_V2_MODES.has(mode)) {
+    throw new Error('openServerV2Adapter: mode must be "live" or "fixture"')
+  }
+  const [
+    { retrievalConfigured, safeRetrievalConfig },
+    { createRetrievalPool },
+    { embedText, rerank },
+    { FixtureRetrievalAdapter },
+    { RetrievalService },
+  ] = await Promise.all([
+    import('../../api/dist/src/agent/retrieval/config.js'),
+    import('../../api/dist/src/agent/retrieval/database.js'),
+    import('../../api/dist/src/agent/retrieval/models.js'),
+    import('../../api/dist/src/agent/retrieval/fixture-retrieval.js'),
+    import('../../api/dist/src/agent/retrieval/retrieval.service.js'),
+  ])
+
+  if (mode === 'fixture') {
+    const fixtureAdapter = new FixtureRetrievalAdapter()
+    const dummyPool = {
+      connect: () => { throw new Error('fixture must not connect to PG') },
+      end: async () => {},
+    }
+    const config = safeRetrievalConfig({
+      ...env,
+      EXERCISE_SEARCH_PG_URL: 'postgres://127.0.0.1:55432/fixture',
+      EXERCISE_SEARCH_LOCAL_MODEL_URL: 'http://127.0.0.1:8765',
+    })
+    const service = new RetrievalService(dummyPool, config, fixtureAdapter)
+    return {
+      mode: 'fixture',
+      match: async ({ structured }, { hintText, confirmedEquipment, diagnostic } = {}) => service.retrieve({
+        input: {
+          ...(typeof hintText === 'string' && hintText.trim() ? { hintText } : {}),
+          ...(confirmedEquipment ? { confirmedEquipment } : {}),
+        },
+        recognition: structured,
+        fixture: true,
+        diagnostic,
+      }),
+      close: async () => service.onModuleDestroy(),
+    }
+  }
+
+  if (!retrievalConfigured(env)) {
+    const error = new AgentError('invalid_request', 'Retrieval configuration is incomplete for server_v2 live mode')
+    error.phase = 'config'
+    throw error
+  }
+  const config = safeRetrievalConfig(env)
+  const pool = createRetrievalPool(config)
+  const service = new RetrievalService(pool, config, undefined, {
+    embedText: (text, signal) => embedText(config, text, signal),
+    rerank: (query, docs, signal) => rerank(config, query, docs, signal),
+  })
+  return {
+    mode: 'live',
+    match: async ({ structured }, { hintText, confirmedEquipment, diagnostic } = {}) => service.retrieve({
+      input: {
+        ...(typeof hintText === 'string' && hintText.trim() ? { hintText } : {}),
+        ...(confirmedEquipment ? { confirmedEquipment } : {}),
+      },
+      recognition: structured,
+      fixture: false,
+      diagnostic,
+    }),
+    close: async () => service.onModuleDestroy(),
+  }
+}
+
+/** Load the real Web and RN matchers (and optional server v2 retrieval service)
+ * through one SSR pass. */
+export async function openEvaluationAdapters({
+  webLocale = 'zh',
+  includeServerV2 = false,
+  serverV2Mode = 'live',
+  env = process.env,
+} = {}) {
   if (!WEB_LOCALES.has(webLocale)) {
     throw new Error('openEvaluationAdapters: webLocale must be "en" or "zh"')
   }
+  let serverV2 = null
   const server = await createEvaluationServer()
   try {
     const load = id => server.ssrLoadModule(id)
@@ -72,9 +161,30 @@ export async function openEvaluationAdapters({ webLocale = 'zh' } = {}) {
       librarySearch.createLibrarySearch({ unit: 'kg', favEx: [] }),
     )
     const publicEquipmentById = equipmentById(exercises.CATALOGUE)
-    return { web, rn, publicEquipmentById, close: () => server.close() }
+    const publicBodyPartById = bodyPartById(exercises.CATALOGUE)
+    if (includeServerV2) {
+      serverV2 = await openServerV2Adapter({ mode: serverV2Mode, env })
+    }
+    return {
+      web,
+      rn,
+      serverV2,
+      publicEquipmentById,
+      publicBodyPartById,
+      close: async () => {
+        try {
+          await serverV2?.close()
+        } finally {
+          await server.close()
+        }
+      },
+    }
   } catch (error) {
-    await server.close()
+    try {
+      await serverV2?.close()
+    } finally {
+      await server.close()
+    }
     throw error
   }
 }
@@ -85,7 +195,11 @@ export async function openCatalogueMetadata() {
   const server = await createEvaluationServer()
   try {
     const exercises = await server.ssrLoadModule('/frontend/src/lib/exercises.js')
-    return { publicEquipmentById: equipmentById(exercises.CATALOGUE), close: () => server.close() }
+    return {
+      publicEquipmentById: equipmentById(exercises.CATALOGUE),
+      publicBodyPartById: bodyPartById(exercises.CATALOGUE),
+      close: () => server.close(),
+    }
   } catch (error) {
     await server.close()
     throw error

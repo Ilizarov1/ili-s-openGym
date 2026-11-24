@@ -65,6 +65,7 @@ export function recoverAgentRuns(connection: Connection | null, excludeRunIds?: 
   // delete removes their messages and images. Orphan images need a second
   // pass because a session row may have been removed outside this host.
   store.expireAiSessions(scope, EXERCISE_SEARCH_TASK_ID, Date.now() - 2 * 60 * 60 * 1000);
+  store.expireAiSessions(scope, 'exercise-search.v2', Date.now() - 2 * 60 * 60 * 1000);
   store.cleanupAiImages();
   const reference = readReference(scope);
   if (reference && !TERMINAL.has(reference.status)) {
@@ -84,7 +85,9 @@ export function latestAiRunReference(connection: Connection | null): AiRunRecove
   const reference = readReference(scope);
   const run = reference
     ? store.getRun(scope, reference.runId)
-    : store.latestRun(scope, EXERCISE_SEARCH_TASK_ID);
+    : [store.latestRun(scope, 'exercise-search.v2'), store.latestRun(scope, EXERCISE_SEARCH_TASK_ID)]
+      .filter((item): item is AgentRunRow => item !== null)
+      .sort((a, b) => b.createdAt - a.createdAt)[0] ?? null;
   if (!reference && !run) return null;
   const status = run?.status || reference?.status || 'interrupted';
   const base: AiRunReference = reference || {

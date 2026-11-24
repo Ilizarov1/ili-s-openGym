@@ -8,7 +8,7 @@ export type ExerciseSearchSource = 'web' | 'rn' | 'api' | 'rn-local';
 export type ExerciseSearchMediaStatus = 'ready' | 'failed' | 'cancelled';
 export type ExerciseSearchRunStatus = 'completed' | 'failed' | 'cancelled';
 export type ExerciseSearchEndStatus = 'completed' | 'failed' | 'cancelled' | 'interrupted';
-export type ExerciseSearchEndPhase = 'submit' | 'attachments' | 'model' | 'recognition' | 'match' | 'poll';
+export type ExerciseSearchEndPhase = 'submit' | 'attachments' | 'model' | 'recognition' | 'retrieval' | 'rerank' | 'match' | 'poll';
 export type ExerciseSearchExecution = 'server' | 'local';
 export type ExerciseSearchQueryOrigin = 'primary' | 'english';
 
@@ -85,6 +85,16 @@ export interface ExerciseSearchRecallEvent {
   top: ExerciseSearchRecallTopItem[];
 }
 
+export interface ExerciseSearchRetrievalEvent {
+  stage: 'retrieval_text' | 'retrieval_vector' | 'retrieval_fusion' | 'rerank';
+  backend?: 'postgres' | 'local' | 'remote' | 'fixture';
+  elapsedMs: number;
+  candidateCount: number;
+  top?: ExerciseSearchRecallTopItem[];
+  hasConfirmedEquipment: boolean;
+  errorCode?: string;
+}
+
 export interface ExerciseSearchFilterEvent {
   stage: 'filter';
   candidateIndex: number;
@@ -118,6 +128,7 @@ export type ExerciseSearchEvent =
   | ExerciseSearchModelEvent
   | ExerciseSearchRecognitionEvent
   | ExerciseSearchRecallEvent
+  | ExerciseSearchRetrievalEvent
   | ExerciseSearchFilterEvent
   | ExerciseSearchDisplayEvent
   | ExerciseSearchEndEvent;

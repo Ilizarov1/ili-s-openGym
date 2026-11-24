@@ -126,7 +126,7 @@
 ### D10 CLI 加载样本与调用模型
 
 - [x] 新增 `frontend/scripts/ai-search-eval-input.mjs`，导出 `loadEvaluationManifest(path)`、`loadReplay(sample)`、`loadModelInput(sample)`。清单仅校验约定字段。replay 读取 `results[index].structured` 并用 `isExerciseSearchOutput` 验证，无效则记样本错误，不在 replay 自动清洗或请求模型。image 只接受 .jpg/.jpeg/.png/.webp，先用 stat 限制 1 MiB，再读文件字节并组合 Data URL；内容、尺寸、宽高比由共享任务验证。禁止输出图片路径或文件名到日志和报告。图片不能通过校验时记录 attachments 阶段错误。
-- [x] 新增 `frontend/scripts/ai-search-eval-model.mjs`，导出 `createEvaluationModelRunner(env)`，返回 `run(sampleInput, diagnostic)`。固定读 `OPEN_GYM_EVAL_PROVIDER`（fixture/openai/compatible/opencode）、`OPEN_GYM_EVAL_MODEL`、`OPEN_GYM_EVAL_BASE_URL`、`OPEN_GYM_EVAL_API_KEY`。opencode 密钥可回退到已有 `OPENCODE_API_KEY`，base URL 使用现有固定值；openai 默认官方 base URL，compatible 必须提供 base URL；fixture 不读密钥、不访问网络。真实三种 provider 都必须有模型 ID 与有效密钥。临时 profile 仅存在内存，不写生产账号配置。
+- [x] `frontend/scripts/ai-search-eval-model.mjs` 读取 `OPEN_GYM_EVAL_PROVIDER`（`fixture`、`openai`、`compatible` 或 `deepseek`）、`OPEN_GYM_EVAL_MODEL`、`OPEN_GYM_EVAL_BASE_URL` 和 `OPEN_GYM_EVAL_API_KEY`。DeepSeek 预设使用官方端点，密钥也可从 `DEEPSEEK_API_KEY` 读取。兼容提供商要求显式端点。fixture 仅使用本地样例。临时配置保存在本次进程内存。
 - [x] 用共享 index 导出的 `createProvider`、`createModelGateway`、`createExerciseSearchTask`、`bindContext`、`runAgent` 直接编排。固定本地评估 scope `ai-search-eval`、profileId `eval`、execution `local`；用 Node randomUUID 生成合法的 requestId/runId；声明 text/image 能力。调用使用现有 provider 的超时；使用 `bindContext.meta.exerciseSearchDiagnostic` 采集模型阶段事件。fixture 默认使用任务自带 candidates；测试坏模型输出时注入一个记录调用次数的 fixture gateway，不能使用真实外部请求。entry 在 e2e 模式只调用一次 model runner，取同一 `result.structured` 给两端 matcher。
 
 > **执行结果**（2026-11-22）：三个文件按规格落地；model runner 额外接受 `{ provider?, gateway? }` 注入缝供 D12 计数断言，不改变 CLI 行为。fixture 冒烟与 D14 真实模型运行均按此编排；`createId('req'/'run', randomUUID)` 保证合法请求 ID。
@@ -186,7 +186,7 @@ npm.cmd --prefix frontend run eval:ai-search -- --mode e2e --sample photo-chest-
 
 轨迹验收时服务端进程设 `AGENT_EXERCISE_SEARCH_DIAGNOSTICS=1`。Web 控制台执行 `localStorage.setItem('opengym:ai-search-diagnostics', '1')`，RN 在启动 Metro 或构建包前设 `EXPO_PUBLIC_AGENT_EXERCISE_SEARCH_DIAGNOSTICS=1`。对照提交、附件、模型、召回、筛选、展示和结束，记录同一 trace 的安全摘要。关闭 Web 开关用 `localStorage.removeItem('opengym:ai-search-diagnostics')`，服务端/RN 去掉环境变量后重启或重建。
 
-> **执行结果**（2026-11-22）：已授权密钥存在于 git 忽略的 `api/.env`，两条真实模型命令均已执行（opencode / `deepseek-v4.1-flash`，Go 端点），报告见 `.codex/ai-search-eval/real-vision.json` 与 `real-e2e.json`。服务端进程的轨迹冒烟与 Web 端双进程实跑（浏览器 + API 同一 traceId 拼接 web/api 两套事件）均已完成（见 D03 结果与验收记录 A5）；RN 设备端的轨迹复核按待验记录。
+> **历史执行结果**（2026-11-22）：两条真实模型命令使用当时的识别服务完成。报告见 `.codex/ai-search-eval/real-vision.json` 与 `real-e2e.json`。服务端轨迹冒烟和 Web 双进程同 traceId 实跑已完成。RN 设备端轨迹见当时的待验记录。当前接入参考 [评估 CLI](eval/README.md)。
 
 ## 验收清单
 

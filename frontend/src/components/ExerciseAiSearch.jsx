@@ -6,7 +6,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { agentApi } from '../agent/api.js'
 import { useStore } from '../store/useStore.js'
-import { createWebAiSearch } from '../lib/exercises.js'
+import { createWebAiSearch, exerciseByPublicId, EQUIPMENTS } from '../lib/exercises.js'
 import { t } from '../lib/i18n.js'
 import { uid } from '../lib/format.js'
 import { nav } from '../lib/nav.js'
@@ -39,6 +39,9 @@ const ATTEMPTS = [
 const ERROR_TEXT = {
   agent_media_invalid: '图片格式无效或已损坏，请换一张再试。',
   agent_media_too_large: '图片太大，请换一张或压缩后再试。',
+  retrieval_unavailable: '动作检索服务暂时不可用，请稍后重试。',
+  retrieval_timeout: '动作检索超时，请稍后重试。',
+  retrieval_index_not_ready: '动作检索索引尚未就绪，请稍后重试。',
   turn_limit: '这次对话已达到追问上限，请重新发起。',
   session_busy: '上一轮检索仍在运行，请稍后重试。',
   session_conflict: '对话状态已变化，请重新发起。',
@@ -271,6 +274,8 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   const [phase, setPhase] = useState('preflight')
   const [profiles, setProfiles] = useState([])
   const [profile, setProfile] = useState(null)
+  const [searchVersion, setSearchVersion] = useState('v1')
+  const [confirmedEquipment, setConfirmedEquipment] = useState('')
   const [panelText, setPanelText] = useState('')
   const [panelImage, setPanelImage] = useState(null)
   const [panelNotice, setPanelNotice] = useState('')
@@ -294,6 +299,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   const runIdRef = useRef('')
   const sessionRef = useRef('')
   const sessionCreatedRef = useRef(false)
+  const sessionTaskIdRef = useRef('')
   const imagesRef = useRef([])
   // The latest successful pick, kept in memory only as { image, id } so a later
   // submit — including a retry that re-references the same image — can join the
@@ -334,9 +340,10 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       setPhase('configMissing')
       return undefined
     }
-    agentApi.listProfiles()
-      .then(data => {
+    Promise.all([agentApi.getPublicConfig(), agentApi.listProfiles()])
+      .then(([publicConfig, data]) => {
         if (!live) return
+        setSearchVersion(publicConfig?.agent?.exerciseSearchVersion === 'v2' ? 'v2' : 'v1')
         const list = Array.isArray(data) ? data : data?.profiles || []
         setProfiles(list)
         setPhase(pickAiProfile(list) ? 'sheetOpen' : 'configMissing')
@@ -371,7 +378,18 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     if (status === 'completed') {
       let matched
       try {
-        matched = createWebAiSearch(SRef.current).match(run.result, {
+        if (sessionTaskIdRef.current === 'exercise-search.v2') {
+          const structured = run.result?.structured || {}
+          const metadata = new Map((Array.isArray(structured.items) ? structured.items : []).map(item => [item.id, item]))
+          const items = (Array.isArray(structured.rankedIds) ? structured.rankedIds : []).slice(0, 10)
+            .map(id => {
+              const exercise = exerciseByPublicId(id)
+              if (!exercise) return null
+              const item = metadata.get(id) || {}
+              return { exerciseId: id, exercise, name: exercise.n || exercise.name || id, rationale: item.rationale || `${t(exercise.bp)} · ${t(exercise.eq)}`, ...(item.level ? { level: item.level } : {}) }
+            }).filter(Boolean)
+          matched = { items, fallback: structured.fallback || { understanding: '' }, clarifications: structured.clarifications || [] }
+        } else matched = createWebAiSearch(SRef.current).match(run.result, {
           hintText: lastSentRef.current.text,
           ...(trace?.emit ? { diagnostics: { emit: trace.emit } } : {}),
         })
@@ -441,7 +459,9 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     const old = sessionRef.current
     sessionRef.current = ''
     sessionCreatedRef.current = false
+    sessionTaskIdRef.current = ''
     imagesRef.current = []
+    setConfirmedEquipment('')
     mediaAttemptRef.current = null
     if (old) agentApi.deleteSession(old).catch(() => {})
     setProfile(null)
@@ -501,6 +521,22 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     setShowFallback(false)
 
     const continuing = !!sessionRef.current && sessionCreatedRef.current
+    let taskId = continuing ? sessionTaskIdRef.current : ''
+    if (!continuing) {
+      try {
+        const publicConfig = await agentApi.getPublicConfig()
+        if (!alive.current || token !== runToken.current) return
+        taskId = publicConfig?.agent?.exerciseSearchVersion === 'v2' ? 'exercise-search.v2' : 'exercise-search.v1'
+        sessionTaskIdRef.current = taskId
+        setSearchVersion(taskId.endsWith('.v2') ? 'v2' : 'v1')
+      } catch (failure) {
+        if (!alive.current || token !== runToken.current) return
+        lastRequestRef.current = { text: hintText, image, needsImage, surface }
+        setError({ code: errorCode(failure) })
+        setPhase('error')
+        return
+      }
+    }
     const session = continuing ? sessionRef.current : uid()
     sessionRef.current = session
 
@@ -531,7 +567,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
     }
 
     const body = {
-      taskId: AI_SEARCH_TASK_ID,
+      taskId: taskId || 'exercise-search.v1',
       requestId,
       profileId: picked.id,
       sessionId: session,
@@ -539,6 +575,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       input: {
         ...(hintText ? { hintText } : {}),
         ...(images.length ? { images } : {}),
+        ...(taskId === 'exercise-search.v2' && confirmedEquipment ? { confirmedEquipment } : {}),
       },
     }
     trace.emit?.({
@@ -578,13 +615,17 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
       pollTimer.current = setTimeout(() => { void pollOnce(started.runId, token, trace) }, AI_SEARCH_POLL_MS)
     } catch (failure) {
       if (!alive.current || token !== runToken.current) return
-      if (!continuing) sessionRef.current = ''
+      if (!continuing) {
+        sessionRef.current = ''
+        sessionCreatedRef.current = false
+        sessionTaskIdRef.current = ''
+      }
       if (runIdRef.current) clearInterrupted(accountRef.current, runIdRef.current)
       setError({ code: errorCode(failure) })
       setPhase('error')
       endTrace(trace, 'failed', 'submit', errorCode(failure))
     }
-  }, [finishRun, pollOnce, profiles, stopPolling])
+  }, [finishRun, pollOnce, profiles, stopPolling, confirmedEquipment])
 
   const openPanel = useCallback(({ reset = false } = {}) => {
     if (reset) resetSession()
@@ -789,6 +830,11 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
         <textarea className="ai-textarea" value={panelText} maxLength={500} disabled={imageBusy}
           placeholder={t('描述想找的动作或器械，可加上你的条件（如：肩膀不适、只有哑铃）')}
           onChange={event => setPanelText(event.target.value)} />
+        {searchVersion === 'v2' ? <label className="ai-equipment-select">{t('限定器械')}
+          <select aria-label={t('限定器械')} value={confirmedEquipment} onChange={event => setConfirmedEquipment(event.target.value)}>
+            <option value="">{t('不限')}</option>{EQUIPMENTS.map(value => <option key={value} value={value}>{t(value)}</option>)}
+          </select>
+        </label> : null}
         <div className="ai-pick-row">
           <Button type="button" size="sm" variant="tinted" icon="camera" disabled={imageBusy}
             onClick={() => cameraRef.current?.click()}>{t('拍照')}</Button>
@@ -811,7 +857,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
   }
 
   const running = phase === 'running'
-  const items = Array.isArray(result?.items) ? result.items.slice(0, 5).filter(item => item?.exercise) : []
+  const items = Array.isArray(result?.items) ? result.items.slice(0, searchVersion === 'v2' ? 10 : 5).filter(item => item?.exercise) : []
   const fallback = result?.fallback || null
   const clarifications = Array.isArray(result?.clarifications)
     ? result.clarifications.filter(chip => chip?.label && chip?.prompt).slice(0, 3)
@@ -860,7 +906,7 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
             <span className="tt">{item.name}</span>
             <span className="ss">{item.rationale}</span>
           </button>
-          <span className={`tag ai-level ${item.level || 'medium'}`}>{t(LEVEL_LABEL[item.level] || LEVEL_LABEL.medium)}</span>
+          {item.level ? <span className={`tag ai-level ${item.level}`}>{t(LEVEL_LABEL[item.level])}</span> : null}
           {quick ? <button type="button" className="iconbtn chev" style={{ padding: 8, margin: -8 }}
             aria-label={typeof quick.label === 'function' ? quick.label(item.exercise) : quick.label}
             onClick={() => handlePick(item, true)}><Icon name={quick.icon || 'plus'} /></button> : null}
@@ -896,6 +942,11 @@ const ExerciseAiSearch = forwardRef(function ExerciseAiSearch({
 
     {!error && !result && !running ? null : <div className="ai-follow-wrap">
       <form className="ai-follow" onSubmit={submitFollow}>
+        {searchVersion === 'v2' ? <label className="ai-equipment-select ai-equipment-follow">{t('限定器械')}
+          <select aria-label={t('限定器械')} value={confirmedEquipment} onChange={event => setConfirmedEquipment(event.target.value)} disabled={running}>
+            <option value="">{t('不限')}</option>{EQUIPMENTS.map(value => <option key={value} value={value}>{t(value)}</option>)}
+          </select>
+        </label> : null}
         <button type="button" className="iconbtn ai-follow-cam" aria-label={t('拍照')} disabled={followLocked}
           onClick={() => followCameraRef.current?.click()}><Icon name="camera" /></button>
         <input value={followText} maxLength={500} disabled={followLocked}

@@ -36,7 +36,6 @@ const DEFAULT_INSTRUCTIONS = [
  * is never imported here. Only safe summary fields are projected to it, and a
  * throwing sink can never break a run. Everything below stays private to this
  * behavior; no other task emits anything. */
-const EXERCISE_SEARCH_DIAGNOSTIC_TASK_ID = 'exercise-search.v1';
 /** The images a diagnostic attachments event may carry, per the event schema. */
 const DIAGNOSTIC_MAX_IMAGES = 2;
 const DIAGNOSTIC_ERROR_CODES = new Set(Object.keys(ERROR_STATUS));
@@ -181,6 +180,7 @@ function proposalCandidate(parsed) {
  *   state?: import('./contracts.js').RunState,
  *   store?: { saveResult?: (result: unknown) => unknown },
  *   signal?: AbortSignal | null,
+ *   postProcess?: (result: unknown, context: import('./contracts.js').RunContext) => unknown | Promise<unknown>,
  *   now?: () => number,
  * }} options
  */
@@ -195,6 +195,7 @@ export async function runAgent(options) {
     state,
     store,
     signal = context?.signal || null,
+    postProcess,
     now = Date.now,
   } = options || {};
   if (!task || typeof task !== 'object') throw new AgentError('invalid_request', 'a registered task is required');
@@ -208,7 +209,7 @@ export async function runAgent(options) {
     : createToolRegistry(tools);
   // Read once, and only for the exercise-search task; every other task runs
   // exactly as before. `null` keeps all emit sites side-effect free.
-  const exerciseDiagnostic = task.id === EXERCISE_SEARCH_DIAGNOSTIC_TASK_ID
+  const exerciseDiagnostic = typeof task.id === 'string' && task.id.startsWith('exercise-search.')
     ? context?.meta?.exerciseSearchDiagnostic
     : undefined;
   const emitDiagnostic = typeof exerciseDiagnostic === 'function'
@@ -405,6 +406,19 @@ export async function runAgent(options) {
     if (!lastOutput) throw new AgentError('model_unavailable', 'the model returned no answer');
     diagnosticPhase = 'recognition';
     const parsed = outputOf(lastOutput, task, context);
+    let processed = parsed;
+    if (postProcess) {
+      diagnosticPhase = 'retrieval';
+      if (signal?.aborted || (state && !state.acceptResult())) {
+        if (state && !state.isTerminal()) state.cancel('cancelled');
+        return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
+      }
+      processed = await postProcess(parsed, context);
+      if (signal?.aborted || (state && !state.acceptResult())) {
+        if (state && !state.isTerminal()) state.cancel('cancelled');
+        return completedOrCancelled(state ? state.record() : { runId: context.runId, status: 'cancelled' });
+      }
+    }
     const candidate = proposalCandidate(parsed);
     let proposal;
     if (candidate) {
@@ -479,11 +493,11 @@ export async function runAgent(options) {
     const result = {
       runId: context.runId,
       status: 'completed',
-      ...(typeof parsed === 'string'
-        ? { text: parsed }
+      ...(typeof processed === 'string'
+        ? { text: processed }
         : {
-            ...(typeof parsed?.text === 'string' ? { text: parsed.text } : {}),
-            structured: parsed,
+            ...(typeof processed?.text === 'string' ? { text: processed.text } : {}),
+            structured: processed,
           }),
       ...(proposal ? { proposal } : {}),
       evidence: evidenceList(context),
@@ -498,6 +512,9 @@ export async function runAgent(options) {
     }
     return completedOrCancelled(result);
   } catch (error) {
+    if (diagnosticPhase === 'retrieval' && error instanceof AgentError && error.details?.phase === 'rerank') {
+      diagnosticPhase = 'rerank';
+    }
     const cancelled = signal?.aborted || (state && state.status() === 'cancelled');
     if (cancelled) {
       if (state && !state.isTerminal()) state.cancel('cancelled');

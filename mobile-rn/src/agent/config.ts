@@ -1,6 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
-import { AgentError, validateBaseUrl, phoneMayCall } from './shared';
+import { AgentError, validateBaseUrl, phoneMayCall, providerCapabilities } from './shared';
 import type {
   AgentCapabilities, AgentExecutionLocation, AgentProfileCapabilityInput, AgentProfileInput, AgentProfilePublic,
   AgentProfileRow, AgentProfileSummary, AgentProvider,
@@ -10,7 +10,7 @@ import type { AgentStore } from './store';
 export const DEFAULT_OPENAI_BASE = 'https://api.openai.com/v1';
 
 const KEY = (digest: string, profileId: string) => `agent_${digest}_${profileId}`;
-const PROVIDERS: AgentProvider[] = ['fixture', 'openai', 'compatible', 'opencode'];
+const PROVIDERS: AgentProvider[] = ['fixture', 'openai', 'compatible', 'deepseek'];
 
 async function digestOf(scope: string): Promise<string> {
   return Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, scope);
@@ -18,25 +18,25 @@ async function digestOf(scope: string): Promise<string> {
 
 function providerLabel(provider: string): string {
   if (provider === 'fixture') return 'Fixture';
-  if (provider === 'opencode') return 'OpenCode';
+  if (provider === 'deepseek') return 'DeepSeek';
   if (provider === 'compatible') return '兼容端点';
   return 'OpenAI';
 }
 
 function capabilitiesOf(
-  provider: AgentProfileRow['provider'],
+  provider: AgentProvider,
+  model: string,
   override?: AgentProfileCapabilityInput,
 ): AgentCapabilities {
   if (override?.image !== undefined && typeof override.image !== 'boolean') {
     throw new AgentError('invalid_request', 'capabilities.image must be a boolean');
   }
-  const base: AgentCapabilities = provider === 'opencode'
-    ? { text: true, image: false, tools: false }
-    : { text: true, image: true, tools: true };
-  return override?.image === undefined ? base : { ...base, image: override.image };
+  const base = providerCapabilities(provider, model);
+  if (override?.image !== undefined) base.image = override.image && (provider !== 'deepseek' || base.image);
+  return base;
 }
 
-function labelOf(profile: Pick<AgentProfileRow, 'provider' | 'model' | 'label'>): string {
+function labelOf(profile: Pick<AgentProfilePublic, 'provider' | 'model' | 'label'>): string {
   return profile.label?.trim() || `${providerLabel(profile.provider)} · ${profile.model}`;
 }
 
@@ -51,6 +51,17 @@ export function summaryOf(profile: AgentProfilePublic): AgentProfileSummary {
 }
 
 function publicOf(profile: AgentProfileRow): AgentProfilePublic {
+  if (!PROVIDERS.some(provider => provider === profile.provider)) {
+    return {
+      ...profile,
+      provider: 'none',
+      label: '已停用的配置',
+      capabilities: { text: false, image: false, tools: false },
+      keyHint: undefined,
+      available: false,
+      reason: '请选择当前提供商并填写新的密钥。',
+    };
+  }
   return {
     ...profile,
     label: labelOf(profile),
@@ -61,12 +72,12 @@ function publicOf(profile: AgentProfileRow): AgentProfilePublic {
 }
 
 function needsKey(provider: AgentProvider): boolean {
-  return provider === 'openai' || provider === 'opencode';
+  return provider === 'openai' || provider === 'deepseek';
 }
 
 function assertProvider(value: string): asserts value is AgentProvider {
   if (!PROVIDERS.includes(value as AgentProvider)) {
-    throw new AgentError('invalid_request', 'provider must be fixture, openai, compatible or opencode');
+    throw new AgentError('invalid_request', 'provider must be fixture, openai, compatible or deepseek');
   }
 }
 
@@ -134,7 +145,7 @@ export class AgentConfig {
         source: 'local',
         provider,
         model,
-        capabilities: capabilitiesOf(provider, input.capabilities),
+        capabilities: capabilitiesOf(provider, model, input.capabilities),
         label: `${providerLabel(provider)} · ${model}`,
         ...(key ? { keyHint: key.slice(-4) } : {}),
         version: 1,
@@ -158,42 +169,43 @@ export class AgentConfig {
     assertProvider(provider);
     const model = String(input.model || current.model).trim();
     if (!model || model.length > 200) throw new AgentError('invalid_request', 'model is required');
-    const endpoint = this.endpointOf(
-      provider,
-      provider === 'opencode' ? input.baseUrl : (input.baseUrl ?? this.store.readKv<string>(scope, `endpoint:${profileId}`)),
-      true,
-    );
+    const providerChanged = provider !== current.provider;
+    const savedEndpoint = providerChanged || provider === 'deepseek'
+      ? undefined
+      : this.store.readKv<string>(scope, `endpoint:${profileId}`);
+    const endpoint = this.endpointOf(provider, input.baseUrl ?? savedEndpoint, true);
     const key = typeof input.apiKey === 'string' ? input.apiKey.trim() : '';
     const keyName = KEY(await digestOf(scope), profileId);
     const previous = await SecureStore.getItemAsync(keyName).catch(() => null);
-    if (key) await SecureStore.setItemAsync(keyName, key);
-    if (needsKey(provider) && !key && !previous) {
+    const nextKey = provider === 'fixture' ? null : key || (providerChanged ? null : previous);
+    if (needsKey(provider) && (!nextKey || nextKey.length < 8)) {
       throw new AgentError('invalid_request', 'an API key is required');
     }
     try {
+      if (nextKey !== previous) {
+        if (nextKey) await SecureStore.setItemAsync(keyName, nextKey);
+        else await SecureStore.deleteItemAsync(keyName);
+      }
       const version = current.version + 1;
-      const capabilities = input.capabilities?.image !== undefined
-        ? capabilitiesOf(provider, input.capabilities)
-        : provider === current.provider
-          ? current.capabilities
-          : capabilitiesOf(provider);
+      const keepCapabilities = !providerChanged && model === current.model;
+      const capabilities = capabilitiesOf(provider, model, input.capabilities ?? (keepCapabilities ? current.capabilities : undefined));
       const next: AgentProfileRow = {
         ...current,
         provider,
         model,
         capabilities,
         label: `${providerLabel(provider)} · ${model}`,
-        ...(key ? { keyHint: key.slice(-4) } : {}),
+        ...(nextKey ? { keyHint: nextKey.slice(-4) } : {}),
         version,
         updatedAt: Date.now(),
       };
-      if (provider === 'fixture') delete next.keyHint;
+      if (!nextKey) delete next.keyHint;
       this.store.saveProfile(next);
       this.store.writeKv(scope, `endpoint:${profileId}`, endpoint ?? '');
       return publicOf(next);
     } catch (error) {
       this.store.saveProfile(current);
-      if (key) {
+      if (nextKey !== previous) {
         if (previous) await SecureStore.setItemAsync(keyName, previous).catch(() => undefined);
         else await SecureStore.deleteItemAsync(keyName).catch(() => undefined);
       }
@@ -288,38 +300,40 @@ export class AgentConfig {
 
   async resolve(scope: string, profileId: string): Promise<{
     profile: AgentProfilePublic;
-    provider: AgentProfileRow['provider'];
+    provider: AgentProvider;
     model: string;
     baseUrl?: string;
     apiKey?: string | null;
   }> {
     const profile = this.store.getProfile(scope, profileId);
     if (!profile) throw new AgentError('profile_not_found', undefined, { details: { profileId } });
-    const key = profile.provider === 'fixture'
+    const publicProfile = publicOf(profile);
+    if (publicProfile.provider === 'none') throw new AgentError('profile_not_found', publicProfile.reason);
+    const provider = profile.provider;
+    assertProvider(provider);
+    const key = provider === 'fixture'
       ? null
       : await SecureStore.getItemAsync(KEY(await digestOf(scope), profileId)).catch(() => null);
-    if (needsKey(profile.provider) && !key) {
+    if (needsKey(provider) && !key) {
       throw new AgentError('profile_not_found', 'this configuration has no credential');
     }
-    const baseUrl = profile.provider === 'fixture' || profile.provider === 'opencode'
+    const baseUrl = provider === 'fixture' || provider === 'deepseek'
       ? undefined
-      : this.endpointOf(profile.provider, this.store.readKv<string>(scope, `endpoint:${profileId}`), false);
+      : this.endpointOf(provider, this.store.readKv<string>(scope, `endpoint:${profileId}`), false);
     return {
-      profile: publicOf(profile),
-      provider: profile.provider,
+      profile: publicProfile,
+      provider,
       model: profile.model,
       ...(baseUrl ? { baseUrl } : {}),
       apiKey: key,
     };
   }
 
-  private endpointOf(provider: AgentProfileRow['provider'], raw: unknown, strict: boolean): string | undefined {
+  private endpointOf(provider: AgentProvider, raw: unknown, strict: boolean): string | undefined {
     if (provider === 'fixture') return undefined;
-    // OpenCode has one fixed endpoint inside the shared provider; accepting an
-    // account-supplied URL here would turn the preset into a custom endpoint.
-    if (provider === 'opencode') {
+    if (provider === 'deepseek') {
       if (String(raw || '').trim()) {
-        throw new AgentError('invalid_request', 'opencode uses a fixed endpoint');
+        throw new AgentError('invalid_request', 'deepseek uses a fixed endpoint');
       }
       return undefined;
     }
@@ -340,7 +354,7 @@ function pickServer(
   requireImage: boolean,
   preferredId?: string,
 ): AgentProfilePublic | null {
-  const usable = profiles.filter(profile => profile.available !== false && imageCapable(profile, requireImage));
+  const usable = profiles.filter(profile => profile.provider !== 'opencode' && profile.available !== false && imageCapable(profile, requireImage));
   const preferred = preferredId ? usable.find(profile => profile.id === preferredId) : null;
   if (preferred) return preferred;
   const users = usable

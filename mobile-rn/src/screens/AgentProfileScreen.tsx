@@ -10,14 +10,8 @@ import { createLocalRuntime, createServerAgent } from '../agent';
 import type { AgentProfilePublic, AgentProvider } from '../agent';
 
 type Mode = 'local' | 'server';
-const LOCAL_PROVIDERS = ['fixture', 'openai', 'compatible', 'opencode'] as const;
-const SERVER_PROVIDERS = ['fixture', 'openai', 'opencode'] as const;
-
-function defaultImageCapability(provider: string): boolean {
-  // Matches the shared provider table: OpenCode is text-first until the user
-  // explicitly says the selected model reads images.
-  return provider !== 'opencode';
-}
+const LOCAL_PROVIDERS = ['fixture', 'openai', 'compatible', 'deepseek'] as const;
+const SERVER_PROVIDERS = ['fixture', 'openai', 'deepseek'] as const;
 
 export type AgentProfileScreenProps = {
   connection: Connection | null;
@@ -45,6 +39,7 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
     ? [{ value: 'local', label: '本机' }, { value: 'server', label: '服务器' }]
     : [{ value: 'local', label: '本机' }];
   const providers = mode === 'local' ? LOCAL_PROVIDERS : SERVER_PROVIDERS;
+  const requiresKey = (provider === 'openai' || provider === 'deepseek') && (!editing || provider !== editing.provider);
 
   const load = useCallback(async () => {
     try {
@@ -62,25 +57,26 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
     setModel('');
     setApiKey('');
     setBaseUrl('');
-    setImageCapable(defaultImageCapability(provider));
+    setImageCapable(true);
     setCapabilityTouched(false);
   };
 
   const edit = (profile: AgentProfilePublic) => {
     setEditing(profile);
-    setProvider(profile.provider);
-    setModel(profile.model);
+    const supported = providers.some(id => id === profile.provider);
+    setProvider(supported ? profile.provider : 'deepseek');
+    setModel(supported ? profile.model : 'deepseek-flash');
     setApiKey('');
-    setBaseUrl(mode === 'local' ? (local.store.readKv<string>(local.scope, `endpoint:${profile.id}`) || '') : '');
-    setImageCapable(profile.capabilities.image);
+    setBaseUrl(supported && mode === 'local' ? (local.store.readKv<string>(local.scope, `endpoint:${profile.id}`) || '') : '');
+    setImageCapable(supported ? profile.capabilities.image : true);
     setCapabilityTouched(true);
   };
 
   const chooseProvider = (value: string) => {
     setProvider(value);
-    if (!capabilityTouched) setImageCapable(defaultImageCapability(value));
-    if (value === 'fixture') setApiKey('');
-    if (value === 'opencode') setBaseUrl('');
+    if (!capabilityTouched) setImageCapable(true);
+    setApiKey('');
+    if (value === 'deepseek') setBaseUrl('');
   };
 
   const save = async () => {
@@ -100,7 +96,7 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
         model: model.trim(),
         capabilities: { image: imageCapable },
         ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
-        ...(mode === 'local' && provider !== 'fixture' && provider !== 'opencode' && baseUrl.trim()
+        ...(mode === 'local' && provider !== 'fixture' && provider !== 'deepseek' && baseUrl.trim()
           ? { baseUrl: baseUrl.trim() }
           : {}),
       };
@@ -180,7 +176,7 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
         label="模型"
         value={model}
         onChangeText={setModel}
-        placeholder={provider === 'fixture' ? 'fixture' : provider === 'opencode' ? 'deepseek-v4.1-flash-1017' : 'gpt-5.6'}
+        placeholder={provider === 'fixture' ? 'fixture' : provider === 'deepseek' ? 'deepseek-flash' : 'gpt-5.6'}
         autoCapitalize="none"
       />
       {mode === 'local' && (provider === 'openai' || provider === 'compatible') ? (
@@ -190,15 +186,15 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
           onChangeText={setBaseUrl}
           placeholder="https://api.openai.com/v1"
           autoCapitalize="none"
-          helper="局域网地址允许 http://；公网必须 https://。OpenCode 使用固定端点。"
+          helper="局域网地址允许 http://。公网端点使用 https://。"
         />
       ) : null}
-      {provider === 'opencode' ? (
+      {provider === 'deepseek' ? (
         <Text tone="secondary" variant="footnote">
-          使用 OpenCode 固定端点，不需要填写 URL。
+          DeepSeek 使用官方端点。
         </Text>
       ) : null}
-      {provider !== 'fixture' ? <TextField label={editing ? '替换 API Key（留空保留）' : 'API Key'} value={apiKey} onChangeText={setApiKey} secureTextEntry autoCapitalize="none" /> : null}
+      {provider !== 'fixture' ? <TextField label={editing && !requiresKey ? '替换 API Key（留空保留）' : 'API Key'} value={apiKey} onChangeText={setApiKey} secureTextEntry autoCapitalize="none" /> : null}
       <SwitchRow
         title="该模型可读取图片"
         subtitle="关闭后带图检索会被拒绝，纯文字检索仍可用。"
@@ -206,7 +202,7 @@ export function AgentProfileScreen({ connection, data, onClose }: AgentProfileSc
         onValueChange={value => { setImageCapable(value); setCapabilityTouched(true); }}
       />
       <View style={{ flexDirection: 'row', gap: theme.space.sm, marginTop: theme.space.sm }}>
-        <Button variant="primary" onPress={() => { save().catch(() => undefined); }} disabled={busy || !model.trim()}>{busy ? '保存中…' : '保存'}</Button>
+        <Button variant="primary" onPress={() => { save().catch(() => undefined); }} disabled={busy || !model.trim() || (requiresKey && apiKey.trim().length < 8)}>{busy ? '保存中…' : '保存'}</Button>
         {editing ? <Button variant="secondary" onPress={reset}>取消</Button> : null}
       </View>
       {error ? <Text tone="danger" variant="footnote" style={{ marginTop: theme.space.sm }}>{error}</Text> : null}

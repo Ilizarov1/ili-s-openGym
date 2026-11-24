@@ -10,17 +10,17 @@
 
 ## 凭据与运行方式
 
-当前 CLI 从进程环境读配置，`api/.env` 确实存在且已被 Git 忽略。可以在本机工作区的 `api/.env` 固定写下这些值，保留文件里已有的配置。历史使用 OpenCode Go 时可复用同文件中现成的 `OPENCODE_API_KEY`，无需重复写密钥。每个 Git worktree 的未跟踪文件彼此独立，下方命令从任意执行工作树显式读取主工作区的密钥文件。
+CLI 从进程环境读取配置。`api/.env` 由 Git 忽略，各 worktree 的未跟踪文件相互独立。下方命令从原工作区显式读取环境文件。
 
 ```dotenv
-# 兼容 API 示例。另两种配置见下文。
+# DeepSeek 官方 API 的兼容接入示例。
 OPEN_GYM_EVAL_PROVIDER=compatible
-OPEN_GYM_EVAL_BASE_URL=https://your-provider.example/v1
-OPEN_GYM_EVAL_MODEL=your-vision-model
+OPEN_GYM_EVAL_BASE_URL=https://api.deepseek.com
+OPEN_GYM_EVAL_MODEL=deepseek-flash
 OPEN_GYM_EVAL_API_KEY=your-key
 ```
 
-- OpenCode Go：provider 填 `opencode`，模型填当前获授权的视觉模型 ID，例如此前的 `deepseek-v4.1-flash`。端点固定，可省略 BASE_URL 和 EVAL_API_KEY，改用已有 `OPENCODE_API_KEY`。
+- 使用 DeepSeek 预设时可设 `OPEN_GYM_EVAL_PROVIDER=deepseek`，模型填 `deepseek-flash`。预设使用官方端点，密钥由 `OPEN_GYM_EVAL_API_KEY` 或 `DEEPSEEK_API_KEY` 提供。
 - OpenAI 官方：provider 填 `openai`，设置支持图像输入的模型与 EVAL_API_KEY，省略 BASE_URL。兼容 API 的 Base URL 不含 `/chat/completions`。
 - Node 24 支持 `--env-file`。进程中已有同名环境变量优先于文件；正式对照前用新 PowerShell 窗口，避免拿到上次配置。不要把密钥写进命令行、样本、报告或版本库，不读取或打印整份 env。离线回放不加载密钥文件。
 

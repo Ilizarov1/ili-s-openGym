@@ -18,6 +18,7 @@ const PROFILE = {
 const mocks = vi.hoisted(() => ({
   S: { gifSize: 'full', body: 'male', exerciseView: 'list' },
   CONFIG: { agent: { enabled: true } },
+  PUBLIC_CONFIG: { agent: { enabled: true, exerciseSearchVersion: 'v1' } },
   USER: { id: 'u1' },
   navs: [],
   profiles: [],
@@ -27,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   cancelRun: vi.fn(),
   deleteSession: vi.fn(),
   listProfiles: vi.fn(),
+  getPublicConfig: vi.fn(),
   runSeq: 0,
   runEvents: [],
   mediaEvents: [],
@@ -44,6 +46,7 @@ vi.mock('../lib/exercises.js', async importOriginal => ({
 }))
 vi.mock('../agent/api.js', () => ({
   agentApi: {
+    getPublicConfig: (...args) => mocks.getPublicConfig(...args),
     listProfiles: (...args) => mocks.listProfiles(...args),
     startRun: (...args) => mocks.startRun(...args),
     getRun: (...args) => mocks.getRun(...args),
@@ -144,6 +147,7 @@ beforeEach(() => {
   localStorage.clear()
   document.body.innerHTML = ''
   mocks.CONFIG = { agent: { enabled: true } }
+  mocks.PUBLIC_CONFIG = { agent: { enabled: true, exerciseSearchVersion: 'v1' } }
   mocks.profiles = [PROFILE]
   mocks.runSeq = 0
   mocks.navs = []
@@ -153,6 +157,7 @@ beforeEach(() => {
     fallback: { understanding: '像卧推，建议看胸部', bodyParts: ['chest'], equipment: ['barbell'] },
   })
   mocks.listProfiles.mockReset().mockImplementation(async () => ({ profiles: mocks.profiles }))
+  mocks.getPublicConfig.mockReset().mockImplementation(async () => mocks.PUBLIC_CONFIG)
   mocks.startRun.mockReset().mockImplementation(async () => {
     mocks.runSeq += 1
     return { runId: `run${mocks.runSeq}`, status: 'accepted', profile: PROFILE }
@@ -221,6 +226,44 @@ describe('ExerciseAiSearch preflight and launcher', () => {
 })
 
 describe('ExerciseAiSearch runs', () => {
+  it('refreshes the version for a newly reset session and keeps the task pinned across follow-ups', async () => {
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '卧推')
+    mocks.PUBLIC_CONFIG = { agent: { enabled: true, exerciseSearchVersion: 'v2' } }
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    const first = mocks.startRun.mock.calls[0][0]
+    expect(first.taskId).toBe('exercise-search.v2')
+    expect(mocks.getPublicConfig).toHaveBeenCalledTimes(2) // preflight plus fresh session negotiation
+    await tick()
+
+    mocks.PUBLIC_CONFIG = { agent: { enabled: true, exerciseSearchVersion: 'v1' } }
+    setValue(host.querySelector('.ai-follow input'), '换成哑铃')
+    await act(async () => { host.querySelector('.ai-follow').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })) })
+    await flush()
+    expect(mocks.startRun.mock.calls[1][0]).toMatchObject({ taskId: 'exercise-search.v2', sessionMode: 'continue', sessionId: first.sessionId })
+    expect(mocks.getPublicConfig).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes config again after restarting an expired session', async () => {
+    mocks.startRun.mockRejectedValueOnce(Object.assign(new Error('expired'), { code: 'turn_limit' }))
+    const { host } = render()
+    await flush()
+    setValue(host.querySelector('textarea'), '第一轮')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    expect(mocks.startRun.mock.calls[0][0].taskId).toBe('exercise-search.v1')
+
+    mocks.PUBLIC_CONFIG = { agent: { enabled: true, exerciseSearchVersion: 'v2' } }
+    await act(async () => { byText(host, '重新发起').click() })
+    setValue(host.querySelector('textarea'), '重开的新会话')
+    await act(async () => { byText(host, 'AI 检索').click() })
+    await flush()
+    expect(mocks.getPublicConfig).toHaveBeenCalledTimes(3)
+    expect(mocks.startRun.mock.calls[1][0]).toMatchObject({ taskId: 'exercise-search.v2', sessionMode: 'new' })
+  })
+
   it('sends a text-only run and renders candidates with a level badge', async () => {
     const { host, props } = render()
     await flush()

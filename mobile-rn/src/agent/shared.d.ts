@@ -169,6 +169,7 @@ export type RunAgentOptions = {
   };
   state: AgentRunState;
   signal?: AbortSignal;
+  postProcess?: (result: unknown, context: unknown) => unknown | Promise<unknown>;
 };
 
 export function assertValid(
@@ -216,6 +217,7 @@ export function selectMemories(
 
 export function addEvidence(context: unknown, evidence: Omit<AgentEvidence, 'evidenceId'> & { evidenceId?: string }): AgentEvidence;
 
+export function providerCapabilities(provider: string, model?: string): { text: boolean; image: boolean; tools: boolean };
 export function createProvider(provider: string, config?: Record<string, unknown>): {
   id: string;
   capabilities: ModelCapabilities;

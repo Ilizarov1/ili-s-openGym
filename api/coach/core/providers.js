@@ -56,8 +56,7 @@ export function baseUrlFor(id, cfg) {
 }
 
 /* Extra static headers a provider is called with (compatible endpoints only in practice):
- * gateways that demand routing/session headers (opencode Go's `x-opencode-session`,
- * `X-Title` style attribution headers elsewhere). Stored plaintext next to baseUrl —
+ * gateways that use routing or attribution headers such as `X-Request-Source`. Stored plaintext next to baseUrl —
  * routing aids, not credentials. Caps keep a mis-paste from becoming a smuggling vector:
  * at most 8 entries, token-shaped names, short values, and the names that would
  * override auth framing or transport are refused outright (re-checked at send time). */

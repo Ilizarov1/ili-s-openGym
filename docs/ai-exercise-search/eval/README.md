@@ -41,15 +41,15 @@ Remove-Item Env:OPEN_GYM_EVAL_PROVIDER
 真实模型（需已授权配置，默认不提交产物）：
 
 ```powershell
-$env:OPEN_GYM_EVAL_PROVIDER = 'opencode'   # openai | compatible | opencode
-$env:OPEN_GYM_EVAL_MODEL = 'deepseek-v4.1-flash'
-$env:OPEN_GYM_EVAL_API_KEY = '<受控密钥>'    # opencode 可回退 OPENCODE_API_KEY
-npm.cmd --prefix frontend run eval:ai-search -- --mode vision --sample photo-chest-press --manifest docs/ai-exercise-search/eval/manifest.json --out .codex/ai-search-eval/real-vision.json
-npm.cmd --prefix frontend run eval:ai-search -- --mode e2e --sample photo-chest-press --sample hinted-chest-press --manifest docs/ai-exercise-search/eval/manifest.json --out .codex/ai-search-eval/real-e2e.json
-Remove-Item Env:OPEN_GYM_EVAL_PROVIDER; Remove-Item Env:OPEN_GYM_EVAL_MODEL; Remove-Item Env:OPEN_GYM_EVAL_API_KEY
+# 在项目根目录通过 Git 忽略的 api/.env 加载 DeepSeek 配置。
+# 兼容配置使用 OPEN_GYM_EVAL_PROVIDER=compatible，URL 为 https://api.deepseek.com。
+# OPEN_GYM_EVAL_MODEL=deepseek-flash，从文件读取 OPEN_GYM_EVAL_API_KEY。
+node --env-file=api/.env frontend/scripts/ai-search-eval.mjs --mode vision --sample photo-chest-press --manifest docs/ai-exercise-search/eval/manifest.json --out .codex/ai-search-eval/real-vision.json
+node --env-file=api/.env frontend/scripts/ai-search-eval.mjs --mode e2e --sample photo-chest-press --sample hinted-chest-press --manifest docs/ai-exercise-search/eval/manifest.json --out .codex/ai-search-eval/real-e2e.json
+
 ```
 
-`compatible` 必须提供 `OPEN_GYM_EVAL_BASE_URL`；`opencode` 端点固定为共享 provider 的 Go 端点；`openai` 缺省官方端点。临时 profile 只存在于本次进程内存，不写入任何账号配置。缺配置时 CLI 在发出任何样本请求前以退出码 2 结束。
+`compatible` 需要 `OPEN_GYM_EVAL_BASE_URL`，`openai` 默认使用官方端点，`deepseek` 使用固定官方端点并可读取 `DEEPSEEK_API_KEY`。临时配置只存在于本次进程内存。配置不全时，CLI 在发送样例前以退出码 2 结束。
 
 ### 参数
 

@@ -264,7 +264,7 @@ paths:
       security: []
       responses:
         '200':
-          description: Instance flags, plus the Coach block for a signed-in caller.
+          description: Instance flags and the Coach and Agent blocks for a signed-in caller.
           content:
             application/json:
               schema:
@@ -297,6 +297,13 @@ paths:
                       community:
                         type: boolean
                         description: Whether "compare with others" is offered on this instance.
+                  agent:
+                    type: object
+                    description: Present for a signed-in caller.
+                    required: [enabled, exerciseSearchVersion]
+                    properties:
+                      enabled: { type: boolean }
+                      exerciseSearchVersion: { type: string, enum: [v1, v2] }
                   password_login:
                     type: boolean
                     const: true
@@ -4423,6 +4430,9 @@ components:
             - model_unavailable
             - model_timeout
             - model_response_too_large
+            - retrieval_unavailable
+            - retrieval_index_not_ready
+            - retrieval_timeout
             - session_deleted
             - session_busy
             - session_conflict
@@ -4447,7 +4457,7 @@ components:
         taskId:
           type: string
           default: stub.v1
-          enum: [stub.v1, exercise-search.v1]
+          enum: [stub.v1, exercise-search.v1, exercise-search.v2]
           description: The registered task.
         requestId:
           type: string
@@ -4461,6 +4471,8 @@ components:
             Task input. `stub.v1` takes `{ prompt, fixtureCase? }`.
             `exercise-search.v1` takes `{ hintText?, images?, fixtureCase? }`; text or at
             least one inline image is required, with at most two images as base64 data URLs.
+            `exercise-search.v2` takes the same inputs and an optional `confirmedEquipment`
+            from the exercise equipment vocabulary. That field limits both retrieval routes.
         sessionId: { type: string, description: Optional conversation to append to. }
         sessionMode:
           type: string
@@ -4509,12 +4521,59 @@ components:
           type: object
           additionalProperties: true
           description: The validated task result, evidence ids and usage.
+          properties:
+            structured:
+              description: |
+                For an `exercise-search.v2` run this is an `ExerciseSearchV2Result`.
+                Other tasks use their existing structured output contracts.
         proposalId: { type: string }
         error:
           type: object
           properties:
             code: { type: string }
             message: { type: string }
+
+    ExerciseSearchV2Result:
+      type: object
+      additionalProperties: false
+      required: [rankedIds, fallback]
+      properties:
+        rankedIds:
+          type: array
+          maxItems: 10
+          uniqueItems: true
+          description: Public catalogue IDs in server order. IDs retain any leading zeros.
+          items: { type: string }
+        items:
+          type: array
+          maxItems: 10
+          description: Optional row metadata in the same order as rankedIds.
+          items:
+            type: object
+            additionalProperties: false
+            required: [id]
+            properties:
+              id: { type: string }
+              level: { type: string, enum: [high, medium, low] }
+              rationale: { type: string, maxLength: 200 }
+        fallback:
+          type: object
+          additionalProperties: false
+          required: [understanding]
+          properties:
+            understanding: { type: string, maxLength: 400 }
+            bodyParts: { type: array, items: { type: string } }
+            equipment: { type: array, items: { type: string } }
+        clarifications:
+          type: array
+          maxItems: 3
+          items:
+            type: object
+            additionalProperties: false
+            required: [label, prompt]
+            properties:
+              label: { type: string, maxLength: 16 }
+              prompt: { type: string, maxLength: 60 }
 
     AgentProfileSummary:
       type: object
@@ -4533,7 +4592,7 @@ components:
       properties:
         id: { type: string, example: default }
         source: { type: string, enum: [default, user] }
-        provider: { type: string, enum: [fixture, openai, opencode, none] }
+        provider: { type: string, enum: [fixture, openai, deepseek, none] }
         model: { type: string }
         capabilities:
           type: object
@@ -4551,11 +4610,11 @@ components:
       type: object
       required: [provider, model]
       properties:
-        provider: { type: string, enum: [fixture, openai, opencode] }
+        provider: { type: string, enum: [fixture, openai, deepseek] }
         model: { type: string, maxLength: 200 }
         apiKey:
           type: string
-          description: Write-only. Required for openai and opencode; sealed with an account-derived key. Never returned.
+          description: Write-only. Required for openai and deepseek; sealed with an account-derived key. Never returned.
         capabilities:
           type: object
           properties:

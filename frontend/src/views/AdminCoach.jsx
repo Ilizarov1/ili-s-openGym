@@ -28,7 +28,7 @@ const rel = ts => {
 }
 
 // Extra static headers for the endpoint, one `Name: value` per line — e.g. a gateway's
-// routing/session header (opencode Go's `x-opencode-session`). Parsed client-side so a
+// attribution header (`X-Request-Source`). Parsed client-side so a
 // typo reads as a message on the card, not a 400 the admin has to decode. Empty clears.
 export const headersToText = h => h && typeof h === 'object'
   ? Object.entries(h).map(([k, v]) => `${k}: ${v}`).join('\n')
@@ -218,7 +218,7 @@ export default function AdminCoach() {
         <div className="adm-hint" style={{ margin: 0 }}>The host is written to the job log, so you can always see where requests went.</div>
         <div className="adm-field">
           <label>Extra headers (optional)</label>
-          <TextArea key={headersToText(d.headers)} defaultValue={headersToText(d.headers)} placeholder={'x-opencode-session: 550e8400-…'} autoCapitalize="none" autoCorrect="off" rows={2}
+          <TextArea key={headersToText(d.headers)} defaultValue={headersToText(d.headers)} placeholder={'X-Request-Source: openGym'} autoCapitalize="none" autoCorrect="off" rows={2}
             onBlur={e => {
               const cur = headersToText(d.headers)
               if (e.target.value === cur) return

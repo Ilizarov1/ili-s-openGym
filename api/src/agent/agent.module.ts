@@ -18,9 +18,10 @@ import { AgentService } from './agent.service.js';
 import { AgentSessionStore } from './agent-session.store.js';
 import { AgentSessionsController } from './agent-sessions.controller.js';
 import { AgentStore } from './agent.store.js';
+import { RetrievalModule } from './retrieval/index.js';
 
 @Module({
-  imports: [PersistenceModule, AuthModule, MediaModule],
+  imports: [PersistenceModule, AuthModule, MediaModule, RetrievalModule],
   controllers: [
     AgentRunsController,
     AgentConfigsController,

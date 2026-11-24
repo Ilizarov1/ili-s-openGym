@@ -5,6 +5,7 @@
  * network code; the server and RN host inject a provider.
  */
 import { AgentError } from './errors.js';
+import { DEEPSEEK_DEFAULT_MODEL, deepseekSupportsImages } from './providers/index.js';
 
 const CAPS = ['text', 'image', 'tools'];
 
@@ -121,14 +122,15 @@ export function createModelGateway(options) {
 }
 
 /** The capabilities a provider table row advertises. */
-export function providerCapabilities(provider) {
+export function providerCapabilities(provider, model = DEEPSEEK_DEFAULT_MODEL) {
   switch (provider) {
     case 'fixture':
       return { text: true, image: true, tools: true };
     case 'openai':
     case 'compatible':
-    case 'opencode':
       return { text: true, image: true, tools: true };
+    case 'deepseek':
+      return { text: true, image: deepseekSupportsImages(model), tools: true };
     default:
       return { text: true, image: false, tools: false };
   }

@@ -161,15 +161,15 @@ describe('AgentSetup', () => {
     })
   })
 
-  it('offers opencode and requires a key for it', async () => {
+  it('offers DeepSeek and requires a key for it', async () => {
     await act(async () => { root.render(<AgentSetup />) })
     await flush()
     const select = host.querySelector('#agent-provider')
-    expect([...select.options].map(option => option.value)).toContain('opencode')
+    expect([...select.options].map(option => option.value)).toEqual(['fixture', 'openai', 'deepseek'])
     await act(async () => {
-      select.value = 'opencode'
+      select.value = 'deepseek'
       select.dispatchEvent(new Event('change', { bubbles: true }))
-      typeInto(host.querySelector('#agent-model'), 'deepseek-v4.1-flash-1017')
+      typeInto(host.querySelector('#agent-model'), 'deepseek-flash')
     })
     expect(host.querySelector('#agent-key')).toBeTruthy()
     const save = button(host, 'Save')

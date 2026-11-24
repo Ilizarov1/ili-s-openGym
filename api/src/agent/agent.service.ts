@@ -28,8 +28,10 @@ import { AgentProposalStore } from './agent-proposal.store.js';
 import { AgentRunStore, requestFingerprint } from './agent-run.store.js';
 import { AgentSessionStore } from './agent-session.store.js';
 import { AgentStore } from './agent.store.js';
-import { agentEnabled } from './agent.flags.js';
-import { createTaskRegistry, EXERCISE_SEARCH_TASK_ID, type RegisteredTask } from './tasks/index.js';
+import { agentEnabled, exerciseSearchVersion, fixtureAllowed } from './agent.flags.js';
+import { createTaskRegistry, type RegisteredTask } from './tasks/index.js';
+import { EXERCISE_SEARCH_V2_TASK_ID, type ExerciseSearchHistory } from './tasks/exercise-search-v2.js';
+import { RetrievalService } from './retrieval/index.js';
 
 interface ActiveRun {
   uid: string;
@@ -108,6 +110,7 @@ export class AgentService implements OnModuleInit {
     private readonly adapter: AgentProposalAdapter,
     private readonly gateway: AgentGateway,
     private readonly media: AgentMedia,
+    private readonly retrieval: RetrievalService,
   ) {
     this.tasks = createTaskRegistry({ store: this.store });
   }
@@ -171,6 +174,9 @@ export class AgentService implements OnModuleInit {
         ...(known.profile ? { profile: known.profile } : {}),
       };
     }
+    if (request.taskId === EXERCISE_SEARCH_V2_TASK_ID && exerciseSearchVersion() !== 'v2') {
+      throw new AgentError('retrieval_unavailable');
+    }
     await this.sessions.purgeExpired(uid);
     await this.runs.purgeExpired(uid);
     const resolved = await this.configs.resolve(uid, request.profileId);
@@ -209,7 +215,7 @@ export class AgentService implements OnModuleInit {
       ...(session ? { sessionId: session.id, sessionVersion: session.version } : {}),
     };
     const begun = await this.runs.begin(uid, run, {
-      ...(request.taskId === EXERCISE_SEARCH_TASK_ID ? { maxTurns: AI_MAX_RUNS_PER_SESSION } : {}),
+      ...(request.taskId.startsWith('exercise-search.') ? { maxTurns: AI_MAX_RUNS_PER_SESSION } : {}),
     });
     if (!begun.created) {
       return {
@@ -221,6 +227,9 @@ export class AgentService implements OnModuleInit {
     const controller = new AbortController();
     const state = createRunState(begun.run as unknown as RunRecord, {
       onChange: record => {
+        // A v2 follow-up can start as soon as the completed record is visible.
+        // Publish it after execute() has appended the ranked names to the session.
+        if (request.taskId === EXERCISE_SEARCH_V2_TASK_ID && record.status === 'completed') return;
         void this.runs.replace(uid, record as unknown as AgentStoredRun).catch(() => undefined);
       },
     });
@@ -301,7 +310,7 @@ export class AgentService implements OnModuleInit {
       // run-local function the shared orchestrator consumes from meta; with the
       // switch off the meta below is byte-for-byte what it was before.
       const exerciseSearchSink = process.env.AGENT_EXERCISE_SEARCH_DIAGNOSTICS === '1'
-        && task.id === EXERCISE_SEARCH_TASK_ID
+        && task.id.startsWith('exercise-search.')
         ? createExerciseSearchTrace({ traceId: request.requestId, source: 'api', enabled: true })
         : undefined;
       const context = bindContext({
@@ -331,6 +340,19 @@ export class AgentService implements OnModuleInit {
         },
         ids,
       }) as unknown as RunContext;
+      let exerciseHistory: ExerciseSearchHistory | undefined;
+      const postProcess = task.id === EXERCISE_SEARCH_V2_TASK_ID ? async (recognition: unknown) => {
+        const result = await this.retrieval.retrieve({
+          input: request.input,
+          recognition: recognition as Parameters<RetrievalService['retrieve']>[0]['recognition'],
+          signal: controller.signal,
+          diagnostic: exerciseSearchSink,
+          fixture: resolved.profile.provider === 'fixture' && fixtureAllowed(),
+        });
+        registered.validatePostProcessed?.(result.structured);
+        exerciseHistory = result.historyMeta;
+        return result.structured;
+      } : undefined;
       const result = await runAgent({
         task,
         request: {
@@ -348,9 +370,10 @@ export class AgentService implements OnModuleInit {
         proposals: this.proposalCreator(uid, run.runId) as unknown as ProposalService,
         state,
         signal: controller.signal,
+        postProcess,
       });
       if (session && state.status() === 'completed') {
-        const projection = registered.messageOf(request.input, result);
+        const projection = registered.messageOf(request.input, result, exerciseHistory);
         const images = projection.assistant.meta?.images;
         try {
           await this.sessions.append(uid, session.id, [
@@ -418,6 +441,7 @@ export class AgentService implements OnModuleInit {
     if (['completed', 'failed', 'cancelled', 'interrupted'].includes(current.status)) return current;
     const active = this.active.get(runId);
     if (active && active.uid === uid) {
+      if (active.state.status() === 'completed') return active.state.record() as unknown as AgentStoredRun;
       active.state.cancel('cancelled by the user');
       active.controller.abort();
       const finished = await this.runs.finish(uid, runId, active.state.record() as unknown as Partial<AgentStoredRun>);
