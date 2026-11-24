@@ -674,3 +674,44 @@ test('an invalid sessionMode is rejected by the shared orchestrator', async () =
     error => error.code === 'invalid_request',
   );
 });
+
+test('async post-processing keeps the run open and discards results after cancellation', async () => {
+  for (const cancel of [false, true]) {
+    const context = contextFor();
+    const state = createRunState(recordFor(context));
+    const controller = new AbortController();
+    const processing = Promise.withResolvers();
+    const finish = Promise.withResolvers();
+    const run = runAgent({
+      task: stubTask({
+        outputSchema: {
+          type: 'object',
+          properties: { text: { type: 'string' } },
+          required: ['text'],
+          additionalProperties: false,
+        },
+      }),
+      request: { taskId: 'stub.v1', requestId: 'req_12345678', profileId: 'profile-1', input: { prompt: 'hello' } },
+      context,
+      state,
+      signal: controller.signal,
+      gateway: { async invoke() { return { text: 'recognized' }; } },
+      async postProcess(recognition) {
+        processing.resolve(recognition);
+        return finish.promise;
+      },
+    });
+    assert.deepEqual(await processing.promise, { text: 'recognized' });
+    assert.equal(state.status(), 'running');
+    assert.equal(state.record().result, undefined);
+    if (cancel) {
+      state.cancel('user cancelled');
+      controller.abort();
+    }
+    finish.resolve({ rankedIds: ['0534'] });
+    const result = await run;
+    assert.equal(result.status, cancel ? 'cancelled' : 'completed');
+    if (cancel) assert.equal(result.result, undefined);
+    else assert.deepEqual(result.result.structured, { rankedIds: ['0534'] });
+  }
+});

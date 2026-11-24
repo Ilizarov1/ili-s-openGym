@@ -35,7 +35,7 @@ export type AiSearchItem = {
   exerciseId: string;
   name: string;
   rationale: string;
-  level: 'high' | 'medium' | 'low';
+  level?: 'high' | 'medium' | 'low';
 };
 
 export type AiSearchFallback = {
@@ -73,6 +73,7 @@ export type AiStartTurnInput = {
   mediaAttemptId?: string;
   /** Fixture/acceptance only; real providers ignore it. */
   fixtureCase?: 'candidates' | 'fallback-only' | 'error';
+  confirmedEquipment?: string;
 };
 
 export type AiSearchImageInput = AgentAiImageInput;
@@ -111,6 +112,7 @@ export type AiSearchControllerOptions = {
   server: ServerAgent | null;
   launch: AgentLaunch;
   sessionId?: string;
+  serverTaskId?: string;
 };
 
 /** The stable error code a thrown failure carries, when it carries one at all. */
@@ -161,11 +163,13 @@ export class AiSearchController {
   private turn = 0;
   private activeRunId: string | null = null;
   private disposed = false;
+  private readonly serverTaskId: string;
 
   constructor(options: AiSearchControllerOptions) {
     this.connection = options.connection;
     this.runtime = options.runtime;
     this.server = options.server;
+    this.serverTaskId = options.serverTaskId === 'exercise-search.v2' ? options.serverTaskId : EXERCISE_SEARCH_TASK_ID;
     this.launchValue = options.launch;
     this.scope = options.runtime.scope;
     this.sessionId = options.sessionId ?? `ses_${randomUUID()}`;
@@ -185,6 +189,10 @@ export class AiSearchController {
 
   get profile(): AgentProfilePublic {
     return this.launchValue.profile;
+  }
+
+  get taskId(): string {
+    return this.launchValue.location === 'server' ? this.serverTaskId : EXERCISE_SEARCH_TASK_ID;
   }
 
   /** Re-resolve the model inside the fixed execution location. */
@@ -229,6 +237,7 @@ export class AiSearchController {
       ...(input.hintText.trim() ? { hintText: input.hintText.trim() } : {}),
       ...(images.length ? { images: images.map(image => image.dataUrl) } : {}),
       ...(input.fixtureCase ? { fixtureCase: input.fixtureCase } : {}),
+      ...(this.launchValue.location === 'server' && input.confirmedEquipment ? { confirmedEquipment: input.confirmedEquipment } : {}),
     };
     validateExerciseSearchInput(payload);
     const requestId = createId('req', randomUUID);
@@ -259,7 +268,7 @@ export class AiSearchController {
           input: payload,
           sessionId: this.sessionId,
           sessionMode,
-          taskId: EXERCISE_SEARCH_TASK_ID,
+          taskId: this.serverTaskId,
         });
       } else {
         run = await this.runtime.start({
@@ -294,7 +303,7 @@ export class AiSearchController {
         runId: run.runId,
         sessionId: this.sessionId,
         location: 'server',
-        taskId: EXERCISE_SEARCH_TASK_ID,
+        taskId: this.launchValue.location === 'server' ? this.serverTaskId : EXERCISE_SEARCH_TASK_ID,
         status: run.status,
         createdAt: run.createdAt,
       });
@@ -393,6 +402,12 @@ export function aiErrorMessage(code: string | undefined, fallback?: string): str
       return '模型暂时没有返回结果，请重试。';
     case 'model_timeout':
       return '模型响应超时，请重试。';
+    case 'retrieval_unavailable':
+      return '动作检索服务暂时不可用，请稍后重试。';
+    case 'retrieval_index_not_ready':
+      return '动作检索索引尚未就绪，请稍后重试。';
+    case 'retrieval_timeout':
+      return '动作检索超时，请稍后重试。';
     case 'run_cancelled':
       return '这次检索已取消。';
     case 'run_not_found':

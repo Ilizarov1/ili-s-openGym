@@ -29,6 +29,7 @@ import { deflateSync } from 'node:zlib'
 import { AgentError } from '../../api/agent-runtime/index.js'
 import { runCli } from './ai-search-eval.mjs'
 import { createEvaluationModelRunner } from './ai-search-eval-model.mjs'
+import { compareEvaluations } from './ai-search-eval-compare.mjs'
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const CLI = path.join(REPO_ROOT, 'frontend', 'scripts', 'ai-search-eval.mjs')
@@ -695,6 +696,227 @@ test('a provider error records only a safe code, the batch continues and the exi
     assert.deepEqual(after.platforms.rn.finalIds, ['0576'])
     assert.ok(!reportText.includes(SECRET_KEY), 'the provider error message leaked into the report')
     assert.ok(!run.stdout.includes(SECRET_KEY) && !run.stderr.includes(SECRET_KEY), 'the provider error message leaked to the console')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('server_v2 fair top5 truncation, benchmark strictTop1/ndcg, wrongHigh/wrongBodyPart, funnel and comparison privacy', async () => {
+  const png = tinyPng()
+  const { root, manifestPath } = await writeFixtures({
+    samples: [
+      fixtureSample('m-rank6', {
+        group: 'standard_positive',
+        expectedIds: ['0576', '0577'],
+        image: 'images/probe.png',
+        hintText: 'chest press',
+      }),
+      fixtureSample('m-wrong-bp-high', {
+        group: 'hard_confusing',
+        expectedIds: ['0576'],
+        image: 'images/probe.png',
+        hintText: `secret ${SECRET_KEY} ${CUSTOM_ID} ${DATA_URL_MARKER}`,
+      }),
+      fixtureSample('m-bad', {
+        group: 'bad_image',
+        family: 'bad-image',
+        expectation: 'empty',
+        expectedIds: [],
+        expectedEquipment: [],
+        image: 'images/probe.png',
+        hintText: 'blurry image',
+      }),
+    ],
+    files: [['images/probe.png', png]],
+  })
+  const benchmarkPath = path.join(root, 'benchmark.json')
+  await writeFile(benchmarkPath, `${JSON.stringify([
+    {
+      id: 'm-rank6',
+      ground_truth_id: '0576',
+      alternative_ground_truth_ids: ['0577'],
+      group_id: 'g1',
+      sample_type: 'standard_positive',
+      is_ood: false,
+      visible_features: { loading_type: 'selectorized', angle: 'front_45' },
+      expected_trajectory: ['model', 'recognition', 'retrieval_text', 'retrieval_vector', 'retrieval_fusion', 'rerank', 'display'],
+      expected_behavior: { outcome: 'match' },
+    },
+    {
+      id: 'm-wrong-bp-high',
+      ground_truth_id: '0576',
+      group_id: 'g2',
+      sample_type: 'hard_confusing',
+      is_ood: false,
+      visible_features: { loading_type: 'selectorized', angle: 'front_0' },
+      expected_trajectory: ['model', 'recognition', 'retrieval_text', 'retrieval_vector', 'retrieval_fusion', 'rerank', 'display'],
+      expected_behavior: { outcome: 'match_with_clarification' },
+    },
+    {
+      id: 'm-bad',
+      ground_truth_id: null,
+      group_id: 'g3',
+      sample_type: 'bad_image',
+      is_ood: true,
+      visible_features: { occlusion: 'blur' },
+      expected_trajectory: ['model', 'recognition', 'display'],
+      expected_behavior: { outcome: 'reject_insufficient_info' },
+    },
+  ], null, 2)}\n`)
+
+  try {
+    const gateway = fixtureGateway({
+      structuredOf: modelInput => {
+        if (modelInput.user.text.includes('blurry')) {
+          return { candidates: [], fallback: { understanding: 'cannot identify blurry frame' } }
+        }
+        return {
+          ...CLEANED_STRUCTURED,
+          candidates: [{
+            ...CLEANED_STRUCTURED.candidates[0],
+            rationale: `cue ${SECRET_KEY} ${CUSTOM_ID}`,
+          }],
+          fallback: { understanding: `desc ${DATA_URL_MARKER}` },
+        }
+      },
+    })
+
+    const fakeServerV2 = {
+      async match({ structured }, { hintText, diagnostic }) {
+        if (!structured.candidates.length) {
+          return { structured: { rankedIds: [], items: [], fallback: structured.fallback } }
+        }
+        const isRank6 = hintText.includes('chest press')
+        const ids = isRank6
+          ? ['9001', '9002', '9003', '9004', '9005', '0576', '0577']
+          : ['1221', '0576']
+        const scores = isRank6 ? [0.72, 0.70, 0.68, 0.66, 0.65, 0.61, 0.59] : [0.91, 0.45]
+        const textTop = isRank6
+          ? Array.from({ length: 10 }, (_, idx) => ({ id: idx === 9 ? '0576' : `800${idx}`, score: 1 - idx * 0.05 }))
+          : [{ id: '1221', score: 0.95 }]
+        diagnostic?.({ stage: 'retrieval_text', backend: 'postgres', elapsedMs: 12, candidateCount: 10, top: textTop, hasConfirmedEquipment: false })
+        diagnostic?.({ stage: 'retrieval_vector', backend: 'local', elapsedMs: 18, candidateCount: 10, top: [{ id: '0576', score: 0.88 }], hasConfirmedEquipment: false })
+        diagnostic?.({ stage: 'retrieval_fusion', elapsedMs: 2, candidateCount: 8, top: [{ id: '0576', score: 0.032 }], hasConfirmedEquipment: false })
+        diagnostic?.({ stage: 'rerank', backend: 'local', elapsedMs: 45, candidateCount: ids.length, top: ids.map((id, i) => ({ id, score: scores[i] })), hasConfirmedEquipment: false })
+        return {
+          structured: {
+            rankedIds: ids,
+            items: ids.map((id, i) => ({
+              id,
+              level: scores[i] >= 0.8 ? 'high' : scores[i] >= 0.5 ? 'medium' : 'low',
+              rationale: `leak ${SECRET_KEY}`,
+            })),
+            fallback: structured.fallback,
+            clarifications: isRank6 ? undefined : [{ label: '推胸/耸肩', prompt: '确认动作' }],
+          },
+        }
+      },
+    }
+
+    const outPath = path.join(root, 'report-v2.json')
+    const run = await runInProcess(
+      ['--mode', 'e2e', '--manifest', manifestPath, '--benchmark', benchmarkPath, '--include-server-v2', '--out', outPath],
+      {
+        modelRunner: fixtureRunner(gateway),
+        adapters: {
+          web: fakeMatcher({ finalIds: ['0576'] }),
+          rn: fakeMatcher({ finalIds: ['0577'] }),
+          serverV2: fakeServerV2,
+          publicEquipmentById: {
+            '0576': 'leverage machine',
+            '0577': 'leverage machine',
+            '1221': 'leverage machine',
+            '9001': 'leverage machine',
+          },
+          publicBodyPartById: {
+            '0576': 'chest',
+            '0577': 'chest',
+            '1221': 'back',
+            '9001': 'chest',
+          },
+        },
+      },
+    )
+    assert.equal(run.code, 0)
+    assert.match(run.stdout, /^matched: web=3 rn=3 server_v2=3$/m)
+    const reportText = await readFile(outPath, 'utf8')
+    for (const marker of [SECRET_KEY, CUSTOM_ID, DATA_URL_MARKER, IMAGE_NAME]) {
+      assert.ok(!reportText.includes(marker), 'v2 report must not leak secrets or private markers')
+    }
+    const report = JSON.parse(reportText)
+    const sWeb = report.summary.byPlatform.web
+    const sRn = report.summary.byPlatform.rn
+    const sV2 = report.summary.byPlatform.server_v2
+    // m-rank6 has 0576 (primary) and m-wrong-bp-high has 0576 on web/rn
+    assert.deepEqual(sWeb.strictTop1, { numerator: 2, denominator: 2 })
+    assert.deepEqual(sRn.strictTop1, { numerator: 0, denominator: 2 }, '0577 is alt on m-rank6 and miss on m-wrong-bp-high')
+    assert.deepEqual(sRn.top1, { numerator: 1, denominator: 2 })
+    // server_v2: m-rank6 hits at rank 6 -> MUST NOT count in top5, MUST count in top10
+    assert.deepEqual(sV2.top5, { numerator: 1, denominator: 2 })
+    assert.deepEqual(sV2.top10, { numerator: 2, denominator: 2 })
+    assert.equal(sV2.mrrAt5, 0.25)
+    assert.equal(sV2.mrrAt10, 0.3333)
+    // m-wrong-bp-high returns 1221 (back, leverage machine) at 0.91 (high) -> wrongEquipment 0, wrongBodyPart 1, wrongHigh 1
+    assert.deepEqual(sV2.wrongEquipment, { numerator: 0, denominator: 2 })
+    assert.deepEqual(sV2.wrongBodyPart, { numerator: 1, denominator: 2 })
+    assert.deepEqual(sV2.wrongHigh, { numerator: 1, denominator: 3 })
+    assert.deepEqual(sV2.v2Funnel.textRecallAt75, { numerator: 1, denominator: 2 })
+    assert.deepEqual(sV2.v2Funnel.vectorRecallAt75, { numerator: 2, denominator: 2 })
+    assert.deepEqual(sV2.v2Funnel.fusionRecallAt30, { numerator: 2, denominator: 2 })
+    assert.deepEqual(sV2.v2Funnel.emptyShortCircuitRate, { numerator: 1, denominator: 1 })
+    assert.deepEqual(sV2.badImageFp, { numerator: 0, denominator: 1 })
+
+    const compared = compareEvaluations({
+      inputs: [{ label: 'photo-only', report }],
+      baseline: 'rn',
+    })
+    assert.equal(compared.tiers[0].flips.toNegative.length, 1)
+    assert.equal(compared.tiers[0].flips.toPositive.length, 1)
+    for (const marker of [SECRET_KEY, CUSTOM_ID, DATA_URL_MARKER, IMAGE_NAME]) {
+      assert.ok(!compared.markdown.includes(marker), 'comparison markdown must not leak secrets')
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('server_v2 fixture adapter runs end-to-end through real RetrievalService', async () => {
+  const png = tinyPng()
+  const { root, manifestPath } = await writeFixtures({
+    samples: [fixtureSample('fx-v2', {
+      expectedIds: ['1231'],
+      expectedEquipment: ['dumbbell'],
+      image: 'images/probe.png',
+      hintText: 'seated dumbbell shoulder press',
+    })],
+    files: [['images/probe.png', png]],
+  })
+  try {
+    const gateway = fixtureGateway({
+      structuredOf: () => ({
+        candidates: [{
+          name: '哑铃坐姿单臂肩部推举',
+          nameEn: 'dumbbell seated one arm shoulder press',
+          rationale: 'seated dumbbell press',
+          level: 'high',
+          equipment: 'dumbbell',
+          bodyPart: 'shoulders',
+        }],
+        fallback: { understanding: 'seated dumbbell shoulder press', bodyParts: ['shoulders'], equipment: ['dumbbell'] },
+      }),
+    })
+    const outPath = path.join(root, 'report-fx-v2.json')
+    const run = await runInProcess(
+      ['--mode', 'e2e', '--manifest', manifestPath, '--include-server-v2', '--server-v2-mode', 'fixture', '--out', outPath],
+      {
+        modelRunner: fixtureRunner(gateway),
+        env: { INIT_CWD: REPO_ROOT },
+      },
+    )
+    assert.equal(run.code, 0, `stderr: ${run.stderr}`)
+    const report = await readJson(outPath)
+    assert.equal(report.summary.byPlatform.server_v2.matched, 1)
+    assert.ok(report.samples[0].platforms.server_v2.finalIds.includes('1231'))
   } finally {
     await rm(root, { recursive: true, force: true })
   }

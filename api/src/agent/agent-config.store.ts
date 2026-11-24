@@ -2,7 +2,7 @@
  *
  * The default profile mirrors the Coach admin configuration, but only in
  * instance auth mode and only for the fixture or an administrator-configured
- * HTTP endpoint. A server account may add its own fixture/OpenAI profile; it
+ * HTTP endpoint. A server account may select a registered provider; it
  * never supplies a custom endpoint, because outbound targets are the server's
  * decision, not an account's.
  */
@@ -14,12 +14,12 @@ import { providerCapabilities } from '../../agent-runtime/model-gateway.js';
 import type { AgentAccountData, AgentProfilePublic, AgentStoredProfile } from './agent.types.js';
 import { AgentCrypto } from './agent-crypto.js';
 import { agentVision, fixtureAllowed } from './agent.flags.js';
-import { OPENCODE_BASE_URL } from '../../agent-runtime/providers/index.js';
+import { DEEPSEEK_BASE_URL, DEEPSEEK_DEFAULT_MODEL } from '../../agent-runtime/providers/index.js';
 import { AgentStore } from './agent.store.js';
 
-const SERVER_PROVIDERS = new Set(['fixture', 'openai', 'opencode']);
+const SERVER_PROVIDERS = new Set(['fixture', 'openai', 'deepseek']);
 const DEFAULT_ID = 'default';
-const DEFAULT_OPENCODE_MODEL = 'deepseek-v4.1-flash';
+type ServerProvider = 'fixture' | 'openai' | 'deepseek';
 
 export interface ResolvedAgentProfile {
   profile: AgentProfilePublic & { capabilities: { text: boolean; image: boolean; tools: boolean } };
@@ -36,32 +36,32 @@ function keyHintOf(key: string): string {
 
 function labelOf(provider: string): string {
   if (provider === 'fixture') return 'Fixture';
-  if (provider === 'opencode') return 'OpenCode';
+  if (provider === 'deepseek') return 'DeepSeek';
   return 'OpenAI';
 }
 
-function capabilitiesFor(provider: string, override?: unknown): { text: boolean; image: boolean; tools: boolean } {
-  const base = providerCapabilities(provider);
+function capabilitiesFor(provider: string, model: string, override?: unknown): { text: boolean; image: boolean; tools: boolean } {
+  const base = providerCapabilities(provider, model);
   const caps = override && typeof override === 'object' && !Array.isArray(override)
     ? override as Record<string, unknown>
     : null;
   if (caps && caps.image !== undefined) {
     if (typeof caps.image !== 'boolean') throw new AgentError('invalid_request', 'capabilities.image must be a boolean');
-    base.image = caps.image;
+    base.image = caps.image && (provider !== 'deepseek' || base.image);
   }
   return base;
 }
 
-function providerOf(value: unknown): 'fixture' | 'openai' | 'opencode' {
+function providerOf(value: unknown): ServerProvider {
   const provider = String(value || '');
   if (!SERVER_PROVIDERS.has(provider)) {
-    throw new AgentError('invalid_request', 'provider must be fixture, openai or opencode');
+    throw new AgentError('invalid_request', 'provider must be fixture, openai or deepseek');
   }
-  return provider as 'fixture' | 'openai' | 'opencode';
+  return provider as ServerProvider;
 }
 
 function needsKey(provider: string): boolean {
-  return provider === 'openai' || provider === 'opencode';
+  return provider === 'openai' || provider === 'deepseek';
 }
 
 @Injectable()
@@ -72,24 +72,25 @@ export class AgentConfigStore {
   ) {}
 
   private defaultProfile(uid: string): ResolvedAgentProfile | null {
-    const opencodeKey = String(process.env.OPENCODE_API_KEY || '').trim();
-    if (opencodeKey) {
-      const model = String(process.env.OPENCODE_MODEL || DEFAULT_OPENCODE_MODEL).trim() || DEFAULT_OPENCODE_MODEL;
+    const deepseekKey = String(process.env.DEEPSEEK_API_KEY || '').trim();
+    if (deepseekKey) {
+      const model = String(process.env.DEEPSEEK_MODEL || '').trim() || DEEPSEEK_DEFAULT_MODEL;
+      const capabilities = providerCapabilities('deepseek', model);
       return {
         profile: {
           id: DEFAULT_ID,
           source: 'default',
-          provider: 'opencode',
+          provider: 'deepseek',
           model,
-          capabilities: { text: true, image: agentVision(), tools: true },
+          capabilities: { ...capabilities, image: capabilities.image && agentVision() },
           version: 1,
-          label: 'OpenCode (instance)',
+          label: 'DeepSeek (instance)',
           available: true,
         },
-        provider: 'opencode',
+        provider: 'deepseek',
         model,
-        baseUrl: OPENCODE_BASE_URL,
-        apiKey: opencodeKey,
+        baseUrl: DEEPSEEK_BASE_URL,
+        apiKey: deepseekKey,
       };
     }
     if (!coachConfig.isEnabled() || !coachConfig.isConnected()) return null;
@@ -142,17 +143,23 @@ export class AgentConfigStore {
   }
 
   private userPublic(profile: AgentStoredProfile): AgentProfilePublic {
+    const registered = SERVER_PROVIDERS.has(profile.provider);
+    const reason = !registered
+      ? 'This provider has been retired. Choose an available provider and enter its key.'
+      : profile.provider === 'fixture' && !fixtureAllowed()
+        ? 'Fixture profiles are not available on this instance.'
+        : undefined;
     return {
       id: profile.id,
       source: 'user',
-      provider: profile.provider,
+      provider: registered ? profile.provider : 'none',
       model: profile.model,
-      capabilities: profile.capabilities,
-      ...(profile.keyHint ? { keyHint: profile.keyHint } : {}),
+      capabilities: registered ? profile.capabilities : { text: false, image: false, tools: false },
+      ...(registered && profile.keyHint ? { keyHint: profile.keyHint } : {}),
       version: profile.version,
-      label: labelOf(profile.provider),
-      available: profile.provider !== 'fixture' || fixtureAllowed(),
-      ...(profile.provider === 'fixture' && !fixtureAllowed() ? { reason: 'Fixture profiles are not available on this instance.' } : {}),
+      label: registered ? labelOf(profile.provider) : 'Retired configuration',
+      available: !reason,
+      ...(reason ? { reason } : {}),
     };
   }
 
@@ -184,7 +191,7 @@ export class AgentConfigStore {
       id,
       provider,
       model,
-      capabilities: capabilitiesFor(provider, body.capabilities),
+      capabilities: capabilitiesFor(provider, model, body.capabilities),
       ...(needsKey(provider) ? {
         secret: this.crypto.encrypt(uid, id, 1, apiKey),
         keyHint: keyHintOf(apiKey),
@@ -211,7 +218,7 @@ export class AgentConfigStore {
     await this.store.update(uid, data => {
       const current = data.profiles[profileId];
       if (!current) throw new AgentError('profile_not_found');
-      const provider = body.provider === undefined ? current.provider : providerOf(body.provider);
+      const provider = providerOf(body.provider === undefined ? current.provider : body.provider);
       if (provider === 'fixture' && !fixtureAllowed()) {
         throw new AgentError('invalid_request', 'fixture profiles are not available on this instance');
       }
@@ -227,7 +234,7 @@ export class AgentConfigStore {
           if (!this.crypto.enabled) throw new AgentError('agent_config_disabled');
           secret = this.crypto.encrypt(uid, profileId, version, suppliedKey);
           keyHint = keyHintOf(suppliedKey);
-        } else if (current.secret) {
+        } else if (provider === current.provider && current.secret) {
           if (!this.crypto.enabled) throw new AgentError('agent_config_disabled');
           const plaintext = this.crypto.decrypt(uid, profileId, current.version, current.secret);
           secret = this.crypto.encrypt(uid, profileId, version, plaintext);
@@ -242,7 +249,8 @@ export class AgentConfigStore {
         ...current,
         provider,
         model,
-        capabilities: capabilitiesFor(provider, body.capabilities === undefined ? current.capabilities : body.capabilities),
+        capabilities: capabilitiesFor(provider, model, body.capabilities === undefined
+          && provider === current.provider && model === current.model ? current.capabilities : body.capabilities),
         ...(secret ? { secret } : {}),
         ...(keyHint ? { keyHint } : {}),
         version,
@@ -278,16 +286,13 @@ export class AgentConfigStore {
     const data = this.store.read(uid);
     const profile = data.profiles[profileId];
     if (!profile) throw new AgentError('profile_not_found', undefined, { details: { profileId } });
-    if (profile.provider === 'fixture' && !fixtureAllowed()) {
-      throw new AgentError('profile_not_found', 'fixture profiles are not available on this instance');
-    }
+    const publicProfile = this.userPublic(profile);
+    if (!publicProfile.available) throw new AgentError('profile_not_found', publicProfile.reason);
     let apiKey: string | null = null;
     if (needsKey(profile.provider)) {
       if (!profile.secret) throw new AgentError('agent_config_disabled', 'this profile has no credential');
       apiKey = this.crypto.decrypt(uid, profile.id, profile.version, profile.secret);
     }
-    const publicProfile = this.userPublic(profile);
-    if (!publicProfile.available) throw new AgentError('profile_not_found', publicProfile.reason);
     return {
       profile: publicProfile,
       provider: profile.provider,

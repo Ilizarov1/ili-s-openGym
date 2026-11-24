@@ -4,10 +4,10 @@
 //   createEvaluationModelRunner(env, { provider?, gateway? }) -> { run(sampleInput, diagnostic) }
 //
 // Provider selection comes from the OPEN_GYM_EVAL_* variables:
-//   OPEN_GYM_EVAL_PROVIDER  fixture | openai | compatible | opencode
+//   OPEN_GYM_EVAL_PROVIDER  fixture | openai | compatible | deepseek
 //   OPEN_GYM_EVAL_MODEL     required for the three real providers
-//   OPEN_GYM_EVAL_BASE_URL  openai default / compatible required / opencode fixed
-//   OPEN_GYM_EVAL_API_KEY   required; opencode falls back to OPENCODE_API_KEY
+//   OPEN_GYM_EVAL_BASE_URL  openai default / compatible required / deepseek fixed
+//   OPEN_GYM_EVAL_API_KEY   required; deepseek can use DEEPSEEK_API_KEY
 //
 // Configuration problems throw before any sample request is sent, so the
 // entry can exit 2 without touching the network. The profile lives only in
@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import {
   AgentError,
-  OPENCODE_BASE_URL,
+  DEEPSEEK_BASE_URL,
   PROVIDER_IDS,
   bindContext,
   createCatalogueSearchTool,
@@ -55,7 +55,7 @@ function configError(message) {
 function resolveProviderConfig(env) {
   const provider = clean(env.OPEN_GYM_EVAL_PROVIDER)
   if (!PROVIDER_IDS.includes(provider)) {
-    throw configError('OPEN_GYM_EVAL_PROVIDER must be one of fixture, openai, compatible, opencode')
+    throw configError('OPEN_GYM_EVAL_PROVIDER must be one of fixture, openai, compatible, deepseek')
   }
   if (provider === 'fixture') {
     // fixture 不读密钥、不访问网络；默认走任务自带的 candidates fixture case。
@@ -63,13 +63,13 @@ function resolveProviderConfig(env) {
   }
   const model = clean(env.OPEN_GYM_EVAL_MODEL)
   if (!model) throw configError(`OPEN_GYM_EVAL_MODEL is required for the ${provider} provider`)
-  const apiKey = clean(provider === 'opencode'
-    ? (env.OPEN_GYM_EVAL_API_KEY || env.OPENCODE_API_KEY)
+  const apiKey = clean(provider === 'deepseek'
+    ? (env.OPEN_GYM_EVAL_API_KEY || env.DEEPSEEK_API_KEY)
     : env.OPEN_GYM_EVAL_API_KEY)
   if (!apiKey) throw configError(`an API key is required for the ${provider} provider`)
   let baseUrl
-  if (provider === 'opencode') {
-    baseUrl = OPENCODE_BASE_URL
+  if (provider === 'deepseek') {
+    baseUrl = DEEPSEEK_BASE_URL
   } else if (provider === 'openai') {
     baseUrl = clean(env.OPEN_GYM_EVAL_BASE_URL) || OPENAI_DEFAULT_BASE_URL
   } else {
@@ -90,7 +90,7 @@ export function createEvaluationModelRunner(env = process.env, overrides = {}) {
     profileId: EVALUATION_PROFILE_ID,
     version: 1,
     provider: config.provider,
-    capabilities: { text: true, image: true, tools: false },
+    capabilities: { text: true, image: provider.capabilities?.image !== false, tools: false },
     ...(config.providerOptions.model ? { model: config.providerOptions.model } : {}),
   }
   const gateway = overrides.gateway ?? createModelGateway({

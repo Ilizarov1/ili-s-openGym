@@ -17,6 +17,7 @@ const patch = (path, body) => request(path, { method: 'PATCH', body: JSON.string
 const remove = path => request(path, { method: 'DELETE' })
 
 export const agentApi = {
+  getPublicConfig: () => request('/api/config'),
   listProfiles: () => request('/api/agent/configs'),
   createProfile: body => post('/api/agent/configs', body),
   updateProfile: (id, body) => patch(`/api/agent/configs/${encodeURIComponent(id)}`, body),

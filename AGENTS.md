@@ -24,6 +24,10 @@ api/agent-runtime/   共享 Agent 运行核心（契约、围栏、编排、提�
 api/agent-runtime/tasks/ 共享业务任务：exercise-search.v1、系统提示词与词表快照
 api/agent-runtime/exercise-search-diagnostics.js  跨端 exercise_search 诊断事件模块
 api/src/agent/       NestJS Agent 模块、按账号存储、配置与作业
+api/src/agent/retrieval/  服务端动作检索、PostgreSQL 索引与模型客户端
+services/retrieval-model/  本机 embedding 与 Cross-Encoder HTTP 服务
+scripts/windows/     Windows 检索依赖初始化与启停
+scripts/build-retrieval-index.mjs  公开动作索引构建、版本切换和就绪检查
 frontend/src/agent/  Web 服务端 Agent 客户端与 Zustand 状态
 frontend/src/lib/exercise-ai-search.js  双端 AI 候选匹配（searchScored + CJK 回退）
 frontend/src/components/ExerciseAiSearch.jsx  Web 动作库/选择器共用识别态
@@ -89,6 +93,8 @@ docs/
     REVIEW.md                            评审整改清单与本轮修改记录
     REVIEW2.md                           第二轮评审问题、证据与整改顺序
   ai-exercise-search/
+    SERVER_RETRIEVAL_PLAN.md             服务端双路召回、融合精排、契约和本机依赖设计
+    SERVER_RETRIEVAL_EXECUTION.md        工作树、Windows 配置、索引、API、双端与切换步骤
     REQUIREMENTS.md                      多模态动作检索的范围、入口、交互和验收条件
     DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
     EXECUTION.md                         阶段 0–7 实施清单、命令矩阵与记录

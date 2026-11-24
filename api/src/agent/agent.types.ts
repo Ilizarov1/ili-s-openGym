@@ -19,7 +19,8 @@ export interface EncryptedSecret {
 
 export interface AgentStoredProfile {
   id: string;
-  provider: 'fixture' | 'openai' | 'opencode';
+  // Retired profiles stay readable so their owners can replace them.
+  provider: 'fixture' | 'openai' | 'deepseek' | 'opencode';
   model: string;
   capabilities: AgentCapabilities;
   secret?: EncryptedSecret;

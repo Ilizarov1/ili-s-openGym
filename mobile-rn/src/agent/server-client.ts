@@ -133,7 +133,7 @@ export function createServerAgent(connection: Connection) {
     confirmProposal: (id: string) => request<{ proposal: AgentProposal; result: unknown; applied: boolean }>(connection, `/proposals/${encodeURIComponent(id)}/confirm`, 'POST'),
     rejectProposal: (id: string) => request<AgentProposal>(connection, `/proposals/${encodeURIComponent(id)}/reject`, 'POST'),
 
-    async status(): Promise<{ enabled: boolean }> {
+    async status(): Promise<{ enabled: boolean; exerciseSearchVersion: 'v1' | 'v2' }> {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20_000);
       try {
@@ -142,8 +142,8 @@ export function createServerAgent(connection: Connection) {
           headers: { Accept: 'application/json', Authorization: `Bearer ${connection.token}` },
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json() as { agent?: { enabled?: boolean } };
-        return { enabled: data.agent?.enabled !== false };
+        const data = await response.json() as { agent?: { enabled?: boolean; exerciseSearchVersion?: unknown } };
+        return { enabled: data.agent?.enabled !== false, exerciseSearchVersion: data.agent?.exerciseSearchVersion === 'v2' ? 'v2' : 'v1' };
       } finally {
         clearTimeout(timer);
       }

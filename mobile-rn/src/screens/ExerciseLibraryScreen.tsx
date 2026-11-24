@@ -68,7 +68,7 @@ import {
   structuredOf,
 } from '../agent';
 import type {
-  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AgentRunRow, AiClarificationChip,
+  AgentAiImageInput, AgentAiImageRow, AgentLaunch, AgentProfileSummary, AgentRunRow, AiClarificationChip, AiSearchMatch,
   AiRunRecovery, AiSearchFallback, AiSearchItem,
 } from '../agent';
 import type { AiTurnDiagnostics, AiTurnEnd } from '../agent/ai-search';
@@ -251,6 +251,9 @@ export function ExerciseLibraryScreen({
   const [aiLaunch, setAiLaunch] = useState<AgentLaunch | null>(null);
   const [aiFixtureCase, setAiFixtureCase] = useState<FixtureCase>('candidates');
   const [aiSheetText, setAiSheetText] = useState('');
+  const [aiSearchVersion, setAiSearchVersion] = useState<'v1' | 'v2'>('v1');
+  const [aiConfirmedEquipment, setAiConfirmedEquipment] = useState('');
+  const [aiEquipmentPickerOpen, setAiEquipmentPickerOpen] = useState(false);
   const [aiDraftImage, setAiDraftImage] = useState<AgentAiImageInput | null>(null);
   const [aiImageNotice, setAiImageNotice] = useState('');
   const [aiSheetError, setAiSheetError] = useState<{ code?: string; message: string } | null>(null);
@@ -462,6 +465,11 @@ export function ExerciseLibraryScreen({
     setAiPickerBusy(true);
     try {
       const launch = await resolveLaunchFor(false);
+      const status = launch.location === 'server' && serverAgent
+        ? await serverAgent.status().catch(() => ({ enabled: true, exerciseSearchVersion: 'v1' as const }))
+        : null;
+      setAiSearchVersion(status?.exerciseSearchVersion === 'v2' ? 'v2' : 'v1');
+      setAiConfirmedEquipment('');
       setAiLaunch(launch);
       setAiNeedsConfig(false);
       setAiSheetOpen(true);
@@ -611,6 +619,7 @@ export function ExerciseLibraryScreen({
     try {
       const started = await controller.startTurn({
         hintText: trimmed,
+        ...(controller.taskId === 'exercise-search.v2' && aiConfirmedEquipment ? { confirmedEquipment: aiConfirmedEquipment } : {}),
         ...(image ? { image } : {}),
         ...(fixtureCase ? { fixtureCase } : {}),
         ...(mediaAttemptId ? { mediaAttemptId } : {}),
@@ -633,7 +642,20 @@ export function ExerciseLibraryScreen({
       if (final.status === 'completed') {
         const structured = structuredOf(final);
         if (structured == null) throw new Error('the model returned no structured result');
-        const matched = matchAiSearch(
+        let matched: AiSearchMatch;
+        if (controller.taskId === 'exercise-search.v2') {
+          const value = structured as { rankedIds?: unknown; items?: unknown; fallback?: AiSearchFallback; clarifications?: AiClarificationChip[] };
+          const metadata = new Map((Array.isArray(value.items) ? value.items : []).filter(item => item && typeof item === 'object').map(item => [(item as { id?: string }).id, item as Record<string, unknown>]));
+          const items = (Array.isArray(value.rankedIds) ? value.rankedIds : []).slice(0, 10).flatMap(id => {
+            if (typeof id !== 'string') return [];
+            const ex = catalogueExercise(id);
+            if (!ex || ex.id !== id) return [];
+            const meta = metadata.get(id) ?? {};
+            const level = ['high', 'medium', 'low'].includes(String(meta.level)) ? meta.level as AiSearchItem['level'] : undefined;
+            return [{ exerciseId: id, name: ex.name, rationale: typeof meta.rationale === 'string' ? meta.rationale : `${bodyPartName(ex.bp)} · ${equipmentName(ex.eq)}`, ...(level ? { level } : {}) }];
+          });
+          matched = { items, fallback: value.fallback ?? { understanding: '' }, clarifications: value.clarifications ?? [] };
+        } else matched = matchAiSearch(
           librarySearch,
           structured,
           trimmed,
@@ -735,6 +757,11 @@ export function ExerciseLibraryScreen({
         return;
       }
       const launch = await resolveLaunchFor(!!aiDraftImage);
+      const status = launch.location === 'server' && serverAgent
+        ? await serverAgent.status().catch(() => ({ enabled: true, exerciseSearchVersion: 'v1' as const }))
+        : null;
+      const selectedVersion = launch.location === 'server' && status?.exerciseSearchVersion === 'v2' ? 'v2' : 'v1';
+      setAiSearchVersion(selectedVersion);
       if (aiRecovery) await dismissAiRecovery();
       if (aiSnapshotRef.current === null) {
         aiSnapshotRef.current = { query, bodyPart, equipment, targetMuscle, oneLimb, favouritesOnly };
@@ -744,6 +771,7 @@ export function ExerciseLibraryScreen({
         runtime: localAgent,
         server: serverAgent,
         launch,
+        serverTaskId: selectedVersion === 'v2' ? 'exercise-search.v2' : 'exercise-search.v1',
       });
       setAiLaunch(launch);
       setAiNeedsConfig(false);
@@ -870,6 +898,11 @@ export function ExerciseLibraryScreen({
     setAiRecovery(null);
     try {
       const launch = await resolveLaunchFor(true, { location: 'server' });
+      const status = serverAgent
+        ? await serverAgent.status().catch(() => ({ enabled: true, exerciseSearchVersion: 'v1' as const }))
+        : null;
+      const selectedVersion = status?.exerciseSearchVersion === 'v2' ? 'v2' : 'v1';
+      setAiSearchVersion(selectedVersion);
       if (aiSnapshotRef.current === null) {
         aiSnapshotRef.current = { query, bodyPart, equipment, targetMuscle, oneLimb, favouritesOnly };
       }
@@ -886,6 +919,7 @@ export function ExerciseLibraryScreen({
         runtime: localAgent,
         server: serverAgent,
         launch,
+        serverTaskId: selectedVersion === 'v2' ? 'exercise-search.v2' : 'exercise-search.v1',
       });
       setAiLaunch(launch);
       setAiSheetOpen(false);
@@ -1197,11 +1231,11 @@ export function ExerciseLibraryScreen({
           subtitle={item.rationale}
           testID={`ai-candidate-${exercise.id}`}
           title={item.name}
-          trailing={(
+          trailing={item.level ? (
             <Badge tone={item.level === 'high' ? 'accent' : item.level === 'medium' ? 'orange' : 'neutral'}>
               {levelText(item.level)}
             </Badge>
-          )}
+          ) : null}
         />
       </Card>
     );
@@ -1385,6 +1419,7 @@ export function ExerciseLibraryScreen({
           gap: theme.space.sm,
         }}
       >
+        {ai.controller.taskId === 'exercise-search.v2' ? renderAiEquipmentTrigger('ai-follow-equipment') : null}
         {aiFollowUpImage ? (
           <View style={{ alignItems: 'center', flexDirection: 'row', gap: theme.space.sm }}>
             <Image
@@ -1461,6 +1496,20 @@ export function ExerciseLibraryScreen({
             : `还可追问 ${Math.max(0, 6 - ai.controller.submittedRuns)} 轮`}
         </Text>
       </View>
+    );
+  }
+
+  function renderAiEquipmentTrigger(testID: string) {
+    return (
+      <Chip
+        onPress={() => setAiEquipmentPickerOpen(true)}
+        selected={!!aiConfirmedEquipment}
+        size="sm"
+        testID={testID}
+        tone="neutral"
+      >
+        限定器械：{aiConfirmedEquipment ? equipmentName(aiConfirmedEquipment) : '不限'} · 更改
+      </Chip>
     );
   }
 
@@ -2000,6 +2049,9 @@ export function ExerciseLibraryScreen({
             testID="ai-hint"
             value={aiSheetText}
           />
+          {aiSearchVersion === 'v2' && aiLaunch?.location === 'server' ? (
+            renderAiEquipmentTrigger('ai-launch-equipment')
+          ) : null}
           <View style={{ flexDirection: 'row', gap: theme.space.sm }}>
             <View style={{ flex: 1 }}>
               <Button
@@ -2130,6 +2182,23 @@ export function ExerciseLibraryScreen({
             {aiErrorMessage(aiFollowUpError.code, aiFollowUpError.message)}
           </Text>
         ) : null}
+      </Sheet>
+      <Sheet
+        onClose={() => setAiEquipmentPickerOpen(false)}
+        testID="ai-equipment-picker"
+        title="限定器械"
+        visible={aiEquipmentPickerOpen}
+      >
+        <ScrollView style={{ maxHeight: 360 }} contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', gap: theme.space.sm, paddingBottom: theme.space.md }}>
+          <Chip onPress={() => { setAiConfirmedEquipment(''); setAiEquipmentPickerOpen(false); }} selected={!aiConfirmedEquipment} size="sm" testID="ai-equipment-any" tone="neutral">
+            不限
+          </Chip>
+          {EQUIPMENT_OPTIONS.filter(value => value !== 'other').map(value => (
+            <Chip key={`ai-equipment-${value}`} onPress={() => { setAiConfirmedEquipment(value); setAiEquipmentPickerOpen(false); }} selected={aiConfirmedEquipment === value} size="sm" testID={`ai-equipment-${value}`} tone="neutral">
+              {equipmentName(value)}
+            </Chip>
+          ))}
+        </ScrollView>
       </Sheet>
     </Screen>
   );

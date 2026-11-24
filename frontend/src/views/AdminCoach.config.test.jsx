@@ -73,9 +73,9 @@ describe('AdminCoach extra headers', async () => {
   const { parseHeadersText, headersToText } = await import('./AdminCoach.jsx')
 
   it('round-trips a map through the textarea format', () => {
-    expect(headersToText({ 'x-opencode-session': 'sess-1' })).toBe('x-opencode-session: sess-1')
+    expect(headersToText({ 'x-request-source': 'sess-1' })).toBe('x-request-source: sess-1')
     expect(headersToText(null)).toBe('')
-    expect(parseHeadersText('x-opencode-session: sess-1\nX-Title: demo')).toEqual({ headers: { 'x-opencode-session': 'sess-1', 'X-Title': 'demo' } })
+    expect(parseHeadersText('x-request-source: sess-1\nX-Title: demo')).toEqual({ headers: { 'x-request-source': 'sess-1', 'X-Title': 'demo' } })
   })
 
   it('treats empty as clear and junk as an error, not a request', () => {

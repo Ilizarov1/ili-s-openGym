@@ -11,6 +11,7 @@ import type { TaskDefinition } from '../../../agent-runtime/contracts.js';
 import type { AgentStore } from '../agent.store.js';
 import { createStubTask, STUB_TASK_ID } from './stub-task.js';
 import { createStubTools } from '../tools/stub-tools.js';
+import { assertExerciseSearchV2Output, createExerciseSearchV2Task, EXERCISE_SEARCH_V2_TASK_ID, type ExerciseSearchHistory } from './exercise-search-v2.js';
 
 let cachedCatalogueEntries: Array<Record<string, unknown>> | null = null;
 function loadCatalogueEntries(): Array<Record<string, unknown>> {
@@ -30,7 +31,8 @@ export interface TaskMessage {
 export interface RegisteredTask {
   task: TaskDefinition;
   tools: Record<string, unknown>[];
-  messageOf(input: Record<string, unknown>, result: unknown): TaskMessage;
+  validatePostProcessed?(result: unknown): void;
+  messageOf(input: Record<string, unknown>, result: unknown, history?: ExerciseSearchHistory): TaskMessage;
 }
 
 function messageOf(task: TaskDefinition, input: Record<string, unknown>, result: unknown): TaskMessage {
@@ -63,7 +65,9 @@ export function createTaskRegistry({ store }: { store: AgentStore }): Map<string
   const stubTask = createStubTask(store) as unknown as TaskDefinition;
   const stubTools = createStubTools(store);
   const exerciseTask = createExerciseSearchTask() as unknown as TaskDefinition;
-  const searchCatalogueTool = createCatalogueSearchTool({ entries: loadCatalogueEntries() });
+  const catalogue = loadCatalogueEntries();
+  const searchCatalogueTool = createCatalogueSearchTool({ entries: catalogue });
+  const publicIds = new Set(catalogue.map(entry => String(entry.id)));
   return new Map<string, RegisteredTask>([
     [STUB_TASK_ID, {
       task: stubTask,
@@ -74,6 +78,20 @@ export function createTaskRegistry({ store }: { store: AgentStore }): Map<string
       task: exerciseTask,
       tools: [searchCatalogueTool] as unknown as Record<string, unknown>[],
       messageOf: (input, result) => messageOf(exerciseTask, input, result),
+    }],
+    [EXERCISE_SEARCH_V2_TASK_ID, {
+      task: createExerciseSearchV2Task(exerciseTask),
+      tools: [],
+      validatePostProcessed: result => assertExerciseSearchV2Output(result, publicIds),
+      messageOf: (input, result, history) => {
+        const run = result as { structured?: { fallback: unknown }; result?: { structured?: { fallback: unknown } } };
+        const structured = run.result?.structured ?? run.structured;
+        const candidates = (history?.matches ?? []).map(match => ({
+          name: match.nameZh || match.nameEn,
+          nameEn: match.nameEn,
+        }));
+        return messageOf(exerciseTask, input, { structured: { candidates, fallback: structured?.fallback } });
+      },
     }],
   ]);
 }

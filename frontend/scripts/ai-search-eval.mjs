@@ -1,23 +1,13 @@
 #!/usr/bin/env node
 // The AI exercise-search evaluation CLI (D08/D10/D11 of
-// docs/ai-exercise-search/EVAL_CLI_EXECUTION.md).
+// docs/ai-exercise-search/EVAL_CLI_EXECUTION.md), extended for paired
+// v1 (web/rn) vs v2 (server_v2) evaluation.
 //
 //   node frontend/scripts/ai-search-eval.mjs --mode replay|vision|e2e
 //     --manifest <path> --out <path>
+//     [--benchmark <path>] [--include-server-v2] [--server-v2-mode live|fixture]
 //     [--sample <id>]... [--group <name>]...
 //     [--web-locale en|zh] [--include-queries] [--save-replay <path>]
-//
-// Command-line paths resolve against INIT_CWD ?? cwd (npm switches the cwd to
-// frontend/; the manifest's internal paths resolve against the manifest file).
-// The report is written to a temp file next to --out and renamed into place.
-//
-// stdout carries only the report path and the counts; every failure prints a
-// fixed description plus a safe error code on stderr — never an exception
-// object, a path, a key or model free text. Exit codes: 0 the run succeeded
-// (even with low hit rates), 1 the report was written but sample errors
-// exist, 2 arguments, manifest, configuration or a global execution/write
-// failure. Real-model modes exit 2 on missing configuration before any
-// sample request is sent.
 
 import { spawnSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
@@ -32,29 +22,39 @@ import {
   ERROR_STATUS,
 } from '../../api/agent-runtime/index.js'
 import { openCatalogueMetadata, openEvaluationAdapters } from './ai-search-eval-adapters.mjs'
-import { loadEvaluationManifest, loadModelInput, loadReplay } from './ai-search-eval-input.mjs'
+import {
+  loadBenchmarkMetadata,
+  loadEvaluationManifest,
+  loadModelInput,
+  loadReplay,
+} from './ai-search-eval-input.mjs'
 import { createEvaluationModelRunner } from './ai-search-eval-model.mjs'
-import { evaluatePlatform, summarizeEvaluation } from './ai-search-eval-report.mjs'
+import { evaluatePlatform, evaluateServerV2, summarizeEvaluation } from './ai-search-eval-report.mjs'
 
 const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
 const REPORT_SCHEMA_VERSION = 1
 const MODES = new Set(['replay', 'vision', 'e2e'])
 const WEB_LOCALES = new Set(['en', 'zh'])
+const SERVER_V2_MODES = new Set(['live', 'fixture'])
 const PLATFORMS = ['web', 'rn']
+const ALL_PLATFORMS = ['web', 'rn', 'server_v2']
 const MEDIA_CODES = new Set(['agent_media_invalid', 'agent_media_too_large'])
 const SAFE_CODES = new Set([...Object.keys(ERROR_STATUS), 'asset_missing', 'permission_denied'])
 
 const USAGE = `Usage: node frontend/scripts/ai-search-eval.mjs --mode <replay|vision|e2e> --manifest <path> --out <path>
 
-  --mode <name>          replay | vision | e2e (required)
-  --manifest <path>      evaluation manifest, relative to the invocation directory
-  --out <path>           JSON report destination
-  --sample <id>          select one sample by id (repeatable)
-  --group <name>         select samples by group (repeatable)
-  --web-locale <lang>    en | zh (default zh)
-  --include-queries      include the matched query text in recall events
-  --save-replay <path>   vision/e2e only: save { results: [{ id, structured }] }
-  --help                 show this help
+  --mode <name>            replay | vision | e2e (required)
+  --manifest <path>        evaluation manifest, relative to the invocation directory
+  --out <path>             JSON report destination
+  --benchmark <path>       optional benchmark.json metadata for strictTop1/nDCG/slices
+  --include-server-v2      also evaluate RetrievalService (server_v2) on the same output
+  --server-v2-mode <mode>  live | fixture (default live)
+  --sample <id>            select one sample by id (repeatable)
+  --group <name>           select samples by group (repeatable)
+  --web-locale <lang>      en | zh (default zh)
+  --include-queries        include the matched query text in recall events
+  --save-replay <path>     vision/e2e only: save { results: [{ id, structured }] }
+  --help                   show this help
 
 Repeated --sample values union, repeated --group values union, the two
 intersect. Samples the mode does not apply to are skipped unless explicitly
@@ -128,6 +128,9 @@ function parseArguments(argv) {
         mode: { type: 'string' },
         manifest: { type: 'string' },
         out: { type: 'string' },
+        benchmark: { type: 'string' },
+        'include-server-v2': { type: 'boolean' },
+        'server-v2-mode': { type: 'string' },
         sample: { type: 'string', multiple: true },
         group: { type: 'string', multiple: true },
         'web-locale': { type: 'string' },
@@ -147,6 +150,11 @@ function parseArguments(argv) {
   if (typeof values.out !== 'string' || !values.out) throw new UsageError()
   const webLocale = values['web-locale'] === undefined ? 'zh' : values['web-locale']
   if (typeof webLocale !== 'string' || !WEB_LOCALES.has(webLocale)) throw new UsageError()
+  const serverV2Mode = values['server-v2-mode'] === undefined ? 'live' : values['server-v2-mode']
+  if (typeof serverV2Mode !== 'string' || !SERVER_V2_MODES.has(serverV2Mode)) throw new UsageError()
+  if (values.benchmark !== undefined && (typeof values.benchmark !== 'string' || !values.benchmark)) {
+    throw new UsageError()
+  }
   const saveReplay = values['save-replay']
   if (saveReplay !== undefined) {
     if (mode === 'replay') throw new UsageError()
@@ -158,6 +166,9 @@ function parseArguments(argv) {
     mode,
     manifest: values.manifest,
     out: values.out,
+    benchmark: typeof values.benchmark === 'string' ? values.benchmark : null,
+    includeServerV2: values['include-server-v2'] === true,
+    serverV2Mode,
     sample: cleanList(values.sample),
     group: cleanList(values.group),
     webLocale,
@@ -170,8 +181,6 @@ function supportsMode(sample, mode) {
   return mode === 'replay' ? !!sample.replay : !!sample.image
 }
 
-// 同类选择取并集，两类选择取交集。未知 ID/group、无匹配或选定样本不支持
-// 当前模式时报使用错误；没显式选择时按模式跳过不适用项并写入 skippedIds。
 function selectSamples(samples, config) {
   const knownIds = new Set(samples.map(sample => sample.id))
   for (const id of config.sample) {
@@ -201,8 +210,6 @@ function normalizedPath(value) {
   return process.platform === 'win32' ? resolved.toLowerCase() : resolved
 }
 
-// Equal, or one path sits inside the other's directory — either way writing
-// the output would touch an input.
 function pathsOverlap(a, b) {
   const na = normalizedPath(a)
   const nb = normalizedPath(b)
@@ -219,9 +226,7 @@ function isDirectory(value) {
   }
 }
 
-// 输入输出路径不得重合，也不得覆盖任何图片、清单或已提交的 fixture：
-// every image and replay path the manifest declares counts, selected or not.
-function assertOutputsSafe({ outPath, saveReplayPath, manifestPath, samples }) {
+function assertOutputsSafe({ outPath, saveReplayPath, manifestPath, benchmarkPath, samples }) {
   const outputs = [outPath]
   if (saveReplayPath) outputs.push(saveReplayPath)
   for (let i = 0; i < outputs.length; i++) {
@@ -230,6 +235,7 @@ function assertOutputsSafe({ outPath, saveReplayPath, manifestPath, samples }) {
     }
   }
   const inputs = [manifestPath]
+  if (benchmarkPath) inputs.push(benchmarkPath)
   for (const sample of samples) {
     if (sample.image) inputs.push(sample.image)
     if (sample.replay) inputs.push(sample.replay.path)
@@ -242,9 +248,6 @@ function assertOutputsSafe({ outPath, saveReplayPath, manifestPath, samples }) {
   }
 }
 
-// Vision mode loads no matcher; the catalogue metadata is what lets it check
-// that a positive sample's expected ids really are catalogue ids before any
-// request is paid for.
 function assertExpectedIdsKnown(sample, publicEquipmentById) {
   if (sample.expectation !== 'match') return
   const catalogue = publicEquipmentById || {}
@@ -274,8 +277,6 @@ function emptyRecognition() {
   }
 }
 
-// recognition 只记录阶段计数、白名单器械/部位和耗时；familyAssessment 固定
-// unreviewed，不计算虚假的模型识别正确率。
 function buildRecognition(events, structured, fallbackElapsedMs) {
   const recognition = emptyRecognition()
   for (const event of events) {
@@ -334,30 +335,46 @@ function projectPlatform(record) {
   if (!record.ok) {
     return { error: record.error, elapsedMs: record.elapsedMs }
   }
-  return {
-    recall: record.recall,
-    filter: record.filter,
-    display: record.display,
+  const projected = {
     finalIds: record.finalIds,
+    topLevels: record.topLevels,
+    top1Level: record.top1Level,
+    top1Score: record.top1Score,
+    clarificationCount: record.clarificationCount,
     fallbackOnly: record.fallbackOnly,
     elapsedMs: record.elapsedMs,
     firstExpectedRank: record.firstExpectedRank,
+    firstExpectedDisplayRank: record.firstExpectedDisplayRank,
     wrongEquipment: record.wrongEquipment,
+    wrongBodyPart: record.wrongBodyPart,
+    wrongHigh: record.wrongHigh,
+    top1Correct: record.top1Correct,
+    strictTop1Hit: record.strictTop1Hit,
+    mrrAt5: record.mrrAt5,
+    ndcgAt5: record.ndcgAt5,
+    multiValidHit: record.multiValidHit,
   }
+  if (record.recall !== undefined) projected.recall = record.recall
+  if (record.filter !== undefined) projected.filter = record.filter
+  if (record.display !== undefined) projected.display = record.display
+  if (record.mrrAt10 !== undefined) projected.mrrAt10 = record.mrrAt10
+  if (record.funnel !== undefined) projected.funnel = record.funnel
+  return projected
 }
 
-// The report row carries exactly the agreed fields; the expected ids and
-// equipment stay on the internal row for summarizeEvaluation only.
 function projectRow(row) {
   const out = {
     id: row.id,
     group: row.group,
     family: row.family,
     expectation: row.expectation,
+    ...(row.groundTruthId !== undefined ? { groundTruthId: row.groundTruthId } : {}),
+    ...(row.visibleFeatures !== undefined ? { visibleFeatures: row.visibleFeatures } : {}),
+    ...(row.expectedOutcome !== undefined ? { expectedOutcome: row.expectedOutcome } : {}),
     recognition: row.recognition,
     platforms: {},
   }
-  for (const platform of PLATFORMS) {
+  for (const platform of ALL_PLATFORMS) {
     if (row.platforms[platform]) out.platforms[platform] = projectPlatform(row.platforms[platform])
   }
   if (row.error) out.error = row.error
@@ -365,14 +382,16 @@ function projectRow(row) {
 }
 
 function hasRowError(row) {
-  return !!row.error || PLATFORMS.some(platform => row.platforms[platform]
+  return !!row.error || ALL_PLATFORMS.some(platform => row.platforms[platform]
     && row.platforms[platform].ok === false)
 }
 
-// One sample, serial: load its input, call the model at most once, evaluate
-// both matchers on the same structured output. Model free text never enters
-// the row; only counts, whitelisted slugs and elapsed times do.
-async function runSample({ sample, mode, includeQueries, saveReplayPath, modelRunner, adapters, replaySave }) {
+async function runSample({ sample, benchmarkMeta, mode, includeQueries, saveReplayPath, modelRunner, adapters, replaySave }) {
+  const meta = benchmarkMeta?.byId?.get(sample.id) ?? null
+  const enrichedSample = meta
+    ? { ...sample, groundTruthId: meta.groundTruthId }
+    : sample
+
   const row = {
     id: sample.id,
     group: sample.group,
@@ -380,23 +399,42 @@ async function runSample({ sample, mode, includeQueries, saveReplayPath, modelRu
     expectation: sample.expectation,
     expectedIds: sample.expectedIds,
     expectedEquipment: sample.expectedEquipment,
+    groundTruthId: meta ? meta.groundTruthId : undefined,
+    visibleFeatures: meta ? meta.visibleFeatures : undefined,
+    expectedOutcome: meta ? meta.expectedBehavior?.outcome ?? null : undefined,
     recognition: emptyRecognition(),
     platforms: {},
     error: null,
   }
+
+  const evaluateAllPlatforms = async structured => {
+    for (const platform of PLATFORMS) {
+      if (!adapters[platform]) continue
+      row.platforms[platform] = evaluatePlatform({
+        matcher: adapters[platform],
+        structured,
+        sample: enrichedSample,
+        includeQueries,
+        publicEquipmentById: adapters.publicEquipmentById,
+        publicBodyPartById: adapters.publicBodyPartById ?? null,
+      })
+    }
+    if (adapters.serverV2) {
+      row.platforms.server_v2 = await evaluateServerV2({
+        adapter: adapters.serverV2,
+        structured,
+        sample: enrichedSample,
+        publicEquipmentById: adapters.publicEquipmentById,
+        publicBodyPartById: adapters.publicBodyPartById ?? null,
+      })
+    }
+  }
+
   try {
     if (mode === 'replay') {
       const structured = await loadReplay(sample)
       row.recognition = buildRecognition([], structured, null)
-      for (const platform of PLATFORMS) {
-        row.platforms[platform] = evaluatePlatform({
-          matcher: adapters[platform],
-          structured,
-          sample,
-          includeQueries,
-          publicEquipmentById: adapters.publicEquipmentById,
-        })
-      }
+      await evaluateAllPlatforms(structured)
       return row
     }
     if (mode === 'vision') assertExpectedIdsKnown(sample, adapters.publicEquipmentById)
@@ -418,15 +456,7 @@ async function runSample({ sample, mode, includeQueries, saveReplayPath, modelRu
     row.recognition = buildRecognition(events, structured, Date.now() - startedAt)
     if (saveReplayPath) replaySave.push({ id: sample.id, structured })
     if (mode === 'e2e') {
-      for (const platform of PLATFORMS) {
-        row.platforms[platform] = evaluatePlatform({
-          matcher: adapters[platform],
-          structured,
-          sample,
-          includeQueries,
-          publicEquipmentById: adapters.publicEquipmentById,
-        })
-      }
+      await evaluateAllPlatforms(structured)
     }
   } catch (error) {
     row.error = row.error || sampleErrorOf(error)
@@ -454,7 +484,6 @@ function catalogueSha256Of(root) {
   }
 }
 
-// out 先写同目录临时文件后 rename。
 function writeJsonAtomically(target, value) {
   const directory = path.dirname(target)
   const temp = path.join(directory, `.${path.basename(target)}.tmp-${randomUUID()}`)
@@ -470,19 +499,31 @@ function writeJsonAtomically(target, value) {
   }
 }
 
-async function openAdapters(mode, webLocale, injected) {
+async function openAdapters(mode, webLocale, includeServerV2, serverV2Mode, env, injected) {
   if (injected) return { adapters: injected, close: async () => {} }
   try {
     if (mode === 'vision') {
       const catalogue = await openCatalogueMetadata()
       return {
-        adapters: { web: null, rn: null, publicEquipmentById: catalogue.publicEquipmentById },
+        adapters: {
+          web: null,
+          rn: null,
+          serverV2: null,
+          publicEquipmentById: catalogue.publicEquipmentById,
+          publicBodyPartById: catalogue.publicBodyPartById,
+        },
         close: () => catalogue.close(),
       }
     }
-    const adapters = await openEvaluationAdapters({ webLocale })
+    const adapters = await openEvaluationAdapters({
+      webLocale,
+      includeServerV2,
+      serverV2Mode,
+      env,
+    })
     return { adapters, close: () => adapters.close() }
   } catch (error) {
+    if (error?.phase === 'config') throw error
     const wrapped = new Error('adapters failed')
     wrapped.kind = 'adapters'
     wrapped.cause = error
@@ -497,37 +538,46 @@ async function runGuarded(argv, options) {
     return 0
   }
 
-  // npm script 的相对路径基于 INIT_CWD ?? cwd，不能基于 npm 切换后的 frontend cwd。
   const env = options.env ?? process.env
   const baseDir = env.INIT_CWD ?? process.cwd()
   const manifestPath = path.resolve(baseDir, config.manifest)
   const outPath = path.resolve(baseDir, config.out)
+  const benchmarkPath = config.benchmark ? path.resolve(baseDir, config.benchmark) : null
   const saveReplayPath = config.saveReplay ? path.resolve(baseDir, config.saveReplay) : null
 
   const manifest = await loadEvaluationManifest(manifestPath)
+  const benchmarkMeta = benchmarkPath ? await loadBenchmarkMetadata(benchmarkPath) : null
   const { selected, skippedIds } = selectSamples(manifest.samples, config)
-  assertOutputsSafe({ outPath, saveReplayPath, manifestPath, samples: manifest.samples })
+  assertOutputsSafe({ outPath, saveReplayPath, manifestPath, benchmarkPath, samples: manifest.samples })
 
-  // 真实模型模式缺配置时在任何样本发请求前退出 2；replay 不创建 provider。
   const modelRunner = config.mode === 'replay' ? null
     : (options.modelRunner ?? createEvaluationModelRunner(env))
 
-  try {
-    mkdirSync(path.dirname(outPath), { recursive: true })
-  } catch (error) {
-    const wrapped = new Error('mkdir failed')
-    wrapped.kind = 'write'
-    wrapped.cause = error
-    throw wrapped
-  }
+  const { adapters, close } = await openAdapters(
+    config.mode,
+    config.webLocale,
+    config.includeServerV2,
+    config.serverV2Mode,
+    env,
+    options.adapters,
+  )
 
   const rows = []
   const replaySave = []
-  const { adapters, close } = await openAdapters(config.mode, config.webLocale, options.adapters)
   try {
+    try {
+      mkdirSync(path.dirname(outPath), { recursive: true })
+    } catch (error) {
+      const wrapped = new Error('mkdir failed')
+      wrapped.kind = 'write'
+      wrapped.cause = error
+      throw wrapped
+    }
+
     for (const sample of selected) {
       rows.push(await runSample({
         sample,
+        benchmarkMeta,
         mode: config.mode,
         includeQueries: config.includeQueries,
         saveReplayPath,
@@ -541,8 +591,6 @@ async function runGuarded(argv, options) {
   }
 
   const summary = summarizeEvaluation(rows)
-  // 只在 --save-replay 显式指定时写独立 { results: [{ id, structured }] } 文件；
-  // 失败样本保留报告行并写安全错误，从不写入模型自由文本之外的兜底内容。
   if (saveReplayPath) writeJsonAtomically(saveReplayPath, { results: replaySave })
   const report = {
     schemaVersion: REPORT_SCHEMA_VERSION,
@@ -559,16 +607,17 @@ async function runGuarded(argv, options) {
   const errorCount = rows.filter(hasRowError).length
   console.log(`report: ${outPath}`)
   console.log(`samples: run=${rows.length} skipped=${skippedIds.length} errors=${errorCount}`)
-  if (summary.byPlatform.web || summary.byPlatform.rn) {
-    const web = summary.byPlatform.web ? summary.byPlatform.web.matched : 0
-    const rn = summary.byPlatform.rn ? summary.byPlatform.rn.matched : 0
-    console.log(`matched: web=${web} rn=${rn}`)
+  if (summary.byPlatform.web || summary.byPlatform.rn || summary.byPlatform.server_v2) {
+    const parts = []
+    if (summary.byPlatform.web) parts.push(`web=${summary.byPlatform.web.matched}`)
+    if (summary.byPlatform.rn) parts.push(`rn=${summary.byPlatform.rn.matched}`)
+    if (summary.byPlatform.server_v2) parts.push(`server_v2=${summary.byPlatform.server_v2.matched}`)
+    console.log(`matched: ${parts.join(' ')}`)
   }
   return errorCount > 0 ? 1 : 0
 }
 
-/** The CLI entry point. Never throws: every failure prints a fixed
- * description plus a safe code on stderr and maps onto the exit code. */
+/** The CLI entry point. */
 export async function runCli(argv, options = {}) {
   try {
     return await runGuarded(argv, options)

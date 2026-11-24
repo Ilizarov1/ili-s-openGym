@@ -70,6 +70,15 @@ const required = [
   'agent-runtime/tasks/exercise-search-vocabulary.json',
   'agent-runtime/tasks/exercise-search-catalogue.json',
   'agent-runtime/tasks/catalogue-search-tool.js',
+  'src/agent/retrieval/index.js',
+  'src/agent/retrieval/retrieval.module.js',
+  'src/agent/retrieval/retrieval.service.js',
+  'src/agent/retrieval/index-builder.js',
+  'src/agent/retrieval/config.js',
+  'src/agent/retrieval/database.js',
+  'src/agent/retrieval/catalogue.js',
+  'src/agent/retrieval/models.js',
+  'src/agent/retrieval/fixture-retrieval.js',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));

@@ -615,14 +615,14 @@ test('invoke sends the configured maxTokens override, and the adapter default wh
 });
 
 test('compatible: configured extra headers ride on models, check and jobs — auth framing always wins', async () => {
-  const cfg = { provider: 'compatible', providerOptions: { compatible: { baseUrl: 'http://ollama.lan:11434', headers: { 'x-opencode-session': 'sess-1' } } } };
+  const cfg = { provider: 'compatible', providerOptions: { compatible: { baseUrl: 'http://ollama.lan:11434', headers: { 'x-request-source': 'sess-1' } } } };
   const m = fakeFetch([ok({ data: [] })]);
   await compatible.models(cfg, env, { fetch: m });
-  assert.equal(m.calls[0].headers['x-opencode-session'], 'sess-1');
+  assert.equal(m.calls[0].headers['x-request-source'], 'sess-1');
   assert.equal(m.calls[0].headers.authorization, 'Bearer compat-1');
   const j = fakeFetch([ok({ choices: [{ message: { content: ANSWER }, finish_reason: 'stop' }] })]);
   await compatible.invoke({ cfg, prompt: 'P', env, model: 'llama3', fetch: j });
-  assert.equal(j.calls[0].headers['x-opencode-session'], 'sess-1');
+  assert.equal(j.calls[0].headers['x-request-source'], 'sess-1');
 
   // A stored map from before a name was reserved must not override auth framing.
   const evil = { provider: 'compatible', providerOptions: { compatible: { baseUrl: 'http://x', headers: { authorization: 'Bearer evil', 'content-type': 'text/plain' } } } };
@@ -635,13 +635,13 @@ test('compatible: configured extra headers ride on models, check and jobs — au
 test('validateHeaders: small maps pass, framing names and junk do not', () => {
   assert.deepEqual(validateHeaders(null).value, null);
   assert.deepEqual(validateHeaders({}).value, null);
-  assert.deepEqual(validateHeaders({ 'X-Opencode-Session': ' abc ' }).value, { 'x-opencode-session': 'abc' });
+  assert.deepEqual(validateHeaders({ 'X-Request-Source': ' abc ' }).value, { 'x-request-source': 'abc' });
   for (const bad of ['authorization', 'Content-Type', 'content-length', 'Host', 'cookie']) {
     assert.equal(validateHeaders({ [bad]: 'x' }).ok, false, bad);
   }
   assert.equal(validateHeaders({ 'not a name!': 'x' }).ok, false);
   assert.equal(validateHeaders({ a: '' }).ok, false);
-  assert.equal(validateHeaders('x-opencode-session: abc').ok, false);
+  assert.equal(validateHeaders('x-request-source: abc').ok, false);
   assert.equal(validateHeaders([['a', 'b']]).ok, false);
   const many = {}; for (let i = 0; i < 9; i++) many['x-h-' + i] = 'v';
   assert.equal(validateHeaders(many).ok, false);

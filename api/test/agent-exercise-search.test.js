@@ -206,6 +206,11 @@ test('the task declares one JSON model round, no tools, no memories and only the
   assert.ok(instructions.includes('## Allowed equipment slugs'));
   assert.ok(instructions.includes('leverage machine'));
   assert.ok(instructions.includes('lever", "sled" or "cable"'));
+  assert.ok(instructions.includes('body-contact pads and driving limb'));
+  assert.ok(instructions.includes('strictly consistent with'));
+  assert.ok(instructions.includes('return `candidates: []`'));
+  assert.ok(instructions.includes('Cap `level` at'));
+  assert.ok(instructions.includes('never `high`'));
   assert.ok(EXERCISE_SEARCH_PROMPT.includes('Output is JSON'));
 });
 
@@ -215,7 +220,7 @@ test('fixtureCase only applies to a fixture profile', () => {
   assert.equal(task.fixtureCase({ fixtureCase: 'fallback-only' }, { profileRef: { provider: 'fixture' } }), 'fallback-only');
   assert.equal(task.fixtureCase({ fixtureCase: 'candidates' }, { profileRef: { provider: 'openai' } }), undefined);
   assert.equal(task.fixtureCase({}, { profileRef: { provider: 'fixture' } }), 'candidates');
-  assert.equal(task.fixtureCase({}, { profileRef: { provider: 'opencode' } }), undefined);
+  assert.equal(task.fixtureCase({}, { profileRef: { provider: 'deepseek' } }), undefined);
 });
 
 test('the fixture provider runs text, image and text+image through exercise-search.v1', async () => {

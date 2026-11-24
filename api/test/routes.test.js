@@ -366,10 +366,10 @@ test('an admin can store extra headers for the compatible endpoint; framing name
   // Empty by default.
   assert.equal((await call('GET /api/admin/coach')).body.headers, null);
 
-  let r = await call('POST /api/admin/coach/config', { provider: 'compatible', baseUrl: 'http://127.0.0.1:9', headers: { 'x-opencode-session': 'sess-1' } });
+  let r = await call('POST /api/admin/coach/config', { provider: 'compatible', baseUrl: 'http://127.0.0.1:9', headers: { 'x-request-source': 'sess-1' } });
   assert.equal(r.status, 200);
-  assert.deepEqual((await call('GET /api/admin/coach')).body.headers, { 'x-opencode-session': 'sess-1' });
-  assert.deepEqual(cfg.load().providerOptions.compatible.headers, { 'x-opencode-session': 'sess-1' }, 'persists with the rest of the Coach config');
+  assert.deepEqual((await call('GET /api/admin/coach')).body.headers, { 'x-request-source': 'sess-1' });
+  assert.deepEqual(cfg.load().providerOptions.compatible.headers, { 'x-request-source': 'sess-1' }, 'persists with the rest of the Coach config');
 
   // Reserved framing names are refused, and a fixed-endpoint provider takes none.
   r = await call('POST /api/admin/coach/config', { headers: { authorization: 'Bearer x' } });

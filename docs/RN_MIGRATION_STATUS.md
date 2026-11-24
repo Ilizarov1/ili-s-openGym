@@ -119,8 +119,8 @@ P0 功能已在 Android `0.1.2` 可见模拟器上验收，设备验收见下方
 - [x] 共享任务 `exercise-search.v1`、词表快照、附件内联校验、JSON 输出清洗和 fixture 用例。
 - [x] 共享匹配管道 `frontend/src/lib/exercise-ai-search.js`，Web/RN 共用 `searchScored + CJK` 回退；Fuse 只保留关键词零结果建议；88 例 golden 全达标。
 - [x] Web `Library`、`ExercisePicker` 识别态与配置页图片能力开关。
-- [x] RN 动作库/选择器识别态、本机图片表、静默配置解析和 `opencode` 配置。
+- [x] RN 动作库和选择器支持识别态、本机图片表、静默配置解析与图片能力声明。
 - [x] RN 模拟器验收 `emulator-5556`/openGymRnQa：A1 本机（文字/纯图）与服务端 fixture、A2、A3、A6、A8、A15；APK SHA-256 `D112588C4449A8B78CE7F716B18A23D416C6A220F445FAF678F0970562586BC3`。
-- [x] 真实视觉模型 smoke：OpenCode Go 端点 `deepseek-v4.1-flash`，5 张实物照片全部 `completed`，证据见 [ai-exercise-search/ACCEPTANCE.md](ai-exercise-search/ACCEPTANCE.md)。
+- [x] 2026-11-21 的真实视觉 smoke 完成了 5 张实物照片。当前 DeepSeek 接入与服务端 v2 联调见 [执行记录](ai-exercise-search/SERVER_RETRIEVAL_EXECUTION.md#7-主-agent-验收记录)。
 
 证据见 [ai-exercise-search/ACCEPTANCE.md](ai-exercise-search/ACCEPTANCE.md)。

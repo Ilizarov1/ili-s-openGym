@@ -29,7 +29,8 @@ const EXECUTIONS = new Set(['server', 'local']);
 const MEDIA_STATUSES = new Set(['ready', 'failed', 'cancelled']);
 const MODEL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 const END_STATUSES = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
-const END_PHASES = new Set(['submit', 'attachments', 'model', 'recognition', 'match', 'poll']);
+const END_PHASES = new Set(['submit', 'attachments', 'model', 'recognition', 'retrieval', 'rerank', 'match', 'poll']);
+const RETRIEVAL_BACKENDS = new Set(['postgres', 'local', 'remote', 'fixture']);
 const QUERY_ORIGINS = new Set(['primary', 'english', 'bm25']);
 const FILTER_DECISIONS = new Set([
   'invalid_candidate',
@@ -133,9 +134,9 @@ function projectRecognition(event) {
 }
 
 /** A ranked slice of the actual first five; gaps are never re-picked. */
-function topOf(value) {
+function topOf(value, limit = MAX_RECALL_TOP) {
   const top = [];
-  for (const item of value.slice(0, MAX_RECALL_TOP)) {
+  for (const item of value.slice(0, limit)) {
     if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
     const id = idOf(item.id);
     if (id === undefined) continue;
@@ -153,6 +154,17 @@ function projectRecall(event) {
   put(out, 'queryWordCount', finiteNumber(event.queryWordCount));
   put(out, 'hitCount', finiteNumber(event.hitCount));
   if (Array.isArray(event.top)) out.top = topOf(event.top);
+  return out;
+}
+
+function projectRetrieval(event, limit) {
+  const out = {};
+  put(out, 'backend', enumOf(event.backend, RETRIEVAL_BACKENDS));
+  put(out, 'elapsedMs', finiteNumber(event.elapsedMs));
+  put(out, 'candidateCount', finiteNumber(event.candidateCount));
+  if (Array.isArray(event.top)) out.top = topOf(event.top, limit);
+  put(out, 'hasConfirmedEquipment', booleanOf(event.hasConfirmedEquipment));
+  if (event.errorCode !== undefined) put(out, 'errorCode', safeExerciseSearchError(event.errorCode));
   return out;
 }
 
@@ -201,6 +213,10 @@ const RUN_STAGES = new Map([
   ['model', projectModel],
   ['recognition', projectRecognition],
   ['recall', projectRecall],
+  ['retrieval_text', event => projectRetrieval(event, 75)],
+  ['retrieval_vector', event => projectRetrieval(event, 75)],
+  ['retrieval_fusion', event => projectRetrieval(event, 30)],
+  ['rerank', event => projectRetrieval(event, 30)],
   ['filter', projectFilter],
   ['display', projectDisplay],
   ['end', projectEnd],

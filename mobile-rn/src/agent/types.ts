@@ -7,7 +7,7 @@ export type AgentConnection = Connection | null;
 
 export type AgentCapabilities = { text: boolean; image: boolean; tools: boolean };
 
-export type AgentProvider = 'fixture' | 'openai' | 'compatible' | 'opencode';
+export type AgentProvider = 'fixture' | 'openai' | 'compatible' | 'deepseek';
 
 export type AgentExecutionLocation = 'local' | 'server';
 
@@ -17,7 +17,7 @@ export type AgentProfileRow = {
   scope: string;
   id: string;
   source: 'local' | 'server' | 'default' | 'user';
-  provider: AgentProvider;
+  provider: AgentProvider | 'opencode';
   model: string;
   capabilities: AgentCapabilities;
   /** Human-readable, desensitised name shown by the client. */
@@ -28,7 +28,8 @@ export type AgentProfileRow = {
   updatedAt: number;
 };
 
-export type AgentProfilePublic = Omit<AgentProfileRow, 'scope'> & {
+export type AgentProfilePublic = Omit<AgentProfileRow, 'scope' | 'provider'> & {
+  provider: AgentProfileRow['provider'] | 'none';
   available: boolean;
   reason?: string;
 };

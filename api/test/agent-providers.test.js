@@ -10,7 +10,7 @@ import {
   createProvider,
   buildOpenAIRequest,
   normalizeModelOutput,
-  OPENCODE_BASE_URL,
+  DEEPSEEK_BASE_URL,
   assertCapabilities,
   validateBaseUrl,
   phoneMayCall,
@@ -200,14 +200,15 @@ test('JSON mode and image labels are part of the provider request', () => {
   ]);
 });
 
-test('the named opencode provider uses the fixed Go endpoint and session header', async () => {
-  assert.equal(OPENCODE_BASE_URL, 'https://opencode.ai/inference/go/v1');
-  assert.equal(createProvider('opencode', { model: 'fixture' }).id, 'opencode');
+test('the DeepSeek provider fixes the endpoint and uses non-thinking JSON mode', async () => {
+  assert.equal(DEEPSEEK_BASE_URL, 'https://api.deepseek.com');
+  assert.throws(() => createProvider('opencode', {}), /unknown agent provider/);
+  assert.equal(createProvider('deepseek', { model: 'deepseek-v4-pro' }).capabilities.image, false);
   let seen = null;
-  const provider = createProvider('opencode', {
+  const provider = createProvider('deepseek', {
     baseUrl: 'https://attacker.example/v1',
     apiKey: 'sk-test',
-    model: 'deepseek-v4.1-flash',
+    model: 'deepseek-flash',
     fetchImpl: async (url, init) => {
       seen = { url: String(url), body: JSON.parse(String(init.body)), headers: init.headers };
       return jsonResponse({ choices: [{ message: { content: '{"candidates":[],"fallback":{"understanding":"x"}}' } }] });
@@ -217,7 +218,6 @@ test('the named opencode provider uses the fixed Go endpoint and session header'
     modelInput: {
       instructions: '',
       responseFormat: 'json',
-      sessionId: 'ses_test_go_1',
       user: { text: 'x' },
       facts: [],
       memories: [],
@@ -226,9 +226,12 @@ test('the named opencode provider uses the fixed Go endpoint and session header'
       toolResults: [],
     },
   });
-  assert.equal(seen.url, `${OPENCODE_BASE_URL}/chat/completions`);
+  assert.equal(seen.url, `${DEEPSEEK_BASE_URL}/chat/completions`);
   assert.equal(seen.body.response_format.type, 'json_object');
-  assert.equal(seen.headers['x-opencode-session'], 'ses_test_go_1');
+  assert.equal(provider.capabilities.image, true);
+  assert.equal(seen.headers.authorization, 'Bearer sk-test');
+  assert.deepEqual(seen.body.thinking, { type: 'disabled' });
+  assert.equal(seen.headers['x-opencode-session'], undefined);
   assert.equal(JSON.stringify(seen).includes('attacker'), false);
 });
 

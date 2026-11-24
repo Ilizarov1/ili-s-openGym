@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [技术设计](DESIGN.md)
 
-状态为已执行（7.2 真实模型 smoke 因 OpenCode 余额阻塞；7.5 的 RN 配对服务端隐藏待设备复验）。实施提交 `2808653b2`；代码、测试与各步记录均在该提交中。所有命令使用 PowerShell；未执行的设备或环境检查在验收记录中标记为待验。
+状态为已执行。实施提交为 `2808653b2`，历史测试及 RN 配对设备待验见 [验收记录](ACCEPTANCE.md)。当前 DeepSeek 接入见 [服务端 v2 执行记录](SERVER_RETRIEVAL_EXECUTION.md#7-主-agent-验收记录)。命令统一使用 PowerShell。
 
 ## 状态维护
 
@@ -91,9 +91,9 @@
 - [x] **1.4 提供商结构化输出支持**
   - 范围：共享 provider 的 JSON 模式与 fixture 序列。
   - 文件：`api/agent-runtime/providers/openai.js`、`providers/fixture.js`、`providers/index.js`。
-  - 动作：`openai.js` 在任务请求结构化输出时携带 `response_format: json_object`（或等价兼容参数），不支持的配置静默跳过；`fixture.js` 新增 `candidates`、`fallback-only` 固定序列，未知用例返回明确错误；`index.js` 注册命名提供商 `opencode`（复用 OpenAI 兼容实现，固定 `baseUrl https://opencode.ai/inference/go/v1`，不作为服务端自定义端点的开口）。
-  - 判据：`agent-providers.test.js` 断言 JSON 模式请求构造、fixture 新序列与 opencode 固定 baseUrl；fixture 外部网络调用为 0。
-  - 记录：2026-11-21：`openai.js` 支持 `response_format: json_object` 与图片 label；`fixture.js` 增加 `candidates`/`fallback-only`；`providers/index.js` 注册固定端点的 `opencode`。后续真实 smoke 发现 Go 订阅必须走 `https://opencode.ai/inference/go/v1` 并带 `x-opencode-session`；provider 与测试已修正，`agent-providers.test.js` 通过。
+  - 动作：在 `openai.js` 为结构化请求附上 `response_format: json_object`。`fixture.js` 提供 `candidates` 和 `fallback-only` 固定序列。DeepSeek 预设复用共享 HTTP 适配器，端点固定。
+  - 判据：`agent-providers.test.js` 覆盖 JSON 请求、fixture 和 DeepSeek 固定端点。
+  - 记录：2026-11-21 完成结构化请求、附件标签及两个 fixture 序列。旧网关烟测证据留在 [历史验收记录](ACCEPTANCE.md)。
 
 - [x] **1.5 更新 API 构建复制清单**
   - 范围：构建产物完整性。
@@ -208,9 +208,9 @@
 - [x] **4.5 配置能力与解析顺序**
   - 范围：服务端配置的图像能力声明与稳定排序。
   - 文件：`api/src/agent/agent-config.store.ts`、`api/src/agent/agent.flags.ts`、`.env.example`。
-  - 动作：配置支持显式 `capabilities.image` 覆盖；服务端默认配置由管理员 `agentVision`（默认开）声明图像能力；`list` 返回按配置 ID 升序的稳定排序；`resolve` 只在当前执行位置内取第一个可用配置，不跨端回退；用户配置 provider 枚举增加 `opencode`；`.env.example` 增加 `OPENCODE_API_KEY` 空占位与说明，真实值只进 git 忽略的 `.env`。
+  - 动作：配置支持显式 `capabilities.image`。默认图像能力由模型和 `AGENT_VISION` 共同决定。`list` 按 ID 稳定排序，`resolve` 在已确定的执行位置内选取可用配置。实例密钥字段见 `.env.example`。
   - 判据：`image:false` 配置拒绝带图请求并返回 `profile_capability_missing`；纯文字请求在同配置下可跑；同层多配置时选择可复现。
-  - 记录：2026-11-21：配置支持 `capabilities.image` 覆盖、`agentVision` 默认能力、稳定 ID 排序和 `opencode`；集成测试验证 `image:false` 的文本/图片分支。
+  - 记录：2026-11-21 完成图片能力配置和稳定排序。集成测试覆盖了纯文字和无图片能力的分支。
 
 - [x] **4.6 AgentService 会话模式、轮次与并发**
   - 范围：运行入口的行为校验与响应。
@@ -224,7 +224,7 @@
   - 文件：`api/openapi.yaml`、`scripts/build-api-docs.mjs`。
   - 动作：`AgentRunRequest` 增加 `taskId` 可选值与 `sessionMode` 说明；错误枚举增加五个新码；`AgentRunStart`/`AgentRun` 增加配置摘要字段；不新增路由；文档生成包含新字段。
   - 判据：`openapi-routes.test.js` 通过；文档生成包含 exercise-search 说明。
-  - 记录：2026-11-21：`openapi.yaml` 增加 `exercise-search.v1`、`sessionMode`、五个错误码、配置摘要与 `opencode`/能力覆盖；`node scripts/build-api-docs.mjs` 输出 108 endpoints/44 schemas。
+  - 记录：2026-11-21 更新 OpenAPI 的任务、会话模式、错误码、配置摘要和图像能力。
 
 - [x] **4.8 服务端集成测试**
   - 范围：阶段 4 的端到端证据。
@@ -261,9 +261,9 @@
 - [x] **5.4 配置页能力开关**
   - 范围：服务端用户配置的图像能力声明。
   - 文件：`frontend/src/views/AgentSetup.jsx`。
-  - 动作：配置表单增加“该模型可读取图片”开关，写 `capabilities.image` 覆盖；默认关闭 provider 推断；provider 可选列表增加 `opencode`。
+  - 动作：配置表单提供图像能力开关，并同步当前服务端提供商列表。
   - 判据：开关状态随配置往返；关闭后带图请求得到可读错误（A10）。
-  - 记录：2026-11-21；修改 `frontend/src/views/AgentSetup.jsx`、`frontend/src/views/AgentSetup.test.jsx`。provider 增加 `opencode`，图片能力勾选写入 create/update 的 `capabilities.image`，编辑时从 `profile.capabilities.image` 回填；密钥仍只在输入后提交。`npm.cmd test -- src/views/AgentSetup.test.jsx` → 6 tests 通过。
+  - 记录：2026-11-21 完成图像能力开关和编辑回显。`AgentSetup.test.jsx` 的 6 个用例通过。
 
 - [x] **5.5 中断恢复引用**
   - 范围：Web 端“上次检索未完成”提示。
@@ -288,7 +288,7 @@
   - 文件：`mobile-rn/src/agent/types.ts`。
   - 动作：`AgentStartInput` 增加 `taskId`、`sessionMode`；配置能力显式 `image` 覆盖；会话/消息 `meta`；运行结果配置摘要。
   - 判据：`npm.cmd run typecheck` 通过；与共享 `contracts.d.ts` 字段一致。
-  - 记录：2026-11-21 完成。文件 `mobile-rn/src/agent/types.ts`、`shared.d.ts`；新增 `AgentProvider`（含 `opencode`）、`AgentSessionMode`、`AgentExecutionLocation`、`AgentProfileSummary`、`AgentProfileCapabilityInput`、`AgentAiImageInput/Row`，会话/消息 `meta`、运行 `profile` 摘要与 `opencode` 联合类型。`npm.cmd run typecheck` 通过。
+  - 记录：2026-11-21 完成 `AgentProvider`、会话与执行位置、配置摘要、附件和元数据相关类型。TypeScript 检查通过。
 
 - [x] **6.2 图片持有表**
   - 范围：本机图片的会话期存储与清理。
@@ -300,9 +300,9 @@
 - [x] **6.3 配置解析与能力覆盖**
   - 范围：RN 静默解析顺序。
   - 文件：`mobile-rn/src/agent/config.ts`。
-  - 动作：首轮解析顺序本机（按 ID 升序）> 服务端用户 > 服务端默认；练习模式仅本机；能力校验用共享 `capabilities(input)`；返回脱敏配置摘要；`AGENT_RUNTIME_DISABLED` 只隐藏服务端路径，本机不受影响；本机 provider 选项增加 `opencode`（密钥仍入 SecureStore）。
+  - 动作：首轮按本机、服务端用户、服务端默认的顺序解析配置。练习模式使用本机，追问锁定执行位置。共享能力校验与脱敏配置摘要覆盖全部可用提供商。
   - 判据：A10/A11 的本机路径可复现：仅文本配置拒绝带图、禁用后本机入口仍在。
-  - 记录：2026-11-21 完成。文件 `mobile-rn/src/agent/config.ts`、`index.ts`；`list` 按 id 升序；`capabilities.image` 显式覆盖；`opencode` 固定端点（拒绝自定义 baseUrl）且密钥仅 SecureStore；`resolveLaunch` 实现本机 > 服务端用户 > 服务端默认、练习模式仅本机、追问 `prefer.location` 固定位置、`summaryOf` 脱敏摘要；服务端 `status().enabled` 只控制服务端候选。`npm.cmd run typecheck` 通过；A10/A11 设备项待 6.13。
+  - 记录：2026-11-21 完成本机配置排序、SecureStore、首轮解析与追问固定位置。RN 类型检查通过。设备项见历史验收。
 
 - [x] **6.4 图片归一化与读取**
   - 范围：RN 附件归一化。
@@ -356,9 +356,9 @@
 - [x] **6.11 配置页能力开关**
   - 范围：RN 配置声明。
   - 文件：`mobile-rn/src/screens/AgentProfileScreen.tsx`。
-  - 动作：本机与服务端用户配置增加“该模型可读取图片”开关，写 `capabilities.image`；provider 可选列表增加 `opencode`。
+  - 动作：本机和服务端用户配置提供图像能力开关及当前支持的提供商。
   - 判据：开关往返保存；`image:false` 配置带图请求被拒（A10 设备路径）。
-  - 记录：2026-11-21 完成。文件 `mobile-rn/src/screens/AgentProfileScreen.tsx`；本机 provider `fixture/openai/compatible/opencode`、服务端 `fixture/openai/opencode`；新增“该模型可读取图片”开关并写 `capabilities.image`，编辑时回显，默认 OpenCode 关闭、其余 provider 开启；OpenCode 隐藏端点 URL 并说明固定端点；列表显示“图片/纯文字”。`npm.cmd run check` 通过；开关往返与 A10 设备项待 6.13。
+  - 记录：2026-11-21 完成本机和服务端配置表单、图像能力回显与密钥处理。RN `check` 通过，设备项见历史验收。
 
 - [x] **6.12 静态检查与 Metro 导出**
   - 范围：RN 工程完整性。
@@ -395,7 +395,7 @@
 - [x] **7.2 真实视觉模型 smoke**
   - 范围：真实供应商的一次性验证。
   - 文件：`docs/ai-exercise-search/ACCEPTANCE.md`。
-  - 动作：smoke 配置使用 `opencode` 提供商与模型 `deepseek-v4.1-flash`（服务端列表中该 ID 的名称是 DeepSeek V4.1 Flash 1017，canonical id 为 `deepseek/deepseek-v4.1-flash-1017`；密钥从 git 忽略的 `api/.env` 读 `OPENCODE_API_KEY` 配服务端默认配置，或在 RN 本机配置录入，**任何真实密钥不进提交、文档与日志**）；对 `docs/ai-exercise-search/test_pic/` 中的实物照片执行手工 smoke（每张配一句文字），期望候选按下表预先填写，执行时逐张核对；竖拍照片同时验证 EXIF 方向归一化；只跑 fixture 的项保持"待验"标记。若该模型实测无图像能力，如实关闭能力开关并记录，另选有视觉能力的模型完成照片项。
+  - 动作：当前联调使用 `deepseek-flash`。从 Git 忽略的 `api/.env` 读取官方 DeepSeek 密钥，实例配置见 [服务端 v2 执行记录](SERVER_RETRIEVAL_EXECUTION.md#74-nestjs-检索与-agent-v2)。下表是 2026-11-21 的照片样例与期望。
 
 | 照片（`test_pic/`） | 内容 | 期望候选（执行前预填） | 实际候选 |
 |---|---|---|---|
@@ -406,14 +406,14 @@
 | `微信图片_20261121172212_124_66.jpg` | 黑色斜板哈克深蹲/腿举器械（肩垫、脚踏、配重片），竖拍 1280×1706 | `sled hack squat` / `hack squat` / `leg press`（大腿、sled machine） | `哈克深蹲` [high]、`腿举` [medium]、`反向哈克深蹲` [low] |
 
   - 判据：真实模型路径产出可读结果或明确错误；每张的期望命中与实际差异逐张可追溯；竖拍照片识别后显示方向正确；结果与截图入验收记录。
-  - 记录：2026-11-21：已通过。首次失败为产品配置问题而非模型能力：`https://opencode.ai/inference/openai/v1` 是 Console 按量付费端点，Go 订阅账户调用返回 402；改用 Go 端点 `https://opencode.ai/inference/go/v1` 并附带 `x-opencode-session` 后，5 张照片全部 `completed`，每张 9–15 秒，返回预期器械类别（推胸、腿举、腿屈伸、肩推、哈克深蹲），竖拍显示方向正确。证据：`docs/ai-exercise-search/evidence/smoke-go-2026-11-21.json`；密钥未进入日志。旧 402 证据保留在 `smoke-opencode-2026-11-21.json` 作为排障记录。
+  - 记录：2026-11-21。当时的视觉模型完成了五张照片，器械类别与原样例期望一致，竖拍方向通过。每张 9–15 秒。详见[当次验收记录](ACCEPTANCE.md)。
 
 - [x] **7.3 更新文档与项目地图**
   - 范围：仓库导航与自托管说明。
   - 文件：`AGENTS.md`、`docs/README.md`、`docs/RN_MIGRATION_STATUS.md`、`docs/SELF_HOSTING.md`。
   - 动作：AGENTS.md 增加或核对 `api/agent-runtime/tasks/`、`frontend/src/components/ExerciseAiSearch.jsx`、`frontend/src/lib/exercise-ai-search.js` 等条目；README 挂 ACCEPTANCE 链接；RN 迁移状态增加本功能条目；SELF_HOSTING 说明 `agentVision`、会话 2h/run 1h 清理与 `AGENT_RUNTIME_DISABLED` 的服务端限定语义。
   - 判据：目录职责与代码一致；链接可打开。
-  - 记录：2026-11-21：`AGENTS.md` 增加 `api/agent-runtime/tasks/`、Web 识别态与匹配模块；`docs/README.md` 挂 ACCEPTANCE；`RN_MIGRATION_STATUS.md` 增加 AI 动作检索小节；`SELF_HOSTING.md` 增加 `OPENCODE_API_KEY`/`OPENCODE_MODEL`、`AGENT_VISION`、5 MiB/1 MiB、会话 2h、run 1h 与服务端限定回退说明。
+  - 记录：2026-11-21 已更新项目地图、自托管文档与历史验收入口。当前实例配置用 `DEEPSEEK_API_KEY`、`DEEPSEEK_MODEL` 和 `AGENT_VISION`。
 
 - [x] **7.4 运行最终命令矩阵**
   - 范围：全量回归。

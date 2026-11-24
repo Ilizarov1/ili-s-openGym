@@ -57,7 +57,7 @@ async function spawnServer(dir, extraEnv = {}) {
       NODE_ENV: 'test',
       COACH_CREDENTIAL_DIR: path.join(dir, 'coach-auth'),
       INTEGRATIONS: '',
-      OPENCODE_API_KEY: '',
+      DEEPSEEK_API_KEY: '',
       ...extraEnv,
     },
   });
@@ -122,6 +122,53 @@ async function startRun(server, token, body) {
 function agentFile(dir, uid = OWNER_ID) {
   return path.join(dir, `agent-${uid}.json`);
 }
+
+test('DeepSeek is the instance preset and a retired profile needs a new credential', { timeout: 30000 }, async () => {
+  const server = await startServer({ DEEPSEEK_API_KEY: 'fake-deepseek-key', DEEPSEEK_MODEL: 'deepseek-v4-pro' });
+  try {
+    const token = fixtureSession(server.seed.secret, OWNER_ID, 'b');
+    const id = 'prf_retired_go';
+    const legacy = {
+      id, provider: 'opencode', model: 'legacy-model', version: 1, createdAt: 1, updatedAt: 1,
+      capabilities: { text: true, image: true, tools: true },
+      keyHint: 'test', secret: { v: 1, iv: '', tag: '', data: '' },
+    };
+    fs.writeFileSync(agentFile(server.dir), JSON.stringify({ schema: 1, profiles: { [id]: legacy } }));
+
+    const listing = await call(server, token, '/api/agent/configs');
+    assert.equal(listing.status, 200);
+    const [instance, old] = listing.body.profiles;
+    assert.equal(instance.provider, 'deepseek');
+    assert.equal(instance.model, 'deepseek-v4-pro');
+    assert.equal(instance.capabilities.image, false);
+    assert.equal(old.provider, 'none');
+    assert.equal(old.available, false);
+    assert.equal(old.keyHint, undefined);
+    const start = await startRun(server, token, {
+      taskId: 'exercise-search.v1', requestId: 'req_retired_profile_0001',
+      profileId: id, input: { hintText: 'squat' },
+    });
+    assert.equal(start.status, 404);
+    assert.equal(start.body.code, 'profile_not_found');
+
+    const route = '/api/agent/configs/' + id;
+    const change = { provider: 'deepseek', model: 'deepseek-flash' };
+    const missing = await call(server, token, route, { method: 'PATCH', body: JSON.stringify(change) });
+    assert.equal(missing.status, 400);
+    assert.equal(missing.body.code, 'invalid_request');
+
+    const updated = await call(server, token, route, {
+      method: 'PATCH', body: JSON.stringify({ ...change, apiKey: 'replacement-deepseek-test' }),
+    });
+    assert.equal(updated.status, 200, updated.text);
+    assert.equal(updated.body.provider, 'deepseek');
+    assert.equal(updated.body.available, true);
+    assert.equal(updated.body.capabilities.image, true);
+    assert.equal(updated.body.secret, undefined);
+  } finally {
+    await server.stop();
+  }
+});
 
 test('exercise-search.v1 runs text and inline images, reports a profile summary and stores metadata only', { timeout: 30000 }, async () => {
   const server = await startServer();
@@ -461,5 +508,91 @@ test('a second run in the same live session returns session_busy', { timeout: 30
   } finally {
     await server.stop();
     await new Promise(resolve => slow.close(resolve));
+  }
+});
+
+test('exercise-search.v2 advertises its version, ranks public IDs and projects names for follow-ups', { timeout: 30000 }, async () => {
+  const server = await startServer({ EXERCISE_SEARCH_VERSION: 'v2', AGENT_EXERCISE_SEARCH_DIAGNOSTICS: '1' });
+  try {
+    const token = fixtureSession(server.seed.secret, OWNER_ID, 'b');
+    const config = await call(server, token, '/api/config');
+    assert.deepEqual(config.body.agent, { enabled: true, exerciseSearchVersion: 'v2' });
+    const catalogue = JSON.parse(fs.readFileSync(path.join(API, 'agent-runtime', 'tasks', 'exercise-search-catalogue.json'), 'utf8'));
+    const byId = new Map(catalogue.map(entry => [entry.id, entry]));
+    const sessionId = 'ses_retrieval_0001';
+    const requestId = 'req_7677bd31-bfca-4c48-95fb-702a4a22db1c';
+    const text = '坐姿推胸 retrieval-private-marker';
+    const request = { taskId: 'exercise-search.v2', profileId: 'default', sessionId, input: { hintText: text } };
+    const invalid = await startRun(server, token, {
+      ...request, requestId: 'req_retrieval_bad_equipment',
+      input: { hintText: text, confirmedEquipment: 'not-in-catalogue' },
+    });
+    assert.equal(invalid.status, 400, invalid.text);
+    assert.equal(invalid.body.code, 'invalid_request');
+
+    const initial = await startRun(server, token, { ...request, requestId });
+    assert.equal(initial.status, 202, initial.text);
+    const first = await waitRun(server, token, initial.body.runId);
+    assert.equal(first.status, 'completed', JSON.stringify(first));
+    const { rankedIds, items, fallback, ...extra } = first.result.structured;
+    assert.ok(fallback.understanding);
+    assert.ok(rankedIds.length > 0 && rankedIds.length <= 10);
+    assert.equal(new Set(rankedIds).size, rankedIds.length);
+    assert.ok(rankedIds.every(id => byId.has(id)));
+    if (items) assert.deepEqual(items.map(item => item.id), rankedIds);
+    assert.ok(Object.keys(extra).every(key => key === 'clarifications'));
+
+    const session = await call(server, token, `/api/agent/sessions/${sessionId}`);
+    assert.equal(session.status, 200, session.text);
+    assert.equal(session.body.taskId, 'exercise-search.v2');
+    const answer = JSON.parse(session.body.messages.at(-1).content);
+    assert.equal(answer.fallback.understanding, fallback.understanding);
+    assert.deepEqual(answer.candidates.map(candidate => candidate.nameEn), rankedIds.map(id => byId.get(id).n));
+    assert.deepEqual(answer.candidates.map(candidate => candidate.name), rankedIds.map(id => byId.get(id).zh || byId.get(id).n));
+
+    const events = server.log().split('\n').filter(line => line.startsWith('{"event":"exercise_search"'))
+      .map(line => JSON.parse(line)).filter(event => event.traceId === requestId);
+    for (const stage of ['retrieval_text', 'retrieval_vector', 'retrieval_fusion', 'rerank']) {
+      assert.ok(events.some(event => event.stage === stage), `missing diagnostic stage ${stage}`);
+    }
+    assert.doesNotMatch(JSON.stringify(events), /retrieval-private-marker/);
+
+    for (let turn = 2; turn <= 6; turn++) {
+      const next = await startRun(server, token, {
+        ...request, requestId: `req_retrieval_turn_${turn}`, sessionMode: 'continue',
+        input: { hintText: '换个坐姿的', fixtureCase: 'fallback-only', confirmedEquipment: 'dumbbell' },
+      });
+      assert.equal(next.status, 202, next.text);
+      const followUp = await waitRun(server, token, next.body.runId);
+      assert.equal(followUp.status, 'completed', JSON.stringify(followUp));
+      assert.deepEqual(followUp.result.structured.rankedIds, []);
+    }
+    const extraTurn = await startRun(server, token, {
+      ...request, requestId: 'req_retrieval_turn_7', sessionMode: 'continue',
+    });
+    assert.equal(extraTurn.status, 429, extraTurn.text);
+    assert.equal(extraTurn.body.code, 'turn_limit');
+  } finally {
+    await server.stop();
+  }
+});
+
+test('v1 remains usable after the server rolls back its exercise-search version', { timeout: 30000 }, async () => {
+  const server = await startServer({ EXERCISE_SEARCH_VERSION: 'v1' });
+  try {
+    const token = fixtureSession(server.seed.secret, OWNER_ID, 'b');
+    const config = await call(server, token, '/api/config');
+    assert.equal(config.body.agent.exerciseSearchVersion, 'v1');
+    const request = { requestId: 'req_retrieval_rollback', profileId: 'default', input: { hintText: '俯卧撑' } };
+    const disabled = await startRun(server, token, { ...request, taskId: 'exercise-search.v2' });
+    assert.equal(disabled.status, 503, disabled.text);
+    assert.equal(disabled.body.code, 'retrieval_unavailable');
+    const legacy = await startRun(server, token, { ...request, taskId: 'exercise-search.v1' });
+    assert.equal(legacy.status, 202, legacy.text);
+    const answer = await waitRun(server, token, legacy.body.runId);
+    assert.equal(answer.status, 'completed');
+    assert.ok(Array.isArray(answer.result.structured.candidates));
+  } finally {
+    await server.stop();
   }
 });

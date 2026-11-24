@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [技术设计](DESIGN.md) · [执行计划](EXECUTION.md)
 
-状态：fixture 离线项、RN 设备项和 OpenCode Go 真实视觉模型 smoke 已完成；A11 的 RN 配对服务端隐藏与 A12/A14 设备复验仍待验。实施提交 `2808653b2`（Go 端点修正另行提交）。所有命令在 `D:\dev\open-gym-agent-runtime`（分支 `feat/agent-runtime`）执行，Windows PowerShell。
+本页记录 2026-11-21 的 fixture、RN 和真实视觉验收。A11 的配对服务端隐藏及 A12/A14 的设备复验按原记录待验。实施提交为 `2808653b2`，当时的 PowerShell 工作区为 `D:\dev\open-gym-agent-runtime`。当前 DeepSeek 服务端联调见 [执行记录](SERVER_RETRIEVAL_EXECUTION.md#7-主-agent-验收记录)。
 
 ## 环境
 
@@ -44,7 +44,7 @@
 | 6 Metro | `npx.cmd expo export --platform android --output-dir .expo-ai-search-export` | `index-b53c00c555e9c8bd0e57d3835fd33b11.hbc`，SHA-256 `C4FBCAE0C90105199A8538D545417D23726B0F8D89809D516930701C8BBAC746` | 2026-11-21 |
 | 6 RN 设备 | `emulator-5556`（openGymRnQa，Android 16） | A1 本机/服务端、A2、A3、A6、A8、A15 通过；截图见下 | 2026-11-21 |
 | 6 APK | `app-release.apk`；`apksigner verify`；`Get-FileHash` | v2 签名通过；SHA-256 `B9B1576E2B8313A9F8257A30D0004B2D2A20081356BA29C09002A84C737F97A9` | 2026-11-21 |
-| 7 真实视觉 smoke | `test_pic/` 5 张；`smoke-go-2026-11-21.json` | 5/5 `completed`，9–15 秒，类别与期望一致；Go 端点 + `x-opencode-session` | 2026-11-21 |
+| 7 真实视觉 smoke | `test_pic/` 5 张，证据 `smoke-go-2026-11-21.json` | 5/5 `completed`，9–15 秒，器械类别与用例期望一致 | 2026-11-21 |
 
 ## 验收对照
 
@@ -74,13 +74,12 @@ fixture 离线项与设备项分开标注。
 | 项 | 结果 |
 |---|---|
 | 日期 | 2026-11-21 |
-| 提供商 / 模型 | `opencode` / `deepseek-v4.1-flash`（列表名称 DeepSeek V4.1 Flash 1017，canonical id `deepseek/deepseek-v4.1-flash-1017`） |
-| 端点 | `https://opencode.ai/inference/go/v1`（OpenCode Go；请求带 `x-opencode-session`） |
+| 模型 | 当时网关上的 DeepSeek V4.1 Flash 1017 |
 | 能力 | 模型元数据声明输入 `text,image/jpeg,image/png,image/gif,image/webp`，`structured_output: true` |
-| 服务端配置 | 通过 `OPENCODE_API_KEY` 环境变量解析为服务端默认配置；密钥未写入 `agent-<uid>.json`，日志未包含密钥 |
+| 服务端配置 | 密钥来自当时的后端环境文件，验收日志和账号数据没有保存密钥 |
 | 结果 | **5/5 通过**：5 张竖拍照片均 `completed`（9–15 秒），返回推胸、腿举、腿屈伸、肩推、哈克深蹲候选与兜底理解；方向正确 |
 | 证据 | [evidence/smoke-go-2026-11-21.json](evidence/smoke-go-2026-11-21.json)；旧 402 排障记录 [evidence/smoke-opencode-2026-11-21.json](evidence/smoke-opencode-2026-11-21.json) |
-| 说明 | 首次 402 的原因是代码固定到了 Console 按量付费端点，而非 Go 端点；改为 Go 端点并补 `x-opencode-session` 后解决。见 EXECUTION 7.2 与 DESIGN §12。 |
+| 说明 | 当时先遇到网关鉴权错误，修正历史配置后完成验证。详见相应证据文件。 |
 
 ## 设备记录
 
