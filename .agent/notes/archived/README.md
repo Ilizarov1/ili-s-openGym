@@ -10,6 +10,7 @@
 | [RN Android 0.1.x 实施与验收](RN_ANDROID_EXECUTION.md) | 0.1.0–0.1.6 的构建、回归和验收记录 | [`docs/RN_MIGRATION_STATUS.md`](../docs/RN_MIGRATION_STATUS.md)、[`mobile-rn/scripts/README.md`](../mobile-rn/scripts/README.md) |
 | [RN 设计系统执行](RN_UI_EXECUTION.md) | 设计系统、Gallery 和模拟器验收 | [`docs/RN_UI_DESIGN_SYSTEM.md`](../docs/RN_UI_DESIGN_SYSTEM.md)、[`docs/RN_UI_VISUAL_TESTING.md`](../docs/RN_UI_VISUAL_TESTING.md) |
 | [P2 高级训练与动作库](rn-p2-training-library/README.md) | 需求、设计、执行步骤和验收目标；逐项完成状态以迁移清单为准 | [`docs/rn-p2/README.md`](../docs/rn-p2/README.md)、[`docs/RN_MIGRATION_STATUS.md`](../docs/RN_MIGRATION_STATUS.md) |
+| [RN 迁移状态与待验清单](RN_MIGRATION_STATUS.md) | RN 0.1.x / P0–P2 / Agent 与 AI 检索历史迁移清单（已停止维护） | [`docs/subsystem/mobile-rn/README.md`](../../../docs/subsystem/mobile-rn/README.md) |
 
 ## 证据
 

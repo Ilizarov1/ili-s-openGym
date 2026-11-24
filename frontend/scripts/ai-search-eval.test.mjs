@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // CLI automation for the AI exercise-search evaluation CLI (D12 of
-// docs/ai-exercise-search/EVAL_CLI_EXECUTION.md). This file runs under
+// .agent/notes/implemented/ai-exercise-search/EVAL_CLI_EXECUTION.md). This file runs under
 // node:test — NOT vitest — and frontend/vite.config.js excludes exactly this
 // path from the vitest collection on purpose:
 //
@@ -35,11 +35,10 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const CLI = path.join(REPO_ROOT, 'frontend', 'scripts', 'ai-search-eval.mjs')
 // Relative on purpose: the direct run resolves it against cwd (repo root),
 // the npm run against INIT_CWD (repo root) — both paths the CLI must support.
-const REAL_MANIFEST = 'docs/ai-exercise-search/eval/manifest.json'
-// 5 hinted + 5 edge replays + the 3 quality-regression replays (T0 of
-// docs/ai-exercise-search/QUALITY_EXECUTION.md).
-const REPLAY_SAMPLES = 13
-const PHOTO_ONLY_SAMPLES = 5
+const REAL_MANIFEST = '.agent/notes/implemented/ai-exercise-search/eval/manifest.json'
+const realManifestData = JSON.parse(await readFile(path.join(REPO_ROOT, REAL_MANIFEST), 'utf8'))
+const REPLAY_SAMPLES = realManifestData.samples.filter(sample => Boolean(sample.replay)).length
+const PHOTO_ONLY_SAMPLES = realManifestData.samples.filter(sample => !sample.replay).length
 
 // The synthetic markers. None of these may ever reach a report, stdout or
 // stderr; the assertions below print only pass/fail, never the values.

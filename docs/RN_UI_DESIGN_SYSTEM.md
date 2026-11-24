@@ -1,6 +1,6 @@
 # openGym RN 设计系统
 
-基线为 Android `0.1.4`，上游界面以当前仓库的 Web / Capacitor 客户端为准。本文规定 RN 客户端的设计系统架构、token、组件和验收方式。执行步骤见 [RN_UI_EXECUTION.md](../archive/RN_UI_EXECUTION.md)（归档）。
+基线为 Android `0.1.4`，上游界面以当前仓库的 Web / Capacitor 客户端为准。本文规定 RN 客户端的设计系统架构、token、组件和验收方式。执行步骤见 [RN_UI_EXECUTION.md](../.agent/notes/archived/RN_UI_EXECUTION.md)（归档）。
 
 ## 1. 目标与范围
 
@@ -48,7 +48,7 @@
 | `frontend/src/components/Modals.jsx`、`index.css` `.sheet` | `design/components/Sheet.tsx` | 底部弹出层 |
 | `frontend/src/views/Library.jsx` | 后续页面迁移 | 动作库、筛选表 |
 
-上游新增或修改设计 token 时，同步更新这里列出的 RN 文件，并在 `archive/RN_UI_EXECUTION.md` 记录来源。
+上游新增或修改设计 token 时，同步更新这里列出的 RN 文件，并在 `.agent/notes/archived/RN_UI_EXECUTION.md` 记录来源。
 
 ## 4. 架构分层
 
@@ -889,7 +889,7 @@ GitHub Actions 在 RN 源码或共用依赖变更时运行 `check`，结果计�
 - 上游 token 变化：先更新本文和 `tokens.ts`/`themes.ts`，再更新 Gallery 截图。
 - 新组件：先在 Gallery 中列出，再在页面使用。
 - 页面迁移：每个页面单独提交，迁移后删除该页面对 `ui.tsx` 的依赖。
-- 设计评审：固定模拟器 412×915，对比 Home / Plan / Library / Sheet 截图；记录在 `archive/RN_UI_EXECUTION.md`。
+- 设计评审：固定模拟器 412×915，对比 Home / Plan / Library / Sheet 截图；记录在 `.agent/notes/archived/RN_UI_EXECUTION.md`。
 
 ## 12. 与旧 UI 的迁移
 
@@ -924,7 +924,7 @@ GitHub Actions 在 RN 源码或共用依赖变更时运行 `check`，结果计�
 - `frontend/src/components/BodyMap.jsx`、`MiniBodyMap.jsx`、`lib/muscles.js`、`lib/body-paths.js`。
 - `frontend/src/components/TabBar.jsx`：五栏导航和中央开始按钮。
 - `frontend/src/views/Library.jsx`：动作库与筛选 sheet 的交互参考。
-- [archive/RN_ANDROID_EXECUTION.md](../archive/RN_ANDROID_EXECUTION.md)：RN Android 0.1.x 的实施与验收记录。
+- [archive/RN_ANDROID_EXECUTION.md](../.agent/notes/archived/RN_ANDROID_EXECUTION.md)：RN Android 0.1.x 的实施与验收记录。
 
 ## 15. 已知限制
 

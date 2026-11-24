@@ -1,71 +1,25 @@
-# openGym documentation
+# openGym 文档总路由
 
-Pick the part that matches what you're doing. If you just have a question, try the
-[FAQ](FAQ.md) first.
+本文件仅作为全仓库**子系统级路由入口**（长度严格保持 ≤ 300 行）。具体模块架构、源码映射、契约不变式、验证命令及功能指南，请进入对应子系统的 `README.md` 查看。
 
-## Using the app
+## 1. 七大子系统路由
 
-| Guide | Read it when |
+| 子系统 | 路由入口 | 管辖源码与核心职责 |
+|---|---|---|
+| **RN Android 客户端与设计系统** | [`docs/subsystem/mobile-rn/README.md`](subsystem/mobile-rn/README.md) | `mobile-rn/`（不含共享 Agent 核）：Expo Android 五 Tab 页面、SQLite、`src/design/` 设计系统、模拟器与真机视觉脚本 |
+| **Web / PWA / Capacitor 与领域引擎** | [`docs/subsystem/web-client/README.md`](subsystem/web-client/README.md) | `frontend/`：React 19 + Vite 页面、上游 CSS Tokens、`src/lib/` 纯函数训练引擎、i18n 多语言与 Capacitor 手机壳 |
+| **后端 API、认证、存储与同步** | [`docs/subsystem/api-sync/README.md`](subsystem/api-sync/README.md) | `api/`（核心网关与同步）：NestJS 路由、`openapi.yaml`、Passkeys/配对、`DATA_DIR` 原子存储、409 字段级同步与 Webhook 集成 |
+| **AI Agent、多模态检索、Coach 与 MCP** | [`docs/subsystem/ai-agent/README.md`](subsystem/ai-agent/README.md) | `api/agent-runtime/`、`api/src/agent/`、`api/coach/`、`frontend/src/agent/`、`mobile-rn/src/agent/`、`mcp/` 与检索评测 CLI |
+| **动作词库、多语言与媒体管线** | [`docs/subsystem/catalogue/README.md`](subsystem/catalogue/README.md) | `catalogue/`、`scripts/catalogue/`：5,600+ 动作元数据、译文、演示动画许可及前端/RN 词库生成管线 |
+| **穿戴与手表客户端** | [`docs/subsystem/wearables/README.md`](subsystem/wearables/README.md) | `watch-zepp/`、`frontend/android/wear/`、`frontend/garmin/`、`frontend/ios/App/Watch*` 及手表/健康双向同步桥 |
+| **部署运维、容器、官网与 CI** | [`docs/subsystem/infra-ops/README.md`](subsystem/infra-ops/README.md) | `docker-compose.yml`、`web/`、`helm/`、`kubernetes/`、`contrib/nix/`、`website/`、`cloudflare/`、`.github/` 与 `scripts/` |
+
+## 2. 工程治理与 Agent 协作入口
+
+| 入口 | 说明 |
 |---|---|
-| [FAQ](FAQ.md) | You have a quick question: iPhone, cost, where your data goes, AI, the exercise media |
-| [Modules](MODULES.md) | You want a leaner app (just training, or training and body), or wonder what switching a module off hides and keeps |
-| [Phone app](MOBILE.md) | You want the iPhone app, the Apple Watch or the Android APK, or to connect the app to your own server |
-| [Wear OS watch](WEAR_OS.md) | You want openGym on a Galaxy Watch, Pixel Watch or another Wear OS watch, or you work on the watch app |
-| [Garmin watch](GARMIN.md) | You want openGym on a Forerunner, fēnix, Venu, Instinct or another Garmin, or you build and publish the Connect IQ app |
-| [Zepp OS watch](ZEPP_OS.md) | You want openGym on an Amazfit (Zepp OS) watch, or you work on that watch app or the watch relay |
-| [Importing data](DATA_IMPORTS.md) | You're coming from FitNotes, Strong, Hevy or Apple Health, or sharing a plan with someone |
-| [AI coach](AI_COACH.md) | Your instance has the coach switched on and you want to know what it sees and can change |
-| [Integrations](INTEGRATIONS.md) | You want Apple Health, Health Connect, your watch or scale, or a webhook to Home Assistant, n8n or ntfy |
-
-The [live demo](https://opengym.ch/demo/) is the real app with example data, nothing
-to install.
-
-## Hosting it
-
-| Guide | Read it when |
-|---|---|
-| [Self-hosting](SELF_HOSTING.md) | You're setting up an instance. Start here: running it, passkeys and HTTPS, users, backups, updates, troubleshooting |
-| [HTTPS at home](SELF_HOSTING_HTTPS.md) | You want valid certificates on your LAN without exposing the server to the internet |
-| [On a Mac](SELF_HOSTING_MAC.md) | You want to run it on a Mac at home, with Colima instead of Docker Desktop and Tailscale for HTTPS |
-| [Kubernetes](SELF_HOSTING_KUBERNETES.md) | You run a cluster instead of Docker Compose |
-| [AI coach](AI_COACH.md) | You're deciding whether to turn the coach on, and with which provider |
-| [MCP server](../mcp/README.md) | You want Claude Desktop, Cursor or another AI client to read your training history |
-| [Integrations](INTEGRATIONS.md) | You're turning on webhooks (`INTEGRATIONS`), or letting them reach your home network |
-| [NixOS](NIX.md) | You run NixOS and want openGym native: flake packages and a NixOS module, no Docker |
-| [Security](../SECURITY.md) | You host it for other people, or want to report a vulnerability |
-
-All settings live in `.env`; [`.env.example`](../.env.example) explains each one, and the
-[README](../README.md#quick-start) has the full table.
-
-## Working on the code
-
-| Guide | Read it when |
-|---|---|
-| [Contributing](../CONTRIBUTING.md) | Before your first pull request: setup, guidelines, what CI checks |
-| [Architecture](ARCHITECTURE.md) | You want the map: how the app, server, phones and watch fit together, with diagrams |
-| [Agent runtime](agent-runtime/REQUIREMENTS.md) | Requirements, [technical design](agent-runtime/DESIGN.md), [execution plan](agent-runtime/EXECUTION.md), [acceptance record](agent-runtime/ACCEPTANCE.md), [review fixes](agent-runtime/REVIEW.md) and the [second review](agent-runtime/REVIEW2.md) for Web and RN |
-| [AI exercise search](ai-exercise-search/REQUIREMENTS.md) | Multimodal exercise search from the library and training add/replace pickers (text, photo or both, with follow-up rounds) built on the agent runtime: requirements with the settled UI interaction contract, [technical design](ai-exercise-search/DESIGN.md), [execution plan](ai-exercise-search/EXECUTION.md), [acceptance record](ai-exercise-search/ACCEPTANCE.md), [evaluation CLI and diagnostics execution plan](ai-exercise-search/EVAL_CLI_EXECUTION.md) and the [eval runbook](ai-exercise-search/eval/README.md) (offline replay / vision / e2e CLI, sample manifest, traceId diagnostics), and the [search quality optimization plan](ai-exercise-search/QUALITY_EXECUTION.md), plus the [local Top 3 selection experiment](ai-exercise-search/LOCAL_SELECTION_EXECUTION.md) and [candidate equipment experiment](ai-exercise-search/CANDIDATE_EQUIPMENT_EXECUTION.md) |
-| [RN and Web interaction parity](rn-web-interaction-parity/README.md) | Android workout and routine editing flows aligned with Web |
-| [RN exercise search](rn-exercise-search/DESIGN.md) | Web search reuse, saved aliases, combined filters and zero-result suggestions. Five execution guides, the [entry baseline](rn-exercise-search/BASELINE.md) and [acceptance record](rn-exercise-search/ACCEPTANCE.md). |
-| [Archive](../archive/README.md) | Completed requirements: implementation plans, acceptance records and evidence status |
-| [App stores and releases](APP_STORES.md) | You're shipping a release: the APK, Google Play and the App Store |
-| [scripts/](../scripts/README.md) | You want to know which build script does what |
-| [CLAUDE.md](../CLAUDE.md) | The same project context in the form Claude Code sessions start from |
-| [HTTP API](API.md) | You're touching routes; the OpenAPI spec is the source of truth |
-| [Roadmap](../ROADMAP.md) | You want to know what's planned and where your idea fits |
-| [Changelog](../CHANGELOG.md) | You want to know what changed in a release |
-
-Design notes for specific features, kept next to the code they describe:
-
-| Note | Covers |
-|---|---|
-| [Set types](dev/SET_TYPES.md) | Drop sets and rest-pause: the set-row model and how totals are counted |
-| [Workout views](dev/LIST_VIEW.md) | The cards, list and compact layouts of the workout screen |
-| [Combine routines](dev/COMBINE_ROUTINES.md) | Spec for running more than one routine in a session |
-| [Fatigue and sets](dev/FATIGUE_SETS_MODEL.md) | How hard sets feed the fatigue map and its recovery time per muscle |
-
-## Still stuck?
-
-Ask on the [Discord](https://discord.gg/e62jY6fwVb) or in
-[Discussions](https://github.com/DuarteSantos8/openGym/discussions). If something in these docs was
-wrong or missing, that's worth an issue too.
+| [`AGENTS.md`](../AGENTS.md) | Agent 顶层路由、工作流铁律与环境守则 |
+| [`docs/code-standards.md`](code-standards.md) | 全仓库强制编码与架构标准（含由错题本满 3 次脱水升格的祈使句规则） |
+| [`.agent/lessons.md`](../.agent/lessons.md) | 查错与高耗时瓶颈复盘账本（记录规则 + 原因 + 命中次数，满 3 次升格） |
+| [`.agent/notes/`](../.agent/notes/README.md) | 需求文档生命周期目录：`proposed/`（待实施）→ `implemented/`（已验收）→ `archived/`（归档） |
+| [`.agent/skill/opengym-development/`](../.agent/skill/opengym-development/SKILL.md) | `/opengym-development` 持续开发主技能（语义级变更声明、改后四步核对、UI 规范与 GIF 硬验收） |

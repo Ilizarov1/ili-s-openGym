@@ -1,0 +1,767 @@
+{
+  "results": [
+    {
+      "id": "hinted-seated-row",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿划船",
+            "nameEn": "lever seated row",
+            "rationale": "照片中可见的挂片式杠杆臂、座垫正前方的竖向胸垫，以及朝内的横向把手，都表明这是一个坐姿水平拉的器械动作；用户也确认这是一台挂片式坐姿划船器械",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "胸支撑坐姿划船",
+            "nameEn": "chest-supported lever row",
+            "rationale": "座垫前的竖向胸垫能抵住胸口，说明这个设计是为了做胸支撑划船，从而减少下背参与；不过用户没有说明是否会抬起躯干",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片中是一台挂片式坐姿划船器械，两侧杠杆臂上各有一个横向把手，正对着抓握方向；座垫前方有一块竖向胸垫，用来在拉动时抵住胸口，提示这是水平拉、把把手拉向身体的动作轨迹。用户也明确说这是一台挂片式坐姿划船器械，并想找背部坐姿划船动作。可见的几何结构支持坐姿水平拉，器械的胸垫和它横向的把手朝向都印证了这一点。",
+          "bodyParts": [
+            "back",
+            "upper arms"
+          ],
+          "equipment": [
+            "leverage machine",
+            "weight plate"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "双臂同时拉",
+            "prompt": "你是双臂同时拉，还是单侧交替拉？"
+          },
+          {
+            "label": "握法",
+            "prompt": "你是用正握、对握还是反握抓把手？"
+          },
+          {
+            "label": "重量片",
+            "prompt": "这台器械的挂片位置和片重是多少？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hinted-leg-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "斜躺腿举",
+            "nameEn": "sled leg press",
+            "rationale": "照片中的两根斜导轨、可滑动踏板和固定靠背构成典型的 sled 腿举结构，与用户所说“斜躺的腿举器械、腿部推蹬”完全对应。",
+            "level": "high",
+            "equipment": "sled machine",
+            "bodyPart": "upper legs"
+          },
+          {
+            "name": "腿举机提踵",
+            "nameEn": "sled calf press",
+            "rationale": "同一块大脚踏板下沿可让前脚掌踩住、脚尖发力蹬伸，是这类腿举机常见的附属动作；但照片中看不到具体踩踏位置，只能作为低置信度补充。",
+            "level": "low",
+            "equipment": "sled machine",
+            "bodyPart": "lower legs"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片中是一台坐/斜躺式腿举机：有两根倾斜导轨（sled carriage）、一块带防滑纹的大脚踏板、前端固定的座椅与斜靠背，靠背上方还能看到疑似器械品牌的字样。用户文字明确说“斜躺的腿举器械”“腿部推蹬动作”，因此器械形态与动作方向（双脚蹬出、沿斜导轨推蹬）一致。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "sled machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-leg-extension",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿腿屈伸",
+            "nameEn": "lever leg extension",
+            "rationale": "器械有固定座椅和后仰靠背，前方杠杆臂上的圆柱形踝垫位置正好在脚踝前方，配重块沿滑槽上下移动，形成坐姿伸膝的动作路径；用户文字也点明这是坐姿腿屈伸器械、想练大腿前侧。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "upper legs"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片中是一台坐姿杠杆式腿屈伸机：灰色配重块从机身中央的竖直滑槽垂下，座椅后仰角度较小，靠背上缘有小头枕，座椅前缘两侧伸出杠杆臂，末端包着圆柱形踝垫，这是典型的伸膝发力结构；机身立柱上的黄色标签文字模糊，无法辨认，也看不到明确的品牌标识。用户文字也确认这是坐姿腿屈伸器械，想找大腿前侧的训练动作，两处证据一致，所以动作方向就是坐姿伸膝，训练股四头肌。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-incline-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "上斜杠杆推胸",
+            "nameEn": "incline lever chest press",
+            "rationale": "蓝色杠杆臂斜向前上方伸出、靠背略后倾并配脚踏板，是挂片式上斜推胸机的典型几何；用户也明确说这是“坐姿上斜推胸器械”。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "杠杆推胸",
+            "nameEn": "lever chest press",
+            "rationale": "同机可调的握把与座垫位置，使平推与上斜推共用一副杠杆臂；若座位调低、握把降至胸线，动作即为普通杠杆推胸。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "图片中是一台挂片式杠杆器械：蓝色双杠杆臂向前上方倾斜伸出，末端为向下弯的握把；中间是一块接近竖直、略向后倾的黑色靠背和一个较小的座垫，脚端有一块脚踏板；器械下部伸出多根挂片杆（用于加杠铃片），不含配重块与钢索，属于杠杆式挂片机。用户文字明确说明是“挂片式坐姿上斜推胸器械”，想找上斜推胸动作。推的方向是沿倾斜杠杆向前上方推，正好对应上胸（上斜推胸）的发力路径。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-chest-supported-row",
+      "structured": {
+        "candidates": [
+          {
+            "name": "胸部支撑T杠划船",
+            "nameEn": "chest-supported T-bar row",
+            "rationale": "照片中有清晰的黑色胸垫和脚踏板，前端是横向握把，两侧杠杆臂末端挂着杠铃片；胸垫决定了这是胸部支撑的俯身划船，正好对应你说的“胸部支撑俯身划船器械”。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "T杠划船",
+            "nameEn": "T-bar row",
+            "rationale": "两根长杠杆臂加挂片杆呈T形布局，前端是固定的横向把手，这是T杠划船的典型结构；只是照片里看不出使用的时候是否要双脚站在踏板上、胸部是否贴垫，所以只给到中等置信度。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "器械俯身划船",
+            "nameEn": "lever bent-over row",
+            "rationale": "整机是插片式杠杆结构，没有钢索和滑轮组，运动轨迹由杠杆臂固定；不过只能看到器械本身，看不到握法和是否单侧发力，所以给出比较笼统的器械俯身划船。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台插片式（挂杠铃片）的俯身划船器械：两侧各有一根很长的杠杆臂，杠杆臂末端伸出挂片杆，上面挂着杠铃片；机身中间是黑色胸垫和下方的脚踏板，说明使用者要面朝胸垫、胸部贴垫、双脚踩住踏板，然后拉动前端的横向或V形把手向后；整个人的身体角度要前倾俯身，运动轨迹是沿杠杆臂向后上方划。这台机器靠配重片和杠杆臂提供阻力，属于胸垫支撑的俯身划船，训练的主要是背部（背阔肌、菱形肌、斜方肌中下部），所以用户说的“胸部支撑俯身划船器械”与图片吻合。",
+          "bodyParts": [
+            "back"
+          ],
+          "equipment": [
+            "leverage machine",
+            "weight plate"
+          ]
+        }
+      }
+    },
+    {
+      "id": "short-hint-seated-row",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿器械划船",
+            "nameEn": "lever seated row",
+            "rationale": "照片中左右双杠杆臂加横向握把、中央胸垫与脚踏板，加上你写的\"坐姿练背\"，正是挂片式坐姿划船的典型结构；握把绕中轴水平向后拉即为划船路径",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "单臂器械划船",
+            "nameEn": "single-arm lever row",
+            "rationale": "两条杠杆臂各自独立转动，具备单侧拉的条件，但照片看不出实际是否单臂使用，只能作低置信度猜测",
+            "level": "low",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台挂片式器械：左右各一条独立的杠杆臂，臂端在胸部高度伸出横向握把，中央有一根竖直立柱连着胸/身体靠垫，底部前方有脚踏板，杠杆下端的挂片杆可加杠铃片；整机没有钢索和滑轮配重块，圆柱转轴位于中部偏下，说明握把是绕固定轴作水平向后拉的弧线运动，且为坐姿、躯干靠垫支撑。机器上的标签文字模糊，无法读出具体型号。结合你写的\"坐姿练背\"，判断这是坐姿拉、靠垫支撑的划船类动作。",
+          "bodyParts": [
+            "back"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "双手同时拉",
+            "prompt": "我是双手同时向后拉两侧握把，还是单侧交替拉？"
+          },
+          {
+            "label": "宽握还是窄握",
+            "prompt": "我拉的是宽握把还是靠近中线的窄握把？"
+          },
+          {
+            "label": "胸垫支撑吗",
+            "prompt": "我的胸口是贴住中间靠垫，还是坐直不靠垫？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-leg-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "斜蹬腿",
+            "nameEn": "sled leg press",
+            "rationale": "斜置滑轨上的滑动小车配座垫与斜靠背，正是坐姿向斜上方蹬踏的挂片式蹬腿机结构。",
+            "level": "medium",
+            "equipment": "sled machine",
+            "bodyPart": "upper legs"
+          },
+          {
+            "name": "哈克深蹲",
+            "nameEn": "lever hack squat",
+            "rationale": "斜靠背顶端两侧的肩垫与把手，配合沿斜轨上下滑动的小车，符合背靠斜板、肩扛肩垫下蹲的哈克深蹲用法。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "upper legs"
+          },
+          {
+            "name": "V型深蹲",
+            "nameEn": "lever v-squat",
+            "rationale": "同一台斜轨器械在调高座垫后常被用作V型深蹲，肩垫与斜靠背的布局与之相符，但角度无法从照片确认。",
+            "level": "low",
+            "equipment": "leverage machine",
+            "bodyPart": "upper legs"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台斜角滑轨式腿训器械：两组平行斜轨上带滑动小车，小车上方有肩垫和两侧把手，下方有一块大号斜靠背（靠背上有品牌字样，但照片模糊只能看出类似字母轮廓，无法确读），最前端是座垫。没有配重片插销或钢索滑轮，属于挂片式/杠杆式结构。用户文字只说“练腿”，没有指明坐姿还是站姿。这类斜轨+靠背+肩垫+座垫的组合，通常对应坐姿斜蹬腿或站姿哈克深蹲两种用法。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "sled machine",
+            "leverage machine"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "坐姿蹬腿",
+            "prompt": "你是坐着用双脚向前上方蹬这台器械吗？"
+          },
+          {
+            "label": "站姿深蹲",
+            "prompt": "你是背靠斜板、肩顶肩垫站着做深蹲吗？"
+          },
+          {
+            "label": "单腿还是双腿",
+            "prompt": "你是双腿一起做，还是单腿交替做？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-leg-extension",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿腿屈伸",
+            "nameEn": "lever leg extension",
+            "rationale": "坐垫+靠背为坐姿，前方杠杆臂绕上方轴心摆动，末端滚垫贴在小腿前面，靠伸膝把滚垫向前顶起——正是腿屈伸的几何；用户说“练大腿前侧”进一步确认是股四头肌动作。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "upper legs"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片中是一台坐姿杠杆式腿部器械：灰色框架配黄色标贴，中间是一根竖直的配重塔（可见滑槽与选片销），前方为带靠背的坐垫，坐垫前面伸出一根绕上方圆盘轴心摆动的杠杆臂，杠杆臂末端装圆柱形海绵滚垫，滚垫位于使用者小腿前侧/脚踝前方，正好在伸膝时被小腿向前顶起。结合用户文字“练大腿前侧”，这个动作路径是坐姿伸膝，主要练股四头肌。",
+          "bodyParts": [
+            "upper legs"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "short-hint-incline-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "上斜推胸机",
+            "nameEn": "lever incline chest press",
+            "rationale": "靠背接近竖直略后倾、把手位于肩上方，杠杆臂自上方枢轴向前下方合拢，配合用户“坐姿练上胸”的描述，指向坐姿上斜推胸轨迹。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "坐姿推胸",
+            "nameEn": "lever chest press",
+            "rationale": "同一台挂片杠杆式推胸机，若把靠背调直、把手降到胸线，即为平推；图中靠背角度无法确认是否可调，故保留更通用的坐姿推胸。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "坐姿肩推",
+            "nameEn": "lever shoulder press",
+            "rationale": "把手位置高于肩线、枢轴在上方，几何上也可支持坐姿向上推举；仅为把手高度带来的次要可能。",
+            "level": "low",
+            "equipment": "leverage machine",
+            "bodyPart": "shoulders"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台蓝色杠杆臂的挂片式坐姿器械：底部可见多根配重挂杆，中部有座垫与接近竖直、略微后倾的黑色靠背，正前方低处有一块脚踏板；两条上斜的杠杆臂从靠背后上方的共同枢轴伸出，把手位于靠背前上方、约与肩同高偏上，双臂向前下方合拢推动，属于推举类而非夹胸类轨迹。可见器械标签文字仅为尺寸“1780*1450*2070”和重量“184KG”，未标注器械名称。用户文字“坐姿练上胸”与该几何一致，因此以上斜推胸为主。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "靠背角度",
+            "prompt": "靠背是接近竖直还是明显后倾？这决定是平推还是上斜推胸。"
+          },
+          {
+            "label": "推还是夹",
+            "prompt": "两只把手是向前推出去，还是向中间夹拢？"
+          },
+          {
+            "label": "单侧还是双侧",
+            "prompt": "你是双臂同时推，还是左右手交替单侧推？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-chest-supported-row",
+      "structured": {
+        "candidates": [
+          {
+            "name": "胸支撑划船",
+            "nameEn": "lever chest supported row",
+            "rationale": "黑色胸部支撑垫、站立踏板和两根带多把位手柄的杠杆臂组成了典型的挂片式胸支撑划船结构，手柄向身体方向拉动，正是练背的划船轨迹。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "T杠划船",
+            "nameEn": "lever t-bar row",
+            "rationale": "挂片式杠杆臂加上胸部支撑垫，也是不少健身房中 T 杠划船机的形式，具体是哪一种，取决于手柄是朝身体方向拉动还是朝斜上方拉动。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          },
+          {
+            "name": "站姿杠杆划船",
+            "nameEn": "lever standing row",
+            "rationale": "没有坐垫，脚下有防滑踏板，说明使用者是站立、身体前倾发力，属于站姿杠杆划船类的动作。",
+            "level": "low",
+            "equipment": "leverage machine",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台挂片式器械：中部有一块约45°倾斜的黑色胸部支撑垫，前方是两根带多把位手柄（横握和竖握）的杠杆臂，右侧是带菱形纹路防滑面的站立踏板，下方配有可加杠铃片的挂片杆，整机没有坐垫。用户文字说“练背”。据此可以看出，这是一个站立前倾、用胸部抵住支撑垫、双手向身体方向拉动手柄的划船动作，主要锻炼背部。",
+          "bodyParts": [
+            "back"
+          ],
+          "equipment": [
+            "leverage machine",
+            "weight plate"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-new-shoulder-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿器械推肩",
+            "nameEn": "lever shoulder press",
+            "rationale": "器械的配重片、滑轮钢索、坐姿高靠背以及肩部附近的握把，都符合坐姿器械肩推；用户文字也直接指向坐姿推肩器械。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "shoulders"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中可见一台坐姿推举器械：左侧为配重片堆叠与滑轮/钢索，座椅配高靠背，双手握把位于肩部附近，推举轨迹向上；图片顶部的标牌文字太小，无法辨认。用户也明确说明这是坐姿推肩器械，并想找肩部推举动作。",
+          "bodyParts": [
+            "shoulders"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-new-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿推胸",
+            "nameEn": "seated cable chest press",
+            "rationale": "左侧配重片与滑轮拉索，加上高后仰靠背的座椅以及胸部高度水平握把向前推的路径，与用户“坐姿推胸器械”的描述一致，因此判断为配重片拉索式坐姿推胸。",
+            "level": "high",
+            "equipment": "cable",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台坐姿推胸器械：左侧机身内有一根竖直放置的配重片和滑轮钢带，属于配重片、拉索传动，不是挂片式杠杆；座椅后方是一块很高的后仰靠背，顶部带护头垫，使用者是坐姿、上身略微后仰；身体前方有两只向前伸出的推臂，握把呈水平方向，位置与胸部同高，推的路线是向前并略微向内合拢；机器顶部有一块中文标注牌，但看不清具体型号。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "cable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-new-lying-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "杠杆仰卧推胸",
+            "nameEn": "lever chest press",
+            "rationale": "图中可以看到两根挂片式杠杆臂，它们绕上方枢轴转动，带有胸部高度的向前握把，还有一条没有靠背的平躺长凳；这正是仰卧杠杆推胸的几何结构，也与用户所说的“杠杆仰卧推胸器械”一致。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "杠杆推胸",
+            "nameEn": "lever chest press",
+            "rationale": "如果这台器械的长凳可以放到接近直立的位置，那么同一个杠杆臂与握把结构也可以用于坐姿杠杆推胸；可见的平凳和胸部高度的握把仍然指向推胸动作。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台挂片式杠杆推胸器械：左右两根杠杆臂绕上方枢轴转动，杠杆臂末端有挂片杆，上面挂着杠铃片；两根杠杆臂之间连着一副向前伸出的横向握把，握把大约在胸部高度。器械配有一条平躺长凳，没有靠背，也没有可调节的座椅角度，因此训练者要仰卧（仰卧）在平凳上，向前推握把。长凳与杠杆臂之间的高度差决定了这是一台平卧推胸（平卧）器械，而不是上斜或下斜版本。机架下侧的标签只有部分字迹能够辨认，不足以确定品牌，因此没有把它作为识别依据。这些信息与用户说的“杠杆仰卧推胸器械”完全吻合。",
+          "bodyParts": [
+            "chest",
+            "upper arms"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-new-chest-fly",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿蝴蝶机夹胸",
+            "nameEn": "seated cable fly",
+            "rationale": "图片为带配重片和滑轮的坐姿蝴蝶机，有坐垫与竖背垫，两侧可旋转臂向内合拢即为夹胸轨迹；用户也明确说“蝴蝶机”“坐姿夹胸”。",
+            "level": "high",
+            "equipment": "cable",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "坐姿反向蝴蝶机（后束飞鸟）",
+            "nameEn": "seated reverse cable fly",
+            "rationale": "同一台器械的两侧臂可反向向外打开，为后束飞鸟方向；因用户未提及后肩，仅作为同机另一动作备选。",
+            "level": "medium",
+            "equipment": "cable",
+            "bodyPart": "shoulders"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台 CYBEX VR1 系列的坐姿蝴蝶机／后束训练器：左侧立柱内有配重片与滑轮组，钢索经顶部滑轮带动两侧可旋转臂（臂上带前臂靠垫和黑色握把），右下方为坐垫，中间为竖立的背靠垫，说明这是坐姿、双臂绕肩轴水平摆动开合的钢索式器械。摆动方向决定动作：双臂由外向内合拢为夹胸，由内向外打开为后束飞鸟。",
+          "bodyParts": [
+            "chest",
+            "shoulders"
+          ],
+          "equipment": [
+            "cable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "hinted-new-lat-pulldown",
+      "structured": {
+        "candidates": [
+          {
+            "name": "高位下拉",
+            "nameEn": "cable lat pulldown",
+            "rationale": "顶部滑轮垂下的宽横杆、下方座凳与大腿压辊，加上用户自述“高位下拉器械”，对应坐姿由上向下拉至胸前的标准绳索下拉。",
+            "level": "high",
+            "equipment": "cable",
+            "bodyPart": "back"
+          },
+          {
+            "name": "对握高位下拉",
+            "nameEn": "cable neutral-grip lat pulldown",
+            "rationale": "横杆两端带斜角、手掌相对的中立握把，支持以对握方式下拉，但照片无法确认你实际抓握的位置。",
+            "level": "medium",
+            "equipment": "cable",
+            "bodyPart": "back"
+          },
+          {
+            "name": "窄距高位下拉",
+            "nameEn": "cable close-grip lat pulldown",
+            "rationale": "同一根下拉杆中部亦可窄握下拉，属于该器械可完成的握距变式，但图中未见专用窄握把手，仅作备选。",
+            "level": "low",
+            "equipment": "cable",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台绳索/滑轮配重式高位下拉器械：左侧是带护罩的配重塔，钢丝绳自顶部滑轮垂下，连接一根向两侧下垂、末端带斜角握把的宽横杆；座位前方有一对大腿压辊，右侧是黑色软垫座凳，整体为坐姿、面向器械、由上向下拉的结构。配重塔顶部有品牌标签，但文字无法清晰辨认。用户也明确说明这是一台高位下拉器械，想找背部下拉动作。",
+          "bodyParts": [
+            "back"
+          ],
+          "equipment": [
+            "cable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "short-hint-new-shoulder-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿器械侧平举",
+            "nameEn": "lever lateral raise",
+            "rationale": "两个摆臂带软垫，位于肩部高度，由背后钢索配重驱动并绕轴摆动；座垫和高靠背让身体保持坐姿、上臂贴住臂垫向体侧外展，这是侧平举机的典型结构。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "shoulders"
+          },
+          {
+            "name": "器械肩推",
+            "nameEn": "lever shoulder press",
+            "rationale": "手柄在肩部高度，可沿杠杆向上推；加上高靠背支撑和配重钢索，符合坐姿器械推举的布局；但照片中手柄起始角度看不到，无法确认是向上推还是向两侧打开。",
+            "level": "medium",
+            "equipment": "leverage machine",
+            "bodyPart": "shoulders"
+          }
+        ],
+        "fallback": {
+          "understanding": "图片里是一台坐姿杠杆式配重器械：机身左侧是竖直的配重块和顶部滑轮组，钢索沿立柱向下，接到肩部高度的一对摆臂/手柄上；右侧是高靠背加座垫，使用者坐姿、后背贴靠背，双臂在体侧或体前握住把手绕轴摆动。器械顶部有红黑色动作示意图，但文字太小，无法辨认标签。用户只说了“练肩”，没有说明是外展还是上推。",
+          "bodyParts": [
+            "shoulders"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "向两侧抬起",
+            "prompt": "手柄是让手臂向两侧抬起的侧平举动作吗？"
+          },
+          {
+            "label": "向上推举",
+            "prompt": "手柄是朝头顶方向往上推的肩推动作吗？"
+          },
+          {
+            "label": "单侧还是双侧",
+            "prompt": "这个器械是双臂同时用，还是左右单侧交替使用？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-new-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿器械推胸",
+            "nameEn": "lever chest press",
+            "rationale": "图中靠背坐姿、握把位于胸前高度并沿铰接连杆向前推出，配重块滑轨在机身侧后方，是典型的坐姿器械推胸结构；用户文字「坐姿练胸」也直接指向推胸。",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台坐姿、带靠背和头部软垫的固定器械，机身左侧为封闭式配重块滑轨（可见钢丝与配重片），两根握把位于胸前高度，经铰接连杆向前推，运动方向远离身体，属推胸轨迹；框架为灰色管材，靠背上贴有说明标签，但标签文字过小无法辨认。用户文字「坐姿练胸」与这一胸部位、坐姿推的形态一致。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        }
+      }
+    },
+    {
+      "id": "short-hint-new-lying-chest-press",
+      "structured": {
+        "candidates": [
+          {
+            "name": "器械推胸",
+            "nameEn": "lever chest press",
+            "rationale": "两侧挂片杠杆臂绕横梁转动、把手朝前且与胸同高，加上垫面位于两手之间，构成标准的挂片式推胸轨迹；用户文字“练胸”与这一轨迹一致",
+            "level": "high",
+            "equipment": "leverage machine",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片是一台挂片式杠杆器械：左右各一条独立杠杆臂，臂的后端是挂片轴并已挂上杠铃片，臂的前端向内伸出把手；两条杠杆臂绕同一横梁转动，因此运动轨迹是向前的推。中间是一条水平长条平垫，没有靠背，垫面高度大致在髋与膝之间。把手与垫面高度相近且朝前，所以垫子可能是平躺用的，也可能是坐姿用的。下方横梁上有一块小铭牌，字迹模糊，无法读出品牌或型号。用户的文字“练胸”指明了目标部位是胸部。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "leverage machine"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "平躺还是坐姿",
+            "prompt": "这台器械是平躺在垫上推，还是坐着推？"
+          },
+          {
+            "label": "单臂还是双臂",
+            "prompt": "你是想双臂同时推，还是单臂交替推？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-new-chest-fly",
+      "structured": {
+        "candidates": [
+          {
+            "name": "坐姿绳索夹胸",
+            "nameEn": "seated cable fly",
+            "rationale": "双臂悬挂在可旋转悬臂上、把手位于胸高，配合前方座垫与竖立靠垫，最直接的用法是坐姿把两侧把手向身体中线合拢，即夹胸。",
+            "level": "medium",
+            "equipment": "cable",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "绳索推胸",
+            "nameEn": "cable chest press",
+            "rationale": "同一对胸高把手也可以做向前的水平推；用户只写“练胸”未说明是夹还是推，推胸是该器械几何允许的另一种胸部动作。",
+            "level": "medium",
+            "equipment": "cable",
+            "bodyPart": "chest"
+          },
+          {
+            "name": "站姿绳索夹胸",
+            "nameEn": "standing cable fly",
+            "rationale": "悬臂高度可调、双立柱结构也支持站姿单臂或双臂夹胸；但照片中座垫已装好，站姿并非首选，故只作低置信度补充。",
+            "level": "low",
+            "equipment": "cable",
+            "bodyPart": "chest"
+          }
+        ],
+        "fallback": {
+          "understanding": "照片里是一台钢索+配重片传动的双臂训练器（立柱上有配重片插销、顶部走钢索与滑轮，没有杠铃片挂杆、也没有倾斜滑轨或脚踏板），因此不是杠杆式或滑轨式器械。两根可旋转的悬臂各带一个竖握把手，把手大致在坐姿胸/肩高度，机器前方有软包座垫与竖立靠垫，说明是坐姿面向或背向立柱使用，双臂可以向前合拢或向两侧打开。机身上可辨认的标签文字为 “CYBEX” 与 “VR3”。用户文字只说“练胸”，没有说明是夹胸还是推胸，所以给出夹胸与推胸两类最可能的动作。",
+          "bodyParts": [
+            "chest"
+          ],
+          "equipment": [
+            "cable"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "坐姿夹胸",
+            "prompt": "你是坐着把两侧把手向胸前合拢吗？"
+          },
+          {
+            "label": "向前推胸",
+            "prompt": "你是把把手向前推出去（推胸）而不是夹胸吗？"
+          },
+          {
+            "label": "单侧还是双侧",
+            "prompt": "你是双手同时做，还是只用单侧手臂？"
+          }
+        ]
+      }
+    },
+    {
+      "id": "short-hint-new-lat-pulldown",
+      "structured": {
+        "candidates": [
+          {
+            "name": "高位下拉",
+            "nameEn": "cable lat pulldown",
+            "rationale": "塔顶高滑轮上悬挂的宽距下拉横杆，加上凳前的膝部压辊，是标准的坐姿高位下拉配置；用户说「练背」正对应此动作。",
+            "level": "high",
+            "equipment": "cable",
+            "bodyPart": "back"
+          },
+          {
+            "name": "坐姿绳索划船",
+            "nameEn": "cable seated row",
+            "rationale": "塔底的低位滑轮配脚踏挡板，坐于训练凳上向腹部拉，是同一台机器的另一功能位，同样练背。",
+            "level": "high",
+            "equipment": "cable",
+            "bodyPart": "back"
+          },
+          {
+            "name": "直臂下压",
+            "nameEn": "cable straight-arm pulldown",
+            "rationale": "高位滑轮可站姿直臂下压，但图中未见专用绳索把手，只能在现有高滑轮上换配件实现，故仅列为可能。",
+            "level": "low",
+            "equipment": "cable",
+            "bodyPart": "back"
+          }
+        ],
+        "fallback": {
+          "understanding": "图中是一台插销配重片式绳索器械（左侧可见配重片与调节销，上方有 PRECOR 标签）。塔顶滑轮挂着宽距高位下拉横杆，塔底另有一个低位滑轮并配脚踏挡板，因此它是一台「高位下拉+坐姿划船」两用机。机器前侧有一张黑色训练凳，凳前上方有一对膝部压辊，是高位下拉时固定大腿的部件；低位滑轮配合脚踏板则对应坐姿绳索划船的站位。用户文字「练背」明确了目标肌群是背部。综合可见的绳索/滑轮结构、膝垫与坐凳、以及高低两个滑轮位，可支持的动作为高位下拉和坐姿绳索划船。",
+          "bodyParts": [
+            "back"
+          ],
+          "equipment": [
+            "cable"
+          ]
+        },
+        "clarifications": [
+          {
+            "label": "高位下拉",
+            "prompt": "我想问的是高位下拉（从上方把横杆拉到胸前）吗？"
+          },
+          {
+            "label": "坐姿划船",
+            "prompt": "我想问的是坐在凳上、用低位滑轮向腹部拉的坐姿划船吗？"
+          },
+          {
+            "label": "握距与握法",
+            "prompt": "这个动作是宽握、窄握还是对握？我可以据此缩小范围。"
+          }
+        ]
+      }
+    }
+  ]
+}

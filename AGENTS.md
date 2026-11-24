@@ -1,198 +1,37 @@
-# openGym 项目地图
+# openGym Agent 总路由
 
 Windows 环境统一使用 PowerShell。普通问答只读资料和源码，不运行测试。
 
-## 代码
+本文件仅作为**顶层子系统与研发治理路由**（严格保持 ≤ 300 行），不展开具体子系统内部文件清单；开始任何任务前，先按下方路由进入目标子系统的 `README.md`。
 
-```text
-mobile-rn/           Expo Android 工程与训练、历史、配对界面
-mobile-rn/src/       计划、动作与历史编辑，训练数据、备份、提醒和同步
-mobile-rn/src/progress/  PR、1RM、训练趋势和肌群图投影
-mobile-rn/src/body/      体重、围度和进度照片
-mobile-rn/src/sharing/   第三方历史导入、计划分享和上游模块兼容层
-mobile-rn/src/pairing/   配对二维码解析
-mobile-rn/src/reminders/ 训练提醒排程、通知和导航
-mobile-rn/src/design/  RN 设计系统：tokens、主题、图标、基础组件、身体图和开发画廊
-mobile-rn/eslint.config.js  RN ESLint 配置和导入边界
-mobile-rn/scripts/   Android 模拟器回归、五 Tab 冒烟、视觉截图、fixture、目录媒体生成、自定义 lint 和图标检查
-frontend/src/        Web 与 Capacitor 共用的页面、状态、训练和同步逻辑
-frontend/android/    上游 Capacitor Android 工程与原生插件
-frontend/ios/        上游 iOS、Apple Watch 和小组件
-api/                 NestJS 路由、认证、设备配对、JSON 存储和同步；server.js 加载 dist
-api/coach/           AI Coach 服务与共用逻辑
-api/agent-runtime/   共享 Agent 运行核心（契约、围栏、编排、提供商）
-api/agent-runtime/tasks/ 共享业务任务：exercise-search.v1、系统提示词与词表快照
-api/agent-runtime/exercise-search-diagnostics.js  跨端 exercise_search 诊断事件模块
-api/src/agent/       NestJS Agent 模块、按账号存储、配置与作业
-api/src/agent/retrieval/  服务端动作检索、PostgreSQL 索引与模型客户端
-services/retrieval-model/  本机 embedding 与 Cross-Encoder HTTP 服务
-scripts/windows/     Windows 检索依赖初始化与启停
-scripts/build-retrieval-index.mjs  公开动作索引构建、版本切换和就绪检查
-frontend/src/agent/  Web 服务端 Agent 客户端与 Zustand 状态
-frontend/src/lib/exercise-ai-search.js  双端 AI 候选匹配（searchScored + CJK 回退）
-frontend/src/components/ExerciseAiSearch.jsx  Web 动作库/选择器共用识别态
-frontend/scripts/ai-search-eval.mjs  AI 动作检索评估 CLI（replay/vision/e2e）
-mobile-rn/src/agent/ RN 本机执行、SQLite、SecureStore 和服务端客户端
-mobile-rn/src/agent/ai-search-matcher.ts  RN 纯匹配器桥（无 Expo 运行时依赖）
-api/integrations/    外部集成和投递队列
-web/                 Web 镜像构建和 Nginx 配置
-catalogue/           动作原始数据、翻译和演示媒体
-mcp/                 可选的训练数据 MCP 服务
-watch-zepp/          Zepp OS 手表端
-website/             项目官网
-cloudflare/          站点边缘路由和故障切换
-scripts/             动作目录生成、构建和发布工具
-.github/、.gitlab/   CI、发布和贡献模板
-docker-compose.yml   自托管服务入口
-helm/、kubernetes/、contrib/nix/   其他部署方式
-```
+## 1. 子系统路由表（唯一模块导航入口）
 
-## 文档
+| 子系统 ID | 子系统路由（各 ≤ 300 行） | 职责边界摘要 |
+|---|---|---|
+| `mobile-rn` | [`docs/subsystem/mobile-rn/README.md`](docs/subsystem/mobile-rn/README.md) | Expo / RN Android 客户端、`src/design/` 设计系统、本地 SQLite、模拟器与真机视觉验收 |
+| `web-client` | [`docs/subsystem/web-client/README.md`](docs/subsystem/web-client/README.md) | React 19 + Vite Web/PWA、上游 CSS 设计源、`frontend/src/lib/` 纯函数训练引擎、Capacitor 壳 |
+| `api-sync` | [`docs/subsystem/api-sync/README.md`](docs/subsystem/api-sync/README.md) | NestJS 后端路由、`api/openapi.yaml`、Passkeys/配对、`DATA_DIR` 存储、409 同步与外部集成 |
+| `ai-agent` | [`docs/subsystem/ai-agent/README.md`](docs/subsystem/ai-agent/README.md) | 共享 `agent-runtime`、多模态智能动作检索及评测 CLI、AI Coach、本地 MCP 服务 |
+| `catalogue` | [`docs/subsystem/catalogue/README.md`](docs/subsystem/catalogue/README.md) | 5,600+ 动作原始词库、多语言翻译、演示媒体与跨端词库代码生成管线 |
+| `wearables` | [`docs/subsystem/wearables/README.md`](docs/subsystem/wearables/README.md) | Apple Watch、Wear OS、Garmin、Zepp OS 表端与手机健康/训练快照同步 |
+| `infra-ops` | [`docs/subsystem/infra-ops/README.md`](docs/subsystem/infra-ops/README.md) | Docker / Nginx、Helm / K8s / NixOS 自托管、官网 `website/`、Cloudflare 与 CI 发布流水线 |
 
-```text
-AGENTS.md                                项目地图
-README.md                                产品功能和快速启动
-CHANGELOG.md                             版本变更
-ROADMAP.md                               上游路线图
-CONTRIBUTING.md                          贡献流程
-CLA.md                                   贡献者许可协议
-CLAUDE.md                                上游开发指南
-LICENSE                                  项目许可证
-NOTICE.md                                第三方许可说明
-SECURITY.md                              安全报告方式
-.github/pull_request_template.md         GitHub PR 模板
-.gitlab/issue_templates/Bug.md           GitLab 缺陷模板
-.gitlab/issue_templates/Feature.md       GitLab 功能模板
-.gitlab/issue_templates/Question.md      GitLab 提问模板
-.gitlab/merge_request_templates/Default.md   GitLab 合并请求模板
+> 文档侧镜像总入口见 [`docs/README.md`](docs/README.md)；产品概览、路线图与变更历史见 [`README.md`](README.md)、[`ROADMAP.md`](ROADMAP.md)、[`CHANGELOG.md`](CHANGELOG.md)。
 
-docs/
-  README.md                              文档入口
-  ARCHITECTURE.md                        上游架构、同步与平台边界
-  API.md                                 HTTP 接口使用说明
-  MOBILE.md                              Capacitor 客户端与配对
-  APP_STORES.md                          上游移动端构建和发布
-  RN_MIGRATION_STATUS.md                 RN 已完成、待迁移和验收清单
-  RN_UI_DESIGN_SYSTEM.md                 RN 设计系统架构、token、组件和治理
-  RN_UI_SCREEN_MIGRATION.md              RN 已有页面重构设计、阶段和验收
-  RN_UI_VISUAL_TESTING.md                RN 视觉测试流程、fixture、深链和设计系统硬性约束
-  rn-exercise-search/
-    DESIGN.md                            RN 常规动作检索的范围、共享规则与验收契约
-    BASELINE.md                          入口、选择行为、分页基线和设备待验表
-    ACCEPTANCE.md                        自动化验收证据、构建结果和待设备项
-    01_ENTRY_BASELINE.md                 RN 搜索入口、选择行为和分页基线
-    02_REUSE_WEB_SEARCH.md               Web 基础检索复用、双端对齐和回归
-    03_EXISTING_ALIASES.md               已有用户别名读取、同步和工作区隔离
-    04_COMBINED_FILTERS.md               目标肌群、器械和单侧组合筛选
-    05_FUSE_SUGGESTIONS.md               Fuse.js 零结果候选和四入口集成验收
-  agent-runtime/
-    REQUIREMENTS.md                      双执行环境、上下文、工具围栏、记忆与验收要求
-    DESIGN.md                            RN 与 NestJS 的模块、契约和持久化设计
-    EXECUTION.md                         分阶段实施、验收证据和回退步骤
-    ACCEPTANCE.md                        环境、命令、A1-A7 证据和待设备项
-    REVIEW.md                            评审整改清单与本轮修改记录
-    REVIEW2.md                           第二轮评审问题、证据与整改顺序
-  ai-exercise-search/
-    SERVER_RETRIEVAL_PLAN.md             服务端双路召回、融合精排、契约和本机依赖设计
-    SERVER_RETRIEVAL_EXECUTION.md        工作树、Windows 配置、索引、API、双端与切换步骤
-    REQUIREMENTS.md                      多模态动作检索的范围、入口、交互和验收条件
-    DESIGN.md                            共享任务、附件、匹配、会话与双端落点设计
-    EXECUTION.md                         阶段 0–7 实施清单、命令矩阵与记录
-    ACCEPTANCE.md                        A1–A16 离线/设备证据与真实模型 smoke 状态
-    EVAL_CLI_EXECUTION.md                评估 CLI、traceId 与诊断日志实施和验收
-    QUALITY_EXECUTION.md                 提示词、召回与排序优化的逐项对照执行计划
-    LOCAL_SELECTION_EXECUTION.md         查询内 Top 3 选优实施、配对回放和验收
-    CANDIDATE_EQUIPMENT_EXECUTION.md      D 组候选级器械选优、配对回放和验收
-    P1_RECALL_EXECUTION.md               P1 本地召回补强三阶段实施计划、评测矩阵与验收门槛
-    P2_RETRIEVE_SELECT_EXECUTION.md      P2 两阶段闭集多选重排与一键消歧 Chip 方案及执行计划
-    P3_METADATA_BM25_EXECUTION.md        P3 标准别名表、姿势打标、跨部位保护与 BM25 零结果兜底计划
-    RN_UI_AND_SEARCH_UX_DESIGN.md        RN 智能检索与动作库交互优化设计（仅 RN 端）
-    RN_UI_AND_SEARCH_UX_EXECUTION.md     RN 智能检索与动作库交互优化执行与验收计划
-    eval/
-      manifest.json                      hinted / photo-only / edge 三组评估样本清单
-      manifest-p3.json                   P3 扩展评估清单（含 test_pic 新增 5 图，共 10 器械）
-      edge-responses.json                edge 组固定结构化回放
-      README.md                           评估 CLI runbook：模式、参数、退出码与日志开关
-      ACCEPTANCE.md                       A1–A7 验收证据、命令与报告路径
-      P2_RESULTS.md                      P2 检索基建、两阶段重排对照与消歧 Chip 验收结果
-      P3_RESULTS.md                      P3 元数据、姿势、跨部位保护、BM25 与阶段对比 RN 验收结果
-    test_pic/                            真实器械照片 smoke 素材
-  rn-p2/
-    README.md                            P2 功能导航、当前范围和共用流程
-    progress/
-      01_PERSONAL_RECORDS.md             个人纪录的比较规则和来源
-      02_ESTIMATED_1RM.md                估算 1RM 的公式、历史曲线及验收
-      03_WORKOUT_TRENDS.md               训练趋势的时间范围、汇总和动作指标
-      04_MUSCLE_MAP.md                   训练覆盖肌群、有效组数和前后视图
-      05_BODYWEIGHT.md                   体重读数、日值和周趋势
-      06_MEASUREMENTS.md                 按日记录围度、单位转换和同步
-      07_PROGRESS_PHOTOS.md              进度照片、日期归档和私有媒体同步
-    import-sharing-connection/
-      01_HISTORY_IMPORT.md               第三方历史文件预览、合并和去重
-      02_PLAN_SHARING.md                 计划文件互导、复制和周排程选择
-      03_QR_PAIRING.md                   移动端配对二维码、确认和账户隔离
-    platform/
-      01_TRAINING_REMINDERS.md           Android 训练日提醒、权限和时钟验收
-  SELF_HOSTING.md                        Docker 自托管指南
-  SELF_HOSTING_HTTPS.md                  局域网 HTTPS
-  SELF_HOSTING_KUBERNETES.md             Kubernetes 部署
-  SELF_HOSTING_MAC.md                    macOS 自托管
-  NIX.md                                 NixOS 部署
-  FAQ.md                                 常见问题
-  MODULES.md                             功能模块开关
-  DATA_IMPORTS.md                        数据导入导出
-  INTEGRATIONS.md                        外部服务集成
-  AI_COACH.md                            AI Coach 配置和使用
-  GARMIN.md                              Garmin 端
-  WEAR_OS.md                             Wear OS 端
-  ZEPP_OS.md                             Zepp OS 端
-  dev/COMBINE_ROUTINES.md                合并训练计划设计
-  dev/FATIGUE_SETS_MODEL.md              肌群疲劳计算模型
-  dev/LIST_VIEW.md                       训练界面的布局模式
-  dev/SET_TYPES.md                       递减组和休息暂停组
+## 2. `.agent/` 工程空间与持续开发铁律
 
-archive/                                 已完成需求的实现、验收与证据归档
-  README.md                              归档索引、完成状态和替代文档
-  RN_ANDROID_EXECUTION.md                RN Android 0.1.x 实施与验收记录
-  RN_UI_EXECUTION.md                     RN 设计系统实施与模拟器验收
-  nestjs-migration/                      NestJS API 迁移设计、执行和验收
-  rn-workout-set-ui/                     训练组行、组菜单和递减组实现与验收
-  rn-replacement-picker/                 替换动作选择器实现与验收
-  rn-p2-training-library/                P2 高级训练与动作库需求、设计和验收目标
+所有研发迭代统一遵循 [`/opengym-development`](.agent/skill/opengym-development/SKILL.md) 技能规程与 [`docs/code-standards.md`](docs/code-standards.md)：
 
-api/openapi.yaml                         HTTP 接口契约
-api/coach/prompts/
-  common.md                              通用教练约束
-  ask.md                                 日常训练问答
-  adapt.md                               调整进行中的训练
-  create.md                              创建训练计划
-  review.md                              审查现有计划
-  refine.md                              按反馈修订提案
-  debrief.md                             复盘已结束训练
-  repair.md                              修复未通过验证的提案
+- **`.agent/notes/{proposed,implemented,archived}/`**：需求、设计、执行计划与验收证据（见 [说明](.agent/notes/README.md)）。
+- **`.agent/skill/`**：项目公共技能（通过 [`.agent/skills.json`](.agent/skills.json) 自动挂载）。
+- **`.agent/scripts/`**：治理自检（README 行数 ≤ 300、断链、错题升格提示）与实操录屏转 GIF 脚本。
+- **`.agent/lessons.md` → `docs/code-standards.md`**：每次要求查错时，记录出错或高耗时步骤的「规则 + 原因 + 次数」；累计达 **3 次**后脱水压缩成 1~2 句祈使句升格写入 [`docs/code-standards.md`](docs/code-standards.md)。
 
-catalogue/
-  README.md                              动作数据结构与构建
-  i18n-glossary-pt-sv.md                  葡语和瑞典语翻译术语
-  media/NOTICE.md                        动作媒体许可
-  browse/README.md                       动作浏览入口
-  browse/back.md                         背部动作目录
-  browse/cardio.md                       有氧动作目录
-  browse/chest.md                        胸部动作目录
-  browse/full-body.md                    全身动作目录
-  browse/lower-arms.md                   前臂动作目录
-  browse/lower-legs.md                   小腿动作目录
-  browse/neck.md                         颈部动作目录
-  browse/shoulders.md                    肩部动作目录
-  browse/upper-arms.md                   上臂动作目录
-  browse/upper-legs.md                   大腿动作目录
-  browse/waist.md                        腰腹动作目录
+### 修改代码必经闭环（摘要）
 
-helm/README.md                           Helm 部署和参数
-mcp/README.md                            MCP 接入、工具与认证
-scripts/README.md                        构建和发布脚本索引
-website/README.md                        官网源码和维护方式
-```
+1. **改前语义级变更声明**：按受影响子系统写清触发条件（Trigger）、改前/改后行为（Before/After）、接口/状态/兼容性与失败模式变化，并附复现/基线及实测证据。
+2. **改后四步核对**：① 定位受影响子系统和真实运行时路径 → ② 顺着调用链追踪改动行之外的副作用 → ③ 反向检查契约文档和源码链接是否同步更新 → ④ 核验测试是否真实覆盖了宣称的行为。
+3. **UI 规范与 GIF 硬验收**：涉及 UI 必查设计系统（间距对齐、截断、触摸热区、宽度变化/软键盘焦点保持等）；单测全绿不等于视觉过关，凡改动用户可见 GUI 行为必须录制真实操作 GIF 存入对应需求文档。
 
 <!-- CODEGRAPH_START -->
 ## CodeGraph

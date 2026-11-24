@@ -2,7 +2,7 @@
 
 [需求](REQUIREMENTS.md) · [技术设计](DESIGN.md) · [执行计划](EXECUTION.md)
 
-本页记录 2026-11-21 的 fixture、RN 和真实视觉验收。A11 的配对服务端隐藏及 A12/A14 的设备复验按原记录待验。实施提交为 `2808653b2`，当时的 PowerShell 工作区为 `D:\dev\open-gym-agent-runtime`。当前 DeepSeek 服务端联调见 [执行记录](SERVER_RETRIEVAL_EXECUTION.md#7-主-agent-验收记录)。
+本页记录 2026-11-21 的 fixture、RN 和真实视觉验收。A11 的配对服务端隐藏及 A12/A14 的设备复验按原记录待验。实施提交为 `2808653b2`，当时的 PowerShell 工作区为 `D:\dev\open-gym-agent-runtime`。当前 DeepSeek 服务端联调见 [执行记录](../server-retrieval/SERVER_RETRIEVAL_EXECUTION.md#7-主-agent-验收记录)。
 
 ## 环境
 

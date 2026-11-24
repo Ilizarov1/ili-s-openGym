@@ -237,7 +237,8 @@ yourself and connecting to your server: [docs/MOBILE.md](docs/MOBILE.md).
   one origin, which passkeys require.
 
 The [architecture overview](docs/ARCHITECTURE.md) has the longer version, with diagrams of the
-frontend, sync, the exercise media and the watch.
+frontend, sync, the exercise media and the watch. Developer subsystem routers live under
+[`docs/subsystem/`](docs/README.md) (indexed by [`docs/README.md`](docs/README.md) and [`AGENTS.md`](AGENTS.md)).
 
 The training logic (progression rules, 1RM, how a logged session is read back) lives in pure
 functions under `frontend/src/lib/` with tests beside them. The HTTP API is documented as an
