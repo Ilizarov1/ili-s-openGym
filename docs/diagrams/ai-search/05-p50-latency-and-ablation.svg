@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 992 404" width="992" height="404">
+  <rect width="992" height="404" rx="14" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+  <text x="32" y="34" font-size="17.5" font-weight="700" fill="#0f172a" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Iter3 检索端 P50 延迟优化与单变量消融实测</text>
+  <text x="32" y="52" font-size="12" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">v2 检索端 P50 由 1561–1827ms 降至 119–156ms（-90.9% ~ -92.4%），精度与安全护栏 100% 零退化</text>
+
+  <!-- Left Panel: P50 Latency Comparison -->
+  <rect x="28" y="66" width="462" height="318" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="44" y="89" font-size="13.5" font-weight="700" fill="#1e293b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">v2 检索端 P50 耗时对比（Iter1 vs Iter3）</text>
+  <text x="474" y="89" text-anchor="end" font-size="11" fill="#059669" font-weight="600" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">全档远低于 &lt;=600ms 目标</text>
+
+  <rect x="44" y="99" width="10" height="10" rx="2" fill="#94a3b8"/>
+  <text x="58" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Iter1 召回</text>
+  <rect x="122" y="99" width="10" height="10" rx="2" fill="#f59e0b"/>
+  <text x="136" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Rerank FP32</text>
+  <rect x="216" y="99" width="10" height="10" rx="2" fill="#06b6d4"/>
+  <text x="230" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">text+增量vec</text>
+  <rect x="318" y="99" width="10" height="10" rx="2" fill="#10b981"/>
+  <text x="332" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Rerank FP16</text>
+
+  <!-- Gridlines: x0=114, scale=0.145 px/ms (2000ms -> 404) -->
+  <line x1="114.0" y1="122" x2="114.0" y2="334" stroke="#94a3b8"/>
+  <text x="114.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">0ms</text>
+  <line x1="201.0" y1="122" x2="201.0" y2="334" stroke="#10b981" stroke-dasharray="4,3"/>
+  <text x="201.0" y="350" text-anchor="middle" font-size="10" font-weight="600" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">600ms (理想线)</text>
+  <line x1="288.0" y1="122" x2="288.0" y2="334" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+  <text x="288.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1200ms</text>
+  <line x1="375.0" y1="122" x2="375.0" y2="334" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+  <text x="375.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1800ms</text>
+
+  <!-- photo-only -->
+  <text x="106" y="149" text-anchor="end" font-size="11" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">photo-only</text>
+  <rect x="114.0" y="130" width="22.0" height="13" rx="2" fill="#94a3b8"/>
+  <rect x="136.0" y="130" width="212.9" height="13" rx="2" fill="#f59e0b"/>
+  <text x="354.0" y="140" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1620ms</text>
+  <rect x="114.0" y="146" width="7.3" height="13" rx="2" fill="#06b6d4"/>
+  <rect x="121.3" y="146" width="14.0" height="13" rx="2" fill="#10b981"/>
+  <text x="141.0" y="156" font-size="10.5" font-weight="700" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">147ms (-90.9%)</text>
+
+  <!-- simple -->
+  <text x="106" y="191" text-anchor="end" font-size="11" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">simple</text>
+  <rect x="114.0" y="172" width="25.8" height="13" rx="2" fill="#94a3b8"/>
+  <rect x="139.8" y="172" width="216.4" height="13" rx="2" fill="#f59e0b"/>
+  <text x="361.2" y="182" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1670ms</text>
+  <rect x="114.0" y="188" width="7.8" height="13" rx="2" fill="#06b6d4"/>
+  <rect x="121.8" y="188" width="13.8" height="13" rx="2" fill="#10b981"/>
+  <text x="141.0" y="198" font-size="10.5" font-weight="700" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">149ms (-91.1%)</text>
+
+  <!-- alias -->
+  <text x="106" y="233" text-anchor="end" font-size="11" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">alias</text>
+  <rect x="114.0" y="214" width="27.1" height="13" rx="2" fill="#94a3b8"/>
+  <rect x="141.1" y="214" width="215.6" height="13" rx="2" fill="#f59e0b"/>
+  <text x="361.7" y="224" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1674ms</text>
+  <rect x="114.0" y="230" width="7.8" height="13" rx="2" fill="#06b6d4"/>
+  <rect x="121.8" y="230" width="14.1" height="13" rx="2" fill="#10b981"/>
+  <text x="141.0" y="240" font-size="10.5" font-weight="700" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">151ms (-91.0%)</text>
+
+  <!-- detailed -->
+  <text x="106" y="275" text-anchor="end" font-size="11" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">detailed</text>
+  <rect x="114.0" y="256" width="25.8" height="13" rx="2" fill="#94a3b8"/>
+  <rect x="139.8" y="256" width="239.1" height="13" rx="2" fill="#f59e0b"/>
+  <text x="383.9" y="266" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1827ms</text>
+  <rect x="114.0" y="272" width="8.3" height="13" rx="2" fill="#06b6d4"/>
+  <rect x="122.3" y="272" width="14.3" height="13" rx="2" fill="#10b981"/>
+  <text x="142.0" y="282" font-size="10.5" font-weight="700" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">156ms (-91.5%)</text>
+
+  <!-- repo13 -->
+  <text x="106" y="317" text-anchor="end" font-size="11" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">repo13</text>
+  <rect x="114.0" y="298" width="13.9" height="13" rx="2" fill="#94a3b8"/>
+  <rect x="127.9" y="298" width="212.4" height="13" rx="2" fill="#f59e0b"/>
+  <text x="345.3" y="308" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1561ms</text>
+  <rect x="114.0" y="314" width="6.1" height="13" rx="2" fill="#06b6d4"/>
+  <rect x="120.1" y="314" width="11.2" height="13" rx="2" fill="#10b981"/>
+  <text x="137.0" y="324" font-size="10.5" font-weight="700" fill="#059669" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">119ms (-92.4%)</text>
+
+  <text x="44" y="370" font-size="10.5" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">注：vlm-prompt-v2 四档同步从 1663–1872ms 降至 146–158ms（P95 160–173ms）。</text>
+
+  <!-- Right Panel: Single-variable Ablation & Guardrails -->
+  <rect x="502" y="66" width="462" height="318" rx="10" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text x="518" y="89" font-size="13.5" font-weight="700" fill="#1e293b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">单变量消融路径（alias）与闸门拦截</text>
+  <text x="948" y="89" text-anchor="end" font-size="11" fill="#2563eb" font-weight="600" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">先保精度，后叠提速</text>
+
+  <rect x="518" y="99" width="10" height="10" rx="2" fill="#94a3b8"/>
+  <text x="532" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">基线 FP32</text>
+  <rect x="602" y="99" width="10" height="10" rx="2" fill="#2563eb"/>
+  <text x="616" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">通过消融</text>
+  <rect x="682" y="99" width="10" height="10" rx="2" fill="#ef4444"/>
+  <text x="696" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">精度拦截弃用</text>
+  <rect x="786" y="99" width="10" height="10" rx="2" fill="#059669"/>
+  <text x="800" y="108" font-size="10.5" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">最终上线方案</text>
+
+  <!-- Gridlines: x0=642, scale=0.09 px/ms (1800ms -> 804) -->
+  <line x1="642.0" y1="122" x2="642.0" y2="334" stroke="#94a3b8"/>
+  <text x="642.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">0ms</text>
+  <line x1="696.0" y1="122" x2="696.0" y2="334" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+  <text x="696.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">600ms</text>
+  <line x1="750.0" y1="122" x2="750.0" y2="334" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+  <text x="750.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1200ms</text>
+  <line x1="804.0" y1="122" x2="804.0" y2="334" stroke="#e2e8f0" stroke-dasharray="3,3"/>
+  <text x="804.0" y="350" text-anchor="middle" font-size="10" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1800ms</text>
+
+  <!-- Step 1: Iter1 Baseline -->
+  <text x="634" y="152" text-anchor="end" font-size="10.5" font-weight="600" fill="#334155" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Iter1 FP32 基线</text>
+  <rect x="642" y="138" width="150.7" height="20" rx="3" fill="#94a3b8"/>
+  <text x="717" y="152" text-anchor="middle" font-size="10" font-weight="600" fill="#ffffff" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">1674ms</text>
+  <text x="799" y="152" font-size="10" fill="#475569" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">T1 88% / T5 96% / wH 2</text>
+
+  <!-- Step 2: Exp1 FP16+256+Warmup -->
+  <text x="634" y="194" text-anchor="end" font-size="10.5" font-weight="600" fill="#1e40af" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Exp1: FP16+256</text>
+  <rect x="642" y="180" width="24.2" height="20" rx="3" fill="#2563eb"/>
+  <text x="673" y="194" font-size="10.5" font-weight="600" fill="#1d4ed8" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">269ms · ✅ 零退化 (-83.9%)</text>
+
+  <!-- Step 3: Exp2 Compact Rerank Text -->
+  <text x="634" y="236" text-anchor="end" font-size="10.5" font-weight="600" fill="#b91c1c" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Exp2: 紧凑卡片</text>
+  <rect x="642" y="222" width="21.3" height="20" rx="3" fill="#ef4444" fill-opacity="0.85"/>
+  <text x="670" y="236" font-size="10" font-weight="600" fill="#b91c1c" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">237ms · ✕ 拦截: T1 84% / T5 92% / wH 3</text>
+
+  <!-- Step 4: Exp3 TopK=20 + Parallel + Batch SQL -->
+  <text x="634" y="278" text-anchor="end" font-size="10.5" font-weight="600" fill="#b91c1c" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Exp3: TopK=20 并行</text>
+  <rect x="642" y="264" width="11.2" height="20" rx="3" fill="#ef4444" fill-opacity="0.85"/>
+  <text x="660" y="278" font-size="10" font-weight="600" fill="#b91c1c" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">124ms · ✕ 拦截: 裁掉0770, T1 84% / T5 92%</text>
+
+  <!-- Step 5: Final K=30 + Parallel + LATERAL -->
+  <text x="634" y="320" text-anchor="end" font-size="10.5" font-weight="700" fill="#047857" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">Final: K=30 LATERAL</text>
+  <rect x="642" y="306" width="13.6" height="20" rx="3" fill="#059669"/>
+  <text x="662" y="320" font-size="10.5" font-weight="700" fill="#047857" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">151ms · ✅ 100% 零退化 (-91.0%)</text>
+
+  <text x="518" y="370" font-size="10.5" fill="#64748b" font-family="PingFang SC, Microsoft YaHei, Segoe UI, -apple-system, sans-serif">注：仅保留无损提速（FP16+256+预热 + 并行embedText + LATERAL SQL），拦截两项语义有损捷径。</text>
+</svg>
