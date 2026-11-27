@@ -10,14 +10,14 @@
 
 # ili-s-openGym
 
-**面向原生 Android 体验、工程化后端演进与多模态智能动作检索的 openGym 衍生分支**
+**面向原生 Android 体验、工程化后端演进、生成式 UI AI 教练与多模态智能动作检索的 openGym 衍生分支**
 
 [![Upstream: openGym v1.4.4](https://img.shields.io/badge/Forked_from-openGym_v1.4.4-3b82f6?style=flat-square&labelColor=0c0e12)](https://github.com/DuarteSantos8/openGym)
 [![Mobile: React Native](https://img.shields.io/badge/Mobile-Expo_%2F_React_Native-30d158?style=flat-square&labelColor=0c0e12)](docs/subsystem/mobile-rn/README.md)
 [![Backend: NestJS & LangGraph](https://img.shields.io/badge/Server-NestJS_%2B_LangGraph-e11d48?style=flat-square&labelColor=0c0e12)](docs/subsystem/api-sync/README.md)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-a3e635?style=flat-square&labelColor=0c0e12)](LICENSE)
 
-[智能动作检索优化](docs/AI_EXERCISE_SEARCH_OPTIMIZATION.md) · [系统架构](docs/ARCHITECTURE.md) · [自托管指南](docs/SELF_HOSTING.md) · [文档总路由](docs/README.md)
+[生成式 UI AI 教练](#-新增功能生成式-ui-ai-教练web--rn-双端) · [智能动作检索优化](docs/AI_EXERCISE_SEARCH_OPTIMIZATION.md) · [系统架构](docs/ARCHITECTURE.md) · [自托管指南](docs/SELF_HOSTING.md) · [文档总路由](docs/README.md)
 
 </div>
 
@@ -27,7 +27,7 @@
 
 本项目 Fork 自优秀开源自托管健身追踪应用 **[openGym](https://github.com/DuarteSantos8/openGym)**（基于上游 **`v1.4.4`** 版本分叉，遵循 GNU AGPL v3.0 协议）。
 
-原版 openGym 已经构建了非常完整的本地优先训练体系——包含 5,632 个带演示动画的动作库、Passkey 无密码认证、离线记录、多设备增量同步、自托管 Docker 部署以及可选的 AI Coach 与 MCP 接入。在此基础之上，本分支主要做了三件事：**将移动端从 Web 套壳迁移到原生 React Native、将服务端重构升级为可扩展的工程化架构、以及新增「多模态智能检索动作库」功能**。
+原版 openGym 已经构建了非常完整的本地优先训练体系——包含 5,632 个带演示动画的动作库、Passkey 无密码认证、离线记录、多设备增量同步、自托管 Docker 部署以及可选的 AI Coach 与 MCP 接入。在此基础之上，本分支主要做了四件事：**将移动端从 Web 套壳迁移到原生 React Native、将服务端重构升级为可扩展的工程化架构、打造跨端「生成式 UI AI 教练」、以及新增「多模态智能检索动作库」功能**。
 
 ### 与原版 openGym 的主要区别
 
@@ -36,8 +36,8 @@
 | **Android 客户端** | Capacitor 封装 Web 应用 | 新增独立 **React Native (Expo)** 原生 Android 客户端，独立持久化与系统通知提醒，并完整补全动作库中文内容 |
 | **UI 与设计体系** | Web CSS 设计系统 | 在 RN 端沉淀并统一了一套**跨端语义设计系统**（Tokens、双主题、图标与肌群图原语），与原版视觉语言一脉相承 |
 | **服务端框架** | 单体 `node:http` 服务 | 迁移至 **NestJS** 模块化架构，保持原有接口与数据协议 100% 向后兼容 |
-| **Agent 与检索底座** | 轻量 Coach / 本地关键词搜索 | 引入 **LangChain / LangGraph** 服务端编排与 **PostgreSQL（混合文本+向量召回）+ BGE 精排** 检索底座 |
-| **新增业务功能** | 关键词筛选与部位浏览 | 暂时仅新增 **「智能检索动作库」**（拍照/文字/图+文识别器械并匹配动作库，支持端侧与服务端双模式） |
+| **Agent 与检索底座** | 轻量 Coach / 本地关键词搜索 | 引入 **LangChain / LangGraph** 服务端编排、**AG-UI SSE 生成式 UI 流式协议**与 **PostgreSQL（混合文本+向量召回）+ BGE 精排** 检索底座 |
+| **核心 AI 业务功能** | 静态文本教练 / 关键词筛选 | 新增 **「生成式 UI AI 教练」**（Web & RN 双端流式图表水合、从零建计划、一键改计划与原子撤销）与 **「多模态智能检索动作库」**（拍照/图+文识器械） |
 
 ---
 
@@ -67,13 +67,34 @@
   - **Agent 运行时升级**：搭建了跨端共享、可在手机本机与服务端双端运行的 Agent 核心，并将服务端执行引擎迁移至 **LangChain / LangGraph**，以标准多轮消息序列替代早期文本拼接以提升多轮缓存命中与扩展能力（支持配置开关一键回退旧引擎）；
   - **混合检索与推理底座**：为动作检索引入独立的 **PostgreSQL（`pgvector` + `pg_trgm`）** 公开动作索引库与本机/远程 **BGE 模型推理服务**（Embedding + Cross-Encoder 精排），个人账户与训练数据仍保留在轻量 JSON 存储中互不耦合。
 
+### ✨ 新增功能：生成式 UI AI 教练（Web & RN 双端）
+
+基于 **AG-UI SSE 事件流 + 细粒度领域组件 Catalog**，重构了 Web 端与 RN Android 端的 AI 教练对话体验——模型不再只吐大段纯文本，而是按训练分析叙事节奏流式穿插渲染原生数据卡片与可执行计划提案：
+
+- **流式穿插 10 类原生 UI 节点**：支持 `prose` 叙事简报、`kpi_strip` 核心指标卡、`exercise_trend`（估算 1RM / 重量 / 总量趋势图）、`muscle_load`（正反面人体肌群负荷热力图）、`comparison_table` 对比表、`exercise_alternatives` 替代动作卡、`quick_form` 结构化追问表、`callout` 重点提示与 `proposal_action` 计划提案卡；实时展示 `search_catalogue` 词库检索状态并支持随时中断。
+- **纯本地零请求交互水合**：图表指标（`1RM` / `重量` / `总量`）与周期（`4周` / `8周` / `12周` / `24周`、`72h` / `7天` / `28天`）切换完全在客户端本地基于真实训练记录与自定义动作实时重算，零额外大模型调用。
+- **一键改计划、从零建计划与原子撤销**：支持对已有计划逐项勾选应用 `before → after` 差异修改，也支持 0 计划账号直接通过词库工具生成带周历排期的新训练日（`add-routine` + `weekdays`）；每次应用自动落快照，可在右上角菜单一键原子回滚。
+- **Web ↔ RN 跨端双向同步防复活**：双端共用 `coach.chat`、`coach.snapshots` 与单调递增的 `chatClearedAt` 水位，在任意一端清空新对话、采纳提案或撤销计划，另一端同步后均严格一致、旧对话不复活。
+
+<div align="center">
+
+| RN Android 原生端（真实训练分析 → 本地切图 → 提案采纳） | Web / PWA 端（流式叙事与双端同步） |
+| :---: | :---: |
+| <img src="assets/readme/coach-genui-rn.gif" alt="RN AI Coach GenUI Demo" width="280"> | <img src="assets/readme/coach-genui-web.gif" alt="Web AI Coach GenUI Demo" width="280"> |
+
+</div>
+
 ### ✨ 新增功能：多模态智能检索动作库
 
-在继承 openGym 现有全部功能的前提下，本分支目前**唯一新增的面向用户业务功能为「智能检索动作库」**（覆盖 Web 端与 RN Android 端的动作库及训练换动作场景）：
+覆盖 Web 端与 RN Android 端的动作库及训练换动作场景，让找动作不再依赖记住标准英文名称：
 
-- **听得懂大白话，也看得懂健身器械**：支持**纯文字、拍照/相册纯图、图 + 文**三种输入方式，无需记住动作的标准英文名，拍下健身房陌生器械即可匹配出 5,632+ 动作库中最符合的动作并给出匹配依据与高/中/低置信等级；
+- **听得懂大白话，也看得懂健身器械**：支持**纯文字、拍照/相册纯图、图 + 文**三种输入方式，拍下健身房陌生器械即可匹配出 5,632+ 动作库中最符合的动作并给出结构化中文判断依据与高/中/低置信等级；
 - **多轮消歧与器械限定**：面对双功能器械或易混角度，支持点击预设的一键消歧标签或发起连续多轮图文追问逐步收窄结果，也支持显式限定目标器械类型；
 - **兜底直达与双轨运行**：未找到理想动作时可直接结合识别描述与照片快速新建自定义动作；既支持在有服务端时启用高精度双路混合检索，也支持在无后端或离线练习时于手机端直连大模型完成轻量检索。
+
+<p align="center">
+  <img src="assets/readme/ai-search-rn.gif" alt="RN 多模态智能检索动作库实操演示" width="280">
+</p>
 
 ---
 
@@ -132,6 +153,12 @@ docker compose up -d --build
 ```
 
 启动后访问 <http://localhost:8080> 创建账号即可使用。
+
+本地开发也可直接一键联启 NestJS API（`:3000`）与 Vite Web（`:5173`，自动读取 `.env` / `api/.env` 中的大模型配置）：
+
+```bash
+npm run dev
+```
 
 ### 可选：启用服务端智能检索 v2（Windows 环境）
 
