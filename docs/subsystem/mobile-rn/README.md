@@ -53,6 +53,9 @@ cd mobile-rn; npm.cmd run check
 - [RN 视觉测试流程、深链与 Fixture 指南](../../RN_UI_VISUAL_TESTING.md)
 - [RN 自动化与真机脚本索引](../../../mobile-rn/scripts/README.md)
 
+### 进行中 / 待归档提案（`.agent/notes/proposed/`）
+- [RN 客户端接入 AI Coach GenUI（设计）](../../../.agent/notes/proposed/rn-coach-genui/DESIGN.md) · [执行计划](../../../.agent/notes/proposed/rn-coach-genui/EXECUTION.md) · [验收报告与实操演示](../../../.agent/notes/proposed/rn-coach-genui/ACCEPTANCE.md)
+
 ### 已实施需求笔记（`.agent/notes/implemented/`）
 - [RN 与 Web 交互对齐](../../../.agent/notes/implemented/rn-web-interaction-parity/README.md)
 - [RN 常规动作检索与组合筛选](../../../.agent/notes/implemented/rn-exercise-search/DESIGN.md)（含 [基线](../../../.agent/notes/implemented/rn-exercise-search/BASELINE.md) · [验收记录](../../../.agent/notes/implemented/rn-exercise-search/ACCEPTANCE.md)）

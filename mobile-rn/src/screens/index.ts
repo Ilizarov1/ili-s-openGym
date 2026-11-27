@@ -21,3 +21,4 @@ export * from './QrPairScreen';
 export * from './ReminderSettingsScreen';
 export * from './AgentScreen';
 export * from './AgentProfileScreen';
+export * from './CoachChatScreen';

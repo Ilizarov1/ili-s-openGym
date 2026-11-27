@@ -54,9 +54,33 @@ export type RoutineExercise = {
   warmupSets?: number;
   warmupRows?: { wb?: boolean; wp?: number; r: number }[];
   intensifier?: RoutineIntensifier;
+  /** Progression policy shared with Web (`lib/progression.js` POLICIES). */
+  prog?: string;
+  /** Per-step load increase shared with Web. */
+  inc?: number;
+  /** Rep-range floor/ceiling for double and triple progression. */
+  repsMin?: number;
+  repsMax?: number;
+  /** Set ceiling for triple progression. */
+  setsMax?: number;
+  /** Explicit bodyweight flag; absent means "whatever the catalogue says". */
+  bodyweight?: boolean;
+  /** Coach rationale carried by a proposed exercise; stripped by Web before saving. */
+  why?: string;
+  /** Proposed display name; stripped by Web before saving. */
+  name?: string;
 };
 
-export type Routine = { id: string; name: string; ex?: RoutineExercise[]; excludeFromProgression?: boolean };
+export type Routine = {
+  id: string;
+  name: string;
+  ex?: RoutineExercise[];
+  excludeFromProgression?: boolean;
+  /** Routine-level progression policy shared with Web. */
+  prog?: string;
+  emoji?: string;
+  why?: string;
+};
 export type CustomExercise = {
   id: string;
   n?: string;
@@ -181,6 +205,402 @@ export type Workout = {
   excludeFromProgression?: boolean;
 };
 
+/* ============================ AI Coach (shared Web ↔ RN) ============================ */
+//
+// The Coach namespace is synced byte-for-byte with the Web client (`frontend/src/lib/coach.js`
+// and `views/CoachChat.jsx`). Web spells the assistant's own lines `role: 'coach'`; RN accepts
+// that spelling and the friendlier `'assistant'` alias, always writing `'coach'` back so a chat
+// started on the phone renders in the browser too.
+
+export type CoachChatRole = 'user' | 'assistant' | 'coach';
+export type CoachChatKind =
+  | 'text'
+  | 'intake'
+  | 'genui'
+  | 'applied'
+  | 'dismissed'
+  | 'reverted'
+  | 'error'
+  | 'nochange'
+  | 'debrief';
+
+export type CoachTrendMetric = 'e1rm' | 'weight' | 'volume';
+export type CoachLoadWindow = '72h' | '7d' | '28d';
+export type CoachCalloutVariant = 'info' | 'tip' | 'warning';
+export type CoachProseTone = 'normal' | 'lead' | 'closing';
+export type CoachFormFieldKind = 'single_choice' | 'multi_choice' | 'scale';
+
+/** Every change type `frontend/src/lib/coach.js` knows how to apply. */
+export type CoachChangeType =
+  | 'add-exercise'
+  | 'remove-exercise'
+  | 'swap-exercise'
+  | 'sets'
+  | 'reps'
+  | 'repsMin'
+  | 'repsMax'
+  | 'sec'
+  | 'cardio'
+  | 'inc'
+  | 'exercise-prog'
+  | 'routine-prog'
+  | 'reorder'
+  | 'superset'
+  | 'add-routine'
+  | 'remove-routine'
+  | 'rename-routine'
+  | 'week'
+  | 'warmup'
+  | 'programme';
+
+export type CoachChangeStatus = 'proposed' | 'accepted' | 'rejected' | 'stale';
+
+export type CoachChangeTarget = {
+  routineId?: string;
+  exId?: string;
+  weekday?: number;
+  programmeId?: string;
+};
+
+/** One exercise inside an `add-exercise` / `add-routine` proposal. */
+export type CoachPlannedExercise = {
+  id: string;
+  sets?: number;
+  mode?: string;
+  reps?: number | string;
+  repsMin?: number;
+  repsMax?: number;
+  setsMax?: number;
+  sec?: number;
+  min?: number;
+  speed?: number;
+  weight?: number;
+  prog?: string;
+  bodyweight?: boolean;
+  side?: boolean;
+  position?: number;
+  why?: string;
+  name?: string;
+};
+
+/** The `after` payload of an `add-routine` change (multi-day plans carry `weekdays`). */
+export type CoachRoutineDraft = {
+  name: string;
+  emoji?: string;
+  prog?: string;
+  weekdays?: number[];
+  ex: CoachPlannedExercise[];
+  why?: string;
+};
+
+export type CoachWarmupRow = { wb?: boolean; wp?: number; r: number };
+export type CoachWarmupChoice = { mode?: 'auto' | 'own' | 'none'; rows?: CoachWarmupRow[] };
+export type CoachSupersetChoice = { link?: boolean; with?: string };
+export type CoachProgrammeWeek = {
+  deload?: boolean;
+  rpe?: number;
+  t?: Record<string, { pct?: number; rpe?: number }>;
+};
+export type CoachProgrammeDraft = { name?: string; weeks?: CoachProgrammeWeek[] };
+
+/** A proposal's `before`/`after`: a scalar, a routine-id list, or a structured payload. */
+export type CoachChangeValue =
+  | string
+  | number
+  | boolean
+  | null
+  | string[]
+  | Record<string, unknown>;
+
+/** One change inside a `proposal_action` node; mirrors `coach.js` CHANGE_APPLY keys. */
+export type CoachProposalChange = {
+  id: string;
+  type: CoachChangeType;
+  target: CoachChangeTarget;
+  why?: string;
+  before?: CoachChangeValue;
+  after?: CoachChangeValue;
+  status?: CoachChangeStatus;
+  routineName?: string | null;
+};
+
+export type CoachChangeDecision = {
+  id: string;
+  type: CoachChangeType;
+  target: CoachChangeTarget | null;
+  before: CoachChangeValue | null;
+  after: CoachChangeValue | null;
+  why: string;
+  routineName: string | null;
+  status: 'accepted' | 'rejected' | 'stale';
+};
+
+/* --------------------------------- GenUI nodes --------------------------------- */
+
+export type CoachProseNode = {
+  id: string;
+  type: 'prose';
+  text: string;
+  tone?: CoachProseTone;
+};
+
+export type CoachKpiExerciseStatItem = {
+  kind: 'exercise_stat';
+  exId: string;
+  metric?: CoachTrendMetric;
+  weeks?: number;
+  label?: string;
+  value?: number | null;
+  unit?: string;
+  delta?: number | null;
+  pct?: number;
+  stalled?: boolean;
+  sessions?: number;
+  hasData?: boolean;
+};
+
+export type CoachKpiMuscleSetsItem = {
+  kind: 'muscle_sets';
+  muscle: string;
+  window?: CoachLoadWindow;
+  label?: string;
+  value?: number;
+  sessions?: number;
+  hasData?: boolean;
+};
+
+export type CoachKpiSessionCountItem = {
+  kind: 'session_count';
+  weeks?: number;
+  label?: string;
+  value?: number;
+  hasData?: boolean;
+};
+
+export type CoachKpiPrescriptionItem = {
+  kind: 'prescription';
+  label: string;
+  value: string;
+  hasData?: boolean;
+};
+
+export type CoachKpiItem =
+  | CoachKpiExerciseStatItem
+  | CoachKpiMuscleSetsItem
+  | CoachKpiSessionCountItem
+  | CoachKpiPrescriptionItem;
+
+export type CoachKpiStripNode = {
+  id: string;
+  type: 'kpi_strip';
+  items: CoachKpiItem[];
+};
+
+export type CoachTrendPoint = { t: number; d: string | null; y: number };
+
+/** Hydrated locally by `coach-bridge.ts`; never invented by the model. */
+export type CoachTrendData = {
+  exId: string;
+  name: string;
+  metric: CoachTrendMetric;
+  weeks: number;
+  points: CoachTrendPoint[];
+  sessions: number;
+  first: number | null;
+  last: number | null;
+  delta: number | null;
+  pct: number;
+  stalled: boolean;
+};
+
+export type CoachExerciseTrendNode = {
+  id: string;
+  type: 'exercise_trend';
+  exId: string;
+  metric?: CoachTrendMetric;
+  weeks?: number;
+  title?: string;
+  caption?: string;
+  highlightStall?: boolean;
+  data?: CoachTrendData | null;
+};
+
+export type CoachMuscleFocus = { muscle: string; label: string; sets: number };
+
+export type CoachMuscleLoadData = {
+  window: CoachLoadWindow;
+  load: Record<string, number>;
+  focusSummary: CoachMuscleFocus[];
+  totalSets: number;
+  sessions: number;
+};
+
+export type CoachMuscleLoadNode = {
+  id: string;
+  type: 'muscle_load';
+  window?: CoachLoadWindow;
+  focusMuscles?: string[];
+  title?: string;
+  caption?: string;
+  data?: CoachMuscleLoadData | null;
+};
+
+export type CoachComparisonCell = string | { exId: string; note?: string };
+
+export type CoachComparisonTableNode = {
+  id: string;
+  type: 'comparison_table';
+  columns: string[];
+  rows: CoachComparisonCell[][];
+  title?: string;
+};
+
+export type CoachCalloutNode = {
+  id: string;
+  type: 'callout';
+  variant: CoachCalloutVariant;
+  text: string;
+  title?: string;
+};
+
+export type CoachAlternativeItem = {
+  exId: string;
+  reason?: string;
+  tag?: string;
+  routineId?: string;
+  name?: string;
+  bp?: string | null;
+  eq?: string;
+  hasMedia?: boolean;
+};
+
+export type CoachExerciseAlternativesNode = {
+  id: string;
+  type: 'exercise_alternatives';
+  forExId?: string;
+  routineId?: string;
+  title?: string;
+  items: CoachAlternativeItem[];
+};
+
+export type CoachFormOption = { value: string; label: string };
+
+export type CoachFormField = {
+  name: string;
+  label: string;
+  kind: CoachFormFieldKind;
+  options?: CoachFormOption[];
+  min?: number;
+  max?: number;
+  unit?: string;
+};
+
+export type CoachQuickFormNode = {
+  id: string;
+  type: 'quick_form';
+  formId: string;
+  title: string;
+  submitLabel?: string;
+  fields: CoachFormField[];
+  submitted?: boolean;
+};
+
+export type CoachProposalActionNode = {
+  id: string;
+  type: 'proposal_action';
+  title: string;
+  summary?: string;
+  planHash?: string;
+  routineId?: string;
+  changes: CoachProposalChange[];
+  applied?: boolean;
+};
+
+export type CoachFallbackNoticeNode = {
+  id: string;
+  type: 'fallback_notice';
+  text: string;
+};
+
+/** Pre-v2 read-only checklist, kept so old synced threads still render. */
+export type CoachChecklistItem = { id: string; label: string; detail?: string };
+
+export type CoachLegacyChecklistNode = {
+  id: string;
+  type: 'checklist';
+  listId?: string;
+  title?: string;
+  items: CoachChecklistItem[];
+};
+
+export type CoachGenUINode =
+  | CoachProseNode
+  | CoachKpiStripNode
+  | CoachExerciseTrendNode
+  | CoachMuscleLoadNode
+  | CoachComparisonTableNode
+  | CoachCalloutNode
+  | CoachExerciseAlternativesNode
+  | CoachQuickFormNode
+  | CoachProposalActionNode
+  | CoachFallbackNoticeNode
+  | CoachLegacyChecklistNode;
+
+/* ------------------------------- chat & history ------------------------------- */
+
+export type CoachChatMessage = {
+  id: string;
+  /** Web persists the assistant as `'coach'`; `'assistant'` is accepted as an alias. */
+  role: CoachChatRole;
+  kind?: CoachChatKind;
+  at: number;
+  text?: string;
+  nodes?: CoachGenUINode[];
+  /** v1 blocks, still persisted by older Web threads. */
+  blocks?: CoachGenUINode[];
+  formSubmission?: Record<string, unknown>;
+  ref?: string | null;
+  pid?: string;
+};
+
+export type CoachSnapshot = {
+  at?: number;
+  proposalId?: string | null;
+  label?: string;
+  routines: Routine[];
+  week?: Record<string, string | string[]>;
+  /** `dayPlan` entries an apply dropped, so the undo can put them back. */
+  dayPlanRestore?: Record<string, string>;
+  rotationRestore?: { rotation: Profile['rotation'] | null; queue: Profile['queue'] | null };
+  programmeRestore?: { id: string; prev: unknown };
+};
+
+export type CoachLogEntry = {
+  id: string;
+  kind: string;
+  at: number;
+  proposalId?: string | null;
+  summary?: string;
+  /** `snapshotKey` of the snapshot an undo consumed. */
+  snap?: string | null;
+  /** `PendingChange.id` this entry was written by, for sync-replay idempotency. */
+  changeId?: string;
+  decisions?: CoachChangeDecision[];
+  [key: string]: unknown;
+};
+
+export type CoachState = {
+  chat?: CoachChatMessage[];
+  chatClearedAt?: number;
+  log?: CoachLogEntry[];
+  snapshots?: CoachSnapshot[];
+  profile?: Record<string, unknown>;
+  consent?: unknown;
+  cadence?: unknown;
+  lastReview?: { at: number } | null;
+  timings?: number[];
+};
+
 export type Profile = {
   unit?: Unit;
   restSec?: number;
@@ -232,6 +652,8 @@ export type Profile = {
   };
   resetAt?: number;
   _wid?: string;
+  /** AI Coach thread, undo snapshots and review log, shared with the Web client. */
+  coach?: CoachState;
   [key: string]: unknown;
 };
 

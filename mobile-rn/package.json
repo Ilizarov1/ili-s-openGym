@@ -9,6 +9,7 @@
     "lint:rules": "node --test --test-reporter=dot scripts/eslint-rules.test.cjs",
     "catalogue:generate": "node scripts/generate-catalogue-content.mjs",
     "catalogue:stage": "node scripts/stage-catalogue-media.mjs",
+    "install:device": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/install-device.ps1",
     "check": "npm run lint && npm run lint:rules && npm run typecheck && npm run design:check",
     "typecheck": "tsc --noEmit",
     "design:check": "node scripts/check-design-system.mjs"

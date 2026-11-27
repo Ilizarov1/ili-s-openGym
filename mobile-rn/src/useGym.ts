@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { normalizeServer, pair, synchronize, type Connection } from './server';
 import { readConnection, readLocal, saveConnection, saveLocal, type LocalState } from './storage';
 import { applyChanges, prepareChanges, type ProfileChange } from './profileChanges';
+import { guardClearedChat } from './agent/coach-bridge';
 import { pendingPhotoCount, uploadPendingPhotos } from './body';
 
 type Workspace = { connection: Connection | null; data: LocalState };
@@ -21,8 +22,13 @@ export function useGym() {
   const [lastSync, setLastSync] = useState<number | null>(null);
 
   const show = useCallback((next: Workspace) => {
-    current.current = next;
-    setWorkspace(next);
+    // SQLite loads and every local mutation pass through here: keep the clear watermark
+    // self-consistent so a stale stored chat cannot be rendered (L-010).
+    const profile = guardClearedChat(next.data.profile);
+    const data = profile === next.data.profile ? next.data : { ...next.data, profile };
+    const workspace = data === next.data ? next : { ...next, data };
+    current.current = workspace;
+    setWorkspace(workspace);
   }, []);
 
   useEffect(() => {
@@ -41,7 +47,14 @@ export function useGym() {
     const previous = current.current;
     if (!previous) return false;
     try {
-      const data = update(previous.data);
+      const changed = update(previous.data);
+      // A local edit (including a settings patch) can never lower the clear watermark that was
+      // already on disk; prune before persisting, not only when rendering (L-010).
+      const profile = guardClearedChat(
+        changed.profile,
+        Number(previous.data.profile.coach?.chatClearedAt) || 0,
+      );
+      const data = profile === changed.profile ? changed : { ...changed, profile };
       saveLocal(previous.connection, data);
       show({ ...previous, data });
       return true;
@@ -101,6 +114,10 @@ export function useGym() {
       const base = current.current ?? before;
       const { profile, acknowledged } = await synchronize(connection, base.data.queue, base.data.workoutDeletes, base.data.changes);
       const latest = current.current!;
+      // Adopting the server copy must never lower this device's clear watermark: a PUT that was
+      // acknowledged but not yet persisted (or a merge that saw an older copy) otherwise
+      // resurrects the cleared thread until the next sync (L-010).
+      const remote = guardClearedChat(profile, Number(latest.data.profile.coach?.chatClearedAt) || 0);
       const done = new Set(acknowledged);
       const sentChanges = new Set(base.data.changes?.map(item => item.id));
       const changes = latest.data.changes?.filter(item => !sentChanges.has(item.id));
@@ -109,7 +126,7 @@ export function useGym() {
       ));
       const data: LocalState = {
         ...latest.data,
-        profile: changes?.length ? applyChanges(profile, changes) : profile,
+        profile: changes?.length ? applyChanges(remote, changes) : remote,
         changes,
         workoutDeletes,
         queue: latest.data.queue.filter(item => !done.has(item.workout.id)),

@@ -5,6 +5,7 @@ import { Text } from './Text';
 
 export type TextFieldProps = TextInputProps & {
   label: string;
+  hideLabel?: boolean;
   error?: string;
   helper?: string;
   containerStyle?: StyleProp<ViewStyle>;
@@ -17,6 +18,7 @@ export type TextFieldProps = TextInputProps & {
  */
 export function TextField({
   label,
+  hideLabel = false,
   error,
   helper,
   containerStyle,
@@ -30,9 +32,11 @@ export function TextField({
 
   return (
     <View style={[{ gap: theme.space.xs }, containerStyle]}>
-      <Text tone="secondary" variant="footnote">
-        {label}
-      </Text>
+      {!hideLabel ? (
+        <Text tone="secondary" variant="footnote">
+          {label}
+        </Text>
+      ) : null}
       <TextInput
         {...rest}
         accessibilityLabel={accessibilityLabel ?? label}

@@ -178,3 +178,12 @@ Run the source gates before any device script:
 cd mobile-rn
 npm.cmd run check
 ```
+
+## install-device.ps1
+
+```powershell
+.\mobile-rn\scripts\install-device.ps1
+.\mobile-rn\scripts\install-device.ps1 -Apk .\mobile-rn\dist\openGym-RN-0.1.6-ai-search-ux.apk -Serial 10AD3Z1EPU0029R -Launch
+```
+
+Finds the connected physical Android device (ignoring `emulator-*` unless `-Serial` is explicitly passed), locates the newest non-debug APK in `mobile-rn/dist/` or `android/app/build/outputs/apk/release/` (when `-Apk` is omitted), runs `apksigner verify` and `aapt dump badging` to confirm `dev.opengym.rn`, performs a data-preserving `adb install -r`, and prints the installed `versionName`, `versionCode`, and `lastUpdateTime`. Never auto-uninstalls on signing mismatch (`INSTALL_FAILED_UPDATE_INCOMPATIBLE`). Also available via `npm.cmd run install:device -- [-Apk ...] [-Serial ...] [-Launch]`.

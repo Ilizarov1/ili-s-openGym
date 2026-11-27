@@ -36,6 +36,8 @@ export type PlanScreenProps = {
   onSchedule: () => void;
   onShare: () => void;
   onImport: () => void;
+  /** Opens the AI Coach conversation. */
+  onOpenCoach?: () => void;
 };
 
 type PlanView = 'schedule' | 'routines';
@@ -78,6 +80,7 @@ export function PlanScreen({
   onSchedule,
   onShare,
   onImport,
+  onOpenCoach,
 }: PlanScreenProps) {
   const theme = useTheme();
   const [view, setView] = useState<PlanView>('schedule');
@@ -119,6 +122,18 @@ export function PlanScreen({
         testID="plan-segmented"
         value={view}
       />
+
+      {onOpenCoach ? (
+        <Card padded={false} testID="plan-open-coach">
+          <ListRow
+            chevron
+            leading={<IconTile name="sparkles" />}
+            onPress={onOpenCoach}
+            subtitle="分析训练、调整动作与排程"
+            title="AI 教练"
+          />
+        </Card>
+      ) : null}
 
       {routines.length === 0 ? (
         <EmptyState

@@ -9,7 +9,7 @@ import {
   BodyDataScreen, DayOverrideSheet, ExerciseLibraryScreen, HistoryEditorScreen, HistoryImportScreen, HomeScreen,
   PlanEditorScreen, PlanScreen, PlanShareScreen, ProgressScreen, QrPairScreen, ReminderSettingsScreen,
   ScheduleEditorScreen, SettingsScreen, StartScreen, StatsScreen, WorkoutScreen, WorkoutSummarySheet,
-  AgentScreen, AgentProfileScreen,
+  AgentScreen, AgentProfileScreen, CoachChatScreen,
 } from './src/screens';
 import { RestTimer } from './src/restTimer';
 import { workoutSummary, type WorkoutSummary } from './src/progress';
@@ -54,6 +54,7 @@ type Panel =
   | { kind: 'reminder' }
   | { kind: 'agent' }
   | { kind: 'agentProfile' }
+  | { kind: 'coach' }
   | { kind: 'start' }
   | { kind: 'dayOverride' }
   | { kind: 'design' };
@@ -178,6 +179,7 @@ function AppScreen() {
       if (route === 'body') { setPanel({ kind: 'body' }); return; }
       if (route === 'reminder') { setPanel({ kind: 'reminder' }); return; }
       if (route === 'agent') { setPanel({ kind: 'agent' }); return; }
+      if (route === 'coach') { setPanel({ kind: 'coach' }); return; }
       if (route === 'agent-profile') { setPanel({ kind: 'agentProfile' }); return; }
       if (route === 'history-import') { setPanel({ kind: 'historyImport' }); return; }
       if (route === 'plan-share') { setPanel({ kind: 'planShare', mode: params.mode === 'import' ? 'import' : 'export' }); return; }
@@ -527,6 +529,7 @@ function AppScreen() {
         onStartFree={() => startFree()}
         onOpenStats={() => setTab('stats')}
         onOpenPlan={() => setTab('plan')}
+        onOpenCoach={() => setPanel({ kind: 'coach' })}
       />}
       {tab === 'plan' && <PlanScreen
         profile={profile}
@@ -538,6 +541,7 @@ function AppScreen() {
         onSchedule={() => setPanel({ kind: 'schedule' })}
         onShare={() => setPanel({ kind: 'planShare', mode: 'export' })}
         onImport={() => setPanel({ kind: 'planShare', mode: 'import' })}
+        onOpenCoach={() => setPanel({ kind: 'coach' })}
       />}
       {tab === 'stats' && <StatsScreen
         profile={profile}
@@ -737,6 +741,14 @@ function AppScreen() {
           connection={connection ?? null}
           data={workspace.data}
           onClose={closePanel}
+        />}
+        {panel.kind === 'coach' && <CoachChatScreen
+          commit={changes => gym.commit(changes)}
+          connection={connection ?? null}
+          onBack={closePanel}
+          onOpenAgent={() => setPanel({ kind: 'agent' })}
+          onOpenPair={() => setPanel({ kind: 'qrPair' })}
+          profile={profile}
         />}
         {panel.kind === 'reminder' && <ReminderSettingsScreen
           busy={reminderSync.syncing}

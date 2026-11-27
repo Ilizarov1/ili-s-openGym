@@ -43,6 +43,8 @@ export type HomeScreenProps = {
   onStartFree: () => void;
   onOpenStats: () => void;
   onOpenPlan: () => void;
+  /** Opens the AI Coach conversation. */
+  onOpenCoach?: () => void;
 };
 
 /** Monday-first column labels, matching `WEEKDAY_ORDER`. */
@@ -117,6 +119,7 @@ export function HomeScreen({
   onStartFree,
   onOpenStats,
   onOpenPlan,
+  onOpenCoach,
 }: HomeScreenProps) {
   const theme = useTheme();
   const now = new Date();
@@ -228,6 +231,18 @@ export function HomeScreen({
               : '在计划里安排训练日，这里会显示完成进度。'}
         </Text>
       </Card>
+
+      {onOpenCoach ? (
+        <Card padded={false} testID="home-open-coach">
+          <ListRow
+            chevron
+            leading={<IconTile name="sparkles" />}
+            onPress={onOpenCoach}
+            subtitle="分析训练、改进计划、从零新建计划"
+            title="AI 教练"
+          />
+        </Card>
+      ) : null}
 
       <SectionHeader
         action={

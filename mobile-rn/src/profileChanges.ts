@@ -6,7 +6,16 @@ import { addWeighIn, dailyModeOf, editWeighIn, readingsOf, removeWeighIn } from 
 import { normalizeMediaRef, workoutMediaOf } from '../../frontend/src/lib/media-refs.js';
 import { readDayPhoto } from '../../frontend/src/lib/day-photos.js';
 import { measurementValue } from '../../frontend/src/lib/measurements.js';
-import { inProfileUnit, localDate, unitOf, workoutKey, type CustomExercise, type DayPhotoEntry, type EffortScale, type MeasurementEntry, type MediaRefLike, type Profile, type Routine, type Unit, type Workout } from './training';
+import {
+  applyCoachChatAppend,
+  applyCoachChatClear,
+  applyCoachProposal,
+  applyCoachProposalApplied,
+  guardClearedChat,
+  revertLastCoachChanges,
+  type CoachApplyMeta,
+} from './agent/coach-bridge';
+import { inProfileUnit, localDate, unitOf, workoutKey, type CoachChatMessage, type CoachProposalChange, type CustomExercise, type DayPhotoEntry, type EffortScale, type MeasurementEntry, type MediaRefLike, type Profile, type Routine, type Unit, type Workout } from './training';
 
 export type ProfileChange =
   | { kind: 'routine'; routine: Routine; create: true }
@@ -30,7 +39,15 @@ export type ProfileChange =
   | { kind: 'dayPhoto'; d: string; ref: MediaRefLike; t: number }
   | { kind: 'dayPhoto'; hash: string; remove: true; t: number }
   | { kind: 'workoutMedia'; key: string; ref: MediaRefLike; t: number }
-  | { kind: 'workoutMedia'; key: string; hash: string; remove: true; t: number };
+  | { kind: 'workoutMedia'; key: string; hash: string; remove: true; t: number }
+  // AI Coach intents. Each is a replayable statement about the synced `coach` namespace, not a
+  // whole-value replacement, so a phone's "New conversation" and a proposal apply survive a
+  // round-trip through `/api/data` (L-010).
+  | { kind: 'coachChatAppend'; message: CoachChatMessage }
+  | { kind: 'coachChatClear'; at: number }
+  | { kind: 'coachProposalApplied'; messageId: string; nodeId: string }
+  | { kind: 'coachApplyProposal'; changes: CoachProposalChange[]; meta: CoachApplyMeta }
+  | { kind: 'coachRevertLast'; at?: number };
 
 export type PendingChange = { id: string; value: ProfileChange };
 export const prepareChanges = (values: ProfileChange[]): PendingChange[] =>
@@ -303,7 +320,7 @@ function applyWorkoutMediaChange(
 }
 
 export function applyChanges(profile: Profile, changes: readonly PendingChange[]) {
-  return changes.reduce((state, { value: change }) => {
+  const next = changes.reduce((state, { id, value: change }) => {
     switch (change.kind) {
       case 'routine':
         if (change.create && (state.deleted?.routines?.[change.routine.id] ?? 0) > 0) return state;
@@ -398,8 +415,25 @@ export function applyChanges(profile: Profile, changes: readonly PendingChange[]
         return applyDayPhotoChange(state, change);
       case 'workoutMedia':
         return applyWorkoutMediaChange(state, change);
+      case 'coachChatAppend':
+        return applyCoachChatAppend(state, change.message);
+      case 'coachChatClear':
+        return applyCoachChatClear(state, change.at);
+      case 'coachProposalApplied':
+        return applyCoachProposalApplied(state, { messageId: change.messageId, nodeId: change.nodeId });
+      case 'coachApplyProposal':
+        // The pending-change id makes a replay after a lost PUT acknowledgement a no-op.
+        return applyCoachProposal(state, change.changes, { ...change.meta, intentId: id }).profile;
+      case 'coachRevertLast':
+        return revertLastCoachChanges(state, {
+          ...(change.at != null ? { now: change.at } : {}),
+          intentId: id,
+        }).profile;
     }
   }, profile);
+  // One last watermark guard on every local/server replay: a `settings` patch or an older
+  // remote copy can never lower `chatClearedAt` or bring cleared lines back (L-010).
+  return guardClearedChat(next, Number(profile.coach?.chatClearedAt) || 0);
 }
 
 export function recommendedRoutines(profile: Profile, pending: readonly Workout[] = []): Routine[] {
