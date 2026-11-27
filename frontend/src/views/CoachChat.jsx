@@ -26,13 +26,16 @@ import { MOBILE } from '../lib/mobile.js'
 import { scheduleModeOf } from '../lib/rotation.js'
 import ChatInput from '../components/ChatInput.jsx'
 import {
-  coachAvailable, hasConsent, emptyCoach, appendChat, recordTiming, estimateMs, profileLines,
+  coachAvailable, hasConsent, emptyCoach, appendChat, clearChat, pruneClearedChat, recordTiming, estimateMs, profileLines,
   markStale, applicable, applyChangeSet, applyCreatedPlan, recordDismissal, recordDebrief, logEntry,
   changeTitle, changeValues, changeMeaning, exName, canRevert, revertLast
 } from '../lib/coach.js'
 import { AdaptProposal, adaptTitle } from '../components/WorkoutCoachSheet.jsx'
 import { insightsFor, sessionInsights } from '../lib/coach-insights.js'
 import { useCoachStatus, requestReview, requestDebrief, requestPlan, refinePlan, askCoach, resolvePending, cohortStats, setCohortShare, jobErrorText, awaitedJob, settleAwaited, JOB_ERRORS, ensureAiConsent, isDeclined } from '../lib/coach-api.js'
+import { todayForCoach } from '../lib/coach-context.js'
+import { streamCoachGenUI } from '../lib/coach-genui-client.js'
+import { GenUIBriefing, GenUINodePending, normalizeGenUINodes, StreamStepsBar } from '../components/CoachGenUI.jsx'
 import { AiConsentSection } from '../components/CoachConsentSheet.jsx'
 import { useCoachGate } from '../lib/use-coach-gate.js'
 import { confirmSheet } from '../sheets.jsx'
@@ -41,6 +44,164 @@ import { glyphOf } from '../lib/glyphs.js'
 import LineChart from '../components/LineChart.jsx'
 import { Button, Check, Switch, Section, Row, SelectRow } from '../components/ui.jsx'
 import '../coach.css'
+
+export const MAX_GENUI_TURNS = 10
+
+/** How many free-form questions the user has asked in this conversation. */
+export function countGenUITurns(chat) {
+  return (Array.isArray(chat) ? chat : [])
+    .filter(m => m && m.role === 'user' && m.kind === 'text')
+    .length
+}
+
+const fmtHistoryValue = v => {
+  if (v == null) return null
+  if (typeof v === 'object') return v.name || v.id || ''
+  return String(v)
+}
+
+const MAX_HISTORY_NDJSON_CHARS = 3600
+
+/** A created routine, cut to the fields the model needs to keep its own plan coherent on the next
+ *  turn. The full `after.ex` also carries `why` prose and flags nobody needs to re-read, and a
+ *  three-day plan of them would blow the per-turn line budget. */
+function compactChangeAfter(c) {
+  const a = c.after
+  if (c.type !== 'add-routine' || !a || typeof a !== 'object') return a
+  return {
+    name: a.name,
+    ...(a.emoji ? { emoji: a.emoji } : {}),
+    ...(Array.isArray(a.weekdays) && a.weekdays.length ? { weekdays: a.weekdays } : {}),
+    ex: (Array.isArray(a.ex) ? a.ex : []).filter(e => e && typeof e === 'object').map(e => ({
+      id: e.id,
+      ...(e.sets != null ? { sets: e.sets } : {}),
+      ...(e.mode ? { mode: e.mode } : {}),
+      ...(e.reps != null ? { reps: e.reps } : {}),
+      ...(e.repsMin != null ? { repsMin: e.repsMin } : {}),
+      ...(e.repsMax != null ? { repsMax: e.repsMax } : {}),
+      ...(e.sec != null ? { sec: e.sec } : {}),
+      ...(e.min != null ? { min: e.min } : {}),
+    })),
+  }
+}
+
+/** Compact one GenUI node into a clean NDJSON object matching the model's exact output schema.
+ *  Sending prior assistant turns as real NDJSON (never bracketed pseudo-text like `[Shown ...]`)
+ *  ensures multi-turn in-context learning reinforces valid NDJSON instead of breaking it. */
+function compactHistoryNode(node, idx) {
+  if (!node || typeof node !== 'object' || !node.type) return null
+  const id = String(node.id || `n_${idx + 1}`)
+  switch (node.type) {
+    case 'prose': {
+      const text = String(node.text || '').trim()
+      return text ? { id, type: 'prose', ...(node.tone ? { tone: node.tone } : {}), text } : null
+    }
+    case 'proposal_action':
+      return {
+        id,
+        type: 'proposal_action',
+        title: String(node.title || ''),
+        ...(node.summary ? { summary: String(node.summary) } : {}),
+        ...(node.routineId ? { routineId: String(node.routineId) } : {}),
+        ...(node.applied ? { applied: true } : {}),
+        changes: (Array.isArray(node.changes) ? node.changes : []).map(c => ({
+          id: c.id,
+          type: c.type,
+          target: c.target,
+          ...(c.before !== undefined ? { before: c.before } : {}),
+          ...(c.after !== undefined ? { after: compactChangeAfter(c) } : {}),
+          ...(c.why ? { why: c.why } : {}),
+        })),
+      }
+    case 'exercise_trend':
+      return { id, type: 'exercise_trend', exId: node.exId, metric: node.metric || 'e1rm', weeks: node.weeks || 8 }
+    case 'muscle_load':
+      return {
+        id,
+        type: 'muscle_load',
+        window: node.window || '72h',
+        ...(Array.isArray(node.focusMuscles) && node.focusMuscles.length ? { focusMuscles: node.focusMuscles } : {}),
+      }
+    case 'kpi_strip':
+      return { id, type: 'kpi_strip', items: Array.isArray(node.items) ? node.items : [] }
+    case 'comparison_table':
+      return {
+        id,
+        type: 'comparison_table',
+        ...(node.title ? { title: node.title } : {}),
+        columns: Array.isArray(node.columns) ? node.columns : [],
+        rows: Array.isArray(node.rows) ? node.rows : [],
+      }
+    case 'callout':
+      return {
+        id,
+        type: 'callout',
+        variant: node.variant || 'info',
+        ...(node.title ? { title: node.title } : {}),
+        text: String(node.text || ''),
+      }
+    case 'exercise_alternatives':
+      return {
+        id,
+        type: 'exercise_alternatives',
+        ...(node.forExId ? { forExId: node.forExId } : {}),
+        ...(node.routineId ? { routineId: node.routineId } : {}),
+        items: (Array.isArray(node.items) ? node.items : [])
+          .filter(i => i && i.exId)
+          .map(i => ({ exId: i.exId, ...(i.reason ? { reason: i.reason } : {}) })),
+      }
+    case 'quick_form':
+      return { id, type: 'quick_form', formId: node.formId, title: node.title, fields: node.fields || [] }
+    case 'fallback_notice':
+      return node.text ? { id, type: 'fallback_notice', text: String(node.text) } : null
+    default:
+      return null
+  }
+}
+
+/** Serialize one genui message into valid line-by-line NDJSON, fitting whole lines within budget. */
+function serializeGenUIMessageNdjson(m) {
+  const lines = []
+  let total = 0
+  const nodes = normalizeGenUINodes(m)
+  for (let i = 0; i < nodes.length; i++) {
+    const compact = compactHistoryNode(nodes[i], i)
+    if (!compact) continue
+    const line = JSON.stringify(compact)
+    if (lines.length && total + line.length + 1 > MAX_HISTORY_NDJSON_CHARS) break
+    lines.push(line)
+    total += line.length + 1
+  }
+  return lines.join('\n')
+}
+
+/**
+ * The whole conversation as `{ role, content }` turns, no truncation: the server keeps the full
+ * 10-turn budget, and every assistant turn is serialized as valid NDJSON (matching the live output
+ * contract) so multi-turn in-context learning reinforces structured node emission instead of drift.
+ */
+export function buildGenUIHistory(chat) {
+  const out = []
+  for (const m of (Array.isArray(chat) ? chat : [])) {
+    if (!m || typeof m !== 'object') continue
+    if (m.kind === 'error' || m.kind === 'intake') continue
+    if (m.role === 'user' && m.kind === 'text') {
+      const content = String(m.text || '').trim()
+      if (content) out.push({ role: 'user', content })
+      continue
+    }
+    if (m.role === 'coach' && m.kind === 'genui') {
+      const content = serializeGenUIMessageNdjson(m)
+      if (content) out.push({ role: 'assistant', content })
+      continue
+    }
+    if (m.role === 'coach' && ['text', 'nochange', 'reverted', 'applied', 'dismissed', 'debrief'].includes(m.kind)) {
+      const text = String(m.text || '').trim()
+      if (text) out.push({ role: 'assistant', content: JSON.stringify({ id: 'prose_1', type: 'prose', text }) })
+    }
+  }
+  return out
+}
 
 export default function CoachChat() {
   const nav = useNavigate()
@@ -57,6 +218,9 @@ export default function CoachChat() {
   // The message box opened into a tall editor (components/ChatInput.jsx); closed again on send.
   const [expanded, setExpanded] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [stream, setStream] = useState(null)
+  const streamCtl = useRef(null)
+  const chatGenRef = useRef(0)
   const endRef = useRef(null)
   const prevJob = useRef(null)
   const coachMode = coachLocal?.mode
@@ -118,25 +282,243 @@ export default function CoachChat() {
     resolvePending({ accepted: ['ask'] }).catch(() => {}).finally(() => refresh())
   }, [pending?.id, !!job])
 
-  useEffect(() => { if (typeof endRef.current?.scrollIntoView === 'function') endRef.current.scrollIntoView({ block: 'end' }) }, [S.coach?.chat?.length, !!job, !!pending])
+  useEffect(() => {
+    if (typeof endRef.current?.scrollIntoView === 'function') endRef.current.scrollIntoView({ block: 'end' })
+  }, [S.coach?.chat?.length, !!job, !!pending, stream?.text?.length, stream?.blocks?.length, stream?.nodes?.length,
+    stream?.nodes?.length ? (stream.nodes[stream.nodes.length - 1]?.text || '').length : 0,
+    !!stream?.pendingNode, !!stream?.active])
 
   if (!ready) return null
   const coach = S.coach || emptyCoach()
+  const chatList = pruneClearedChat(coach)
+  const userTurns = countGenUITurns(chatList)
+  const turnLimitReached = userTurns >= MAX_GENUI_TURNS
+
+  // Scheme B: start over with an empty conversation. The plan, workouts, profile, log,
+  // snapshots and consent stay exactly as they are; only the chat list is cleared.
+  const startNewChat = () => {
+    chatGenRef.current += 1
+    streamCtl.current?.abort()
+    streamCtl.current = null
+    setStream(null)
+    setBusy(false)
+    update(s => { clearChat(s) })
+  }
   const community = !!config?.coach?.community && !DEMO && !(MOBILE && coachMode === 'byok')
+
+  // One streaming turn. The live slot is filled from AG-UI events; when RUN_FINISHED arrives the
+  // whole thing is written into the thread as a `genui` message, so a reload re-hydrates the same
+  // blocks against the same local data. A stream this server cannot offer (404/503, phone BYOK,
+  // or any transport failure before the first event) comes back as `{ fallback: true }` and the
+  // caller answers through the old `askCoach()` path instead.
+  const runStream = async ({ text: msg, formSubmission = null, onStarted = null }) => {
+    const gen = chatGenRef.current
+    const stale = () => chatGenRef.current !== gen
+    // Snapshot the conversation before the new user message is appended (writeUser runs on
+    // RUN_STARTED): the server wants the 10 prior turns, not this one twice.
+    const history = buildGenUIHistory(chatList, S)
+    const ctl = new AbortController()
+    streamCtl.current = ctl
+    const acc = { steps: [], activeTool: null, text: '', blocks: [], nodes: [], pendingNode: null, error: null }
+    let started = false
+    let userWritten = false
+    let persisted = false
+    let finishedEvent = null
+
+    const publish = patch => { if (stale()) return; Object.assign(acc, patch); setStream({ active: true, ...acc }) }
+    const writeUser = () => {
+      if (userWritten || stale()) return
+      userWritten = true
+      update(s => appendChat(s, { role: 'user', kind: 'text', text: msg }))
+    }
+    const upsertBlock = block => {
+      const at = block?.id ? acc.blocks.findIndex(b => b?.id === block.id) : -1
+      acc.blocks = at >= 0
+        ? acc.blocks.map((b, i) => (i === at ? { ...b, ...block } : b))
+        : [...acc.blocks, block]
+    }
+    const upsertNode = (node, { replace = false } = {}) => {
+      if (!node || node.id == null) return
+      const at = acc.nodes.findIndex(n => n?.id === node.id)
+      if (at >= 0) {
+        acc.nodes = acc.nodes.map((n, i) => (i === at ? (replace ? node : { ...n, ...node }) : n))
+      } else {
+        acc.nodes = [...acc.nodes, node]
+      }
+    }
+    const appendProse = (nodeId, delta, tone) => {
+      const text = String(delta || '')
+      const at = acc.nodes.findIndex(n => n?.id === nodeId)
+      if (at >= 0) {
+        acc.nodes = acc.nodes.map((n, i) => (i === at
+          ? { ...n, type: 'prose', text: String(n.text || '') + text }
+          : n))
+      } else {
+        acc.nodes = [...acc.nodes, { id: nodeId, type: 'prose', text, ...(tone ? { tone } : {}) }]
+      }
+    }
+    const writeProse0 = () => {
+      const at = acc.nodes.findIndex(n => n?.id === 'prose_0')
+      if (at >= 0) {
+        acc.nodes = acc.nodes.map((n, i) => (i === at ? { ...n, type: 'prose', text: acc.text } : n))
+      } else {
+        acc.nodes = [{ id: 'prose_0', type: 'prose', text: acc.text }, ...acc.nodes]
+      }
+    }
+    const persistResponse = (nodes, text, blocks) => {
+      if (persisted || stale()) return
+      persisted = true
+      if (nodes.length || text || blocks.length) {
+        update(s => appendChat(s, { role: 'coach', kind: 'genui', nodes, text, blocks }))
+      }
+    }
+    const currentNodes = () => (acc.nodes.length
+      ? acc.nodes
+      : normalizeGenUINodes({ text: acc.text, blocks: acc.blocks }))
+
+    setStream({ active: true, steps: [], activeTool: null, text: '', blocks: [], nodes: [], pendingNode: null, error: null })
+    try {
+      const result = await streamCoachGenUI({
+        text: msg, formSubmission, history, S, today: todayForCoach(S), signal: ctl.signal,
+        onEvent: event => {
+          switch (event.type) {
+            case 'RUN_STARTED': started = true; writeUser(); onStarted?.(); publish({}); break
+            case 'STEP_STARTED':
+              publish({ steps: [...acc.steps.filter(x => x.stepName !== event.stepName), { stepName: event.stepName, label: event.label || event.stepName, done: false }] })
+              break
+            case 'STEP_FINISHED':
+              publish({ steps: acc.steps.map(x => (x.stepName === event.stepName ? { ...x, done: true } : x)) })
+              break
+            case 'TOOL_CALL_START': publish({ activeTool: event.toolCallName || 'tool' }); break
+            case 'TOOL_CALL_RESULT': publish({ activeTool: null }); break
+            case 'TEXT_MESSAGE_START': publish({ text: acc.text }); break
+            case 'TEXT_MESSAGE_CONTENT':
+              acc.text = acc.text + String(event.delta || '')
+              writeProse0()
+              publish({ text: acc.text, nodes: acc.nodes })
+              break
+            case 'CUSTOM': {
+              const name = event.name
+              const value = event.value || {}
+              if (name === 'genui.prose_delta') {
+                appendProse(value.nodeId || 'prose_0', value.delta, value.tone)
+                publish({ nodes: acc.nodes })
+              } else if (name === 'genui.node_pending') {
+                acc.pendingNode = { nodeId: value.nodeId || null, nodeType: value.nodeType || 'prose' }
+                publish({ pendingNode: acc.pendingNode })
+              } else if (name === 'genui.node_commit') {
+                const node = value.node
+                if (node && node.id != null) {
+                  upsertNode(node, { replace: true })
+                  if (acc.pendingNode && acc.pendingNode.nodeId === node.id) acc.pendingNode = null
+                  publish({ nodes: acc.nodes, pendingNode: acc.pendingNode })
+                }
+              } else if (name === 'genui.node_drop') {
+                if (acc.pendingNode && (!value.nodeId || acc.pendingNode.nodeId === value.nodeId)) acc.pendingNode = null
+                publish({ pendingNode: acc.pendingNode })
+              } else if (name === 'genui.block_upsert' && value.block) {
+                upsertBlock(value.block)
+                upsertNode(value.block)
+                publish({ blocks: acc.blocks, nodes: acc.nodes })
+              }
+              break
+            }
+            case 'RUN_FINISHED': finishedEvent = event; break
+            case 'RUN_ERROR': publish({ error: event.message || t('Something went wrong on the server.') }); break
+            default: break
+          }
+        },
+      })
+      if (stale()) return { aborted: true }
+      if (ctl.signal.aborted) {
+        persistResponse(currentNodes(), acc.text, acc.blocks)
+        setStream(null)
+        return { aborted: true }
+      }
+      const finished = result || finishedEvent || {}
+      const finalBlocks = Array.isArray(finished.blocks) && finished.blocks.length ? finished.blocks : acc.blocks
+      const finalNodes = (Array.isArray(finished.nodes) && finished.nodes.length)
+        ? finished.nodes
+        : (acc.nodes.length ? acc.nodes : normalizeGenUINodes({
+          text: finished.text || acc.text,
+          blocks: finalBlocks,
+        }))
+      const finalText = String(finished.text || acc.text || '')
+      persistResponse(finalNodes, finalText, finalBlocks)
+      setStream(null)
+      return { ok: true }
+    } catch (e) {
+      if (stale()) return { aborted: true }
+      if (ctl.signal.aborted || e?.code === 'aborted' || e?.name === 'AbortError') {
+        persistResponse(currentNodes(), acc.text, acc.blocks)
+        setStream(null)
+        return { aborted: true }
+      }
+      if (e?.code === 'declined') { setStream(null); throw e }
+      if (e?.status === 429 || e?.code === 'turn_limit') {
+        setStream(null)
+        toast(t('This conversation has reached the 10-turn limit.'))
+        return { error: e, limitReached: true }
+      }
+      if (!started || e?.fallback || e?.code === 'genui_unavailable') {
+        setStream(null)
+        return { fallback: true, error: e }
+      }
+      // It had already begun answering: keep what arrived, say the rest failed.
+      persistResponse(currentNodes(), acc.text, acc.blocks)
+      setStream(null)
+      toast(e.message || t('Something went wrong on the server.'))
+      return { error: e }
+    } finally {
+      if (streamCtl.current === ctl) streamCtl.current = null
+    }
+  }
+
+  const stopStream = () => {
+    streamCtl.current?.abort()
+    streamCtl.current = null
+    setStream(null)
+  }
+
+  const submitForm = async payload => {
+    if (busy || stream?.active || turnLimitReached) return
+    const msg = payload?.summaryText || ''
+    setBusy(true)
+    try {
+      const out = await runStream({ text: msg, formSubmission: payload })
+      if (out.aborted || out.limitReached) { setBusy(false); return }
+      if (out.fallback) {
+        // No streaming here: the prose is still a real question, so the old channel answers it.
+        await askCoach(msg)
+        update(s => appendChat(s, { role: 'user', kind: 'text', text: msg }))
+      }
+      refresh()
+    } catch (e) {
+      if (!isDeclined(e)) toast(JOB_ERRORS[e.data?.code] || e.message || t('Could not ask the Coach'))
+    }
+    setBusy(false)
+  }
 
   const send = async () => {
     const msg = text.trim()
-    if (!msg || busy) return
+    if (!msg || busy || stream?.active || turnLimitReached) return
     setBusy(true)
     try {
-      // A message about a proposed plan refines it. With no plan at all — the first attempt
-      // failed, or nothing was ever built — the message asks for one; a review would only
-      // answer that there is no workout to look at, which is how people got stuck. Anything else
-      // is a question, answered in words (`ask`): "how long should I rest?" is not a request to
-      // review the whole plan. A review is the chip and the menu's, as it always was.
-      if (pending?.kind === 'create' || !(S.routines || []).length) await refinePlan(msg)
-      else await askCoach(msg)
-      update(s => appendChat(s, { role: 'user', kind: 'text', text: msg }))
+      // A message about a legacy proposed plan refines it. Everything else — including an account
+      // with no routines at all (a fresh import, a first attempt that failed) — is a question or a
+      // request for a plan, answered by the same streamed generative UI every other turn uses,
+      // so nothing is silently rerouted to the old plan job.
+      if (pending?.kind === 'create') {
+        await refinePlan(msg)
+        update(s => appendChat(s, { role: 'user', kind: 'text', text: msg }))
+      } else {
+        const out = await runStream({ text: msg, onStarted: () => { setText(''); setExpanded(false) } })
+        if (out.aborted || out.limitReached) { setBusy(false); return }
+        if (out.fallback) {
+          await askCoach(msg)
+          update(s => appendChat(s, { role: 'user', kind: 'text', text: msg }))
+        }
+      }
       setText('')
       setExpanded(false)
       refresh()
@@ -163,7 +545,25 @@ export default function CoachChat() {
   const askDebrief = () => ask(() => requestDebrief(lastWorkout?.id || null), lastWorkout?.name
     ? t('How did my {0} session go?', lastWorkout.name)
     : t('How did my last workout go?'))
-  const askNewPlan = () => ask(() => requestPlan(coach.profile), t('Build me a fresh plan from my answers.'))
+  // "Start a new plan" is a streamed turn like any other now: the same grooming, the same
+  // add-routine proposal card. Only a deployment with no stream falls back to the old plan job.
+  const askNewPlan = async () => {
+    if (busy || stream?.active || turnLimitReached) return
+    const line = t('Build me a fresh plan from my answers.')
+    setBusy(true)
+    try {
+      const out = await runStream({ text: line })
+      if (out.aborted || out.limitReached) { setBusy(false); return }
+      if (out.fallback) {
+        await requestPlan(coach.profile)
+        update(s => appendChat(s, { role: 'user', kind: 'text', text: line }))
+      }
+      refresh()
+    } catch (e) {
+      if (!isDeclined(e)) toast(JOB_ERRORS[e.data?.code] || e.message || t('Could not ask the Coach'))
+    }
+    setBusy(false)
+  }
   const askImprove = r => ask(
     () => requestReview(t('Focus only on my routine “{0}”. Improve it: exercise choice, order, sets and reps, rep ranges, progression. Leave the other routines alone.', r.name)),
     t('Improve my routine “{0}”.', r.name))
@@ -180,10 +580,12 @@ export default function CoachChat() {
   const showHistory = () => openSheet(close => <HistorySheet S={S} close={close} openSheet={openSheet} />)
   const showCohort = () => openSheet(() => <CohortSheet S={S} update={update} toast={toast} />)
 
-  const idle = !job && !pending
+  const streaming = !!stream?.active
+  const idle = !job && !pending && !streaming
   const menu = () => openSheet(close => <div className="chat-menu">
     <h3>{t('Coach')}</h3>
     <div className="sect-b">
+      {chatList.length > 0 && <Row icon="plusCircle" iconTint="var(--acc)" title={t('New conversation')} accessory="chevron" onClick={() => { close(); startNewChat() }} />}
       {idle && <Row icon="sparkles" iconTint="var(--acc)" title={t('Ask for a review')} subtitle={t('What would the Coach change after your last sessions?')} accessory="chevron" onClick={() => { close(); askReview() }} />}
       {idle && !!lastWorkout && <Row icon="checkCircle" iconTint="var(--green)" title={t('Review my last workout')} subtitle={t('What went well, what to watch, what to do next time')} accessory="chevron" onClick={() => { close(); askDebrief() }} />}
       {idle && !!(S.routines || []).length && <Row icon="wrench" iconTint="var(--orange)" title={t('Improve a routine')} subtitle={t('Pick one; the Coach works on just that')} accessory="chevron" onClick={() => { close(); pickRoutine() }} />}
@@ -209,10 +611,41 @@ export default function CoachChat() {
     }
   })
 
-  const status = job || pending?.kind === 'ask' ? t('thinking…') : pending ? t('has a suggestion for you') : t('here when you need it')
+  const status = streaming || job || pending?.kind === 'ask' ? t('thinking…') : pending ? t('has a suggestion for you') : t('here when you need it')
   const placeholder = pending?.kind === 'create'
     ? t('What should change?')
-    : job ? t('Coach is thinking…') : t('Message the Coach…')
+    : job || streaming ? t('Coach is thinking…') : t('Message the Coach…')
+
+  const pendingNode = pending && !job && pending.kind !== 'ask'
+    ? (pending.kind === 'adapt'
+      ? <div key={'pending-' + (pending.id || 'adapt')} className="msg coach" style={{ maxWidth: '100%', width: '100%' }}>
+          <AdaptProposal p={pending} onDone={refresh} />
+        </div>
+      : pending.kind === 'create'
+        ? <PlanCard key={'pending-' + (pending.id || 'plan')} p={pending} S={S} update={update} toast={toast} nav={nav} refresh={refresh} />
+        : pending.kind === 'debrief'
+          ? <DebriefCard key={'pending-' + (pending.id || 'debrief')} p={pending} S={S} update={update} toast={toast} refresh={refresh} />
+          : <ReviewCard key={'pending-' + (pending.id || 'review')} p={pending} S={S} update={update} toast={toast} refresh={refresh} />)
+    : null
+
+  // Anchor a pending review/debrief/plan card to its creation timestamp in the timeline so later
+  // free-form GenUI turns stay below it rather than jumping above an unresolved card. Without a
+  // usable `createdAt` (older records) the card falls back to the end of the thread.
+  const pendingAt = pendingNode && Number.isFinite(Number(pending?.createdAt)) ? Number(pending.createdAt) : null
+  let pendingInsertIdx = chatList.length
+  if (pendingAt != null) {
+    const later = chatList.findIndex(m => Number.isFinite(Number(m?.at)) && Number(m.at) > pendingAt)
+    if (later >= 0) pendingInsertIdx = later
+  }
+  // One flat, keyed row list: no nested arrays from `.map()`, so React sees every child's key and
+  // the pending card keeps its chronological slot.
+  const rows = []
+  chatList.forEach((m, i) => {
+    if (pendingNode && i === pendingInsertIdx) rows.push(pendingNode)
+    rows.push(<Message key={m.id || 'msg-' + i} m={m} msgIndex={i} S={S} profile={coach.profile} openSheet={openSheet}
+      update={update} toast={toast} onSubmitForm={submitForm} onAppliedProposal={refresh} />)
+  })
+  if (pendingNode && pendingInsertIdx >= chatList.length) rows.push(pendingNode)
 
   return <div className="narrow chat">
     <div className="chat-hdr">
@@ -220,7 +653,7 @@ export default function CoachChat() {
       <div className="chat-av"><Icon name="sparkles" /></div>
       <div className="grow">
         <h1>{t('Coach')}</h1>
-        <div className={'chat-st' + (job ? ' live' : '')}>{status}</div>
+        <div className={'chat-st' + (job || streaming ? ' live' : '')}>{status}</div>
       </div>
       <button className="iconbtn" onClick={menu} aria-label={t('More')}><Icon name="more" /></button>
     </div>
@@ -228,33 +661,46 @@ export default function CoachChat() {
     <div className="msgs">
       <Bubble role="coach">{t('Hi, I’m your Coach. I build your plan from your answers and adjust it from what you actually log. Nothing changes until you say so.')}</Bubble>
 
-      {(coach.chat || []).map(m => <Message key={m.id} m={m} S={S} profile={coach.profile} openSheet={openSheet} />)}
+      {rows}
+
+      {stream && (stream.active || stream.error) && <div className="msg coach genui-live" style={{ maxWidth: '100%', width: '100%' }}>
+        {stream.active && <StreamStepsBar steps={stream.steps} activeTool={stream.activeTool} onStop={stopStream} />}
+        {stream.nodes?.length > 0 || stream.pendingNode
+          ? <GenUIBriefing nodes={stream.nodes || []} pendingNode={stream.pendingNode}
+              streaming={!!stream.active} S={S} update={update} toast={toast}
+              onSubmitForm={submitForm} onAppliedProposal={refresh} messageId="live" />
+          : stream.active
+            ? <div className="genui-briefing"><GenUINodePending type="prose" /></div>
+            : null}
+        {!!stream.error && <div className="bub err">{stream.error}</div>}
+      </div>}
 
       {job && <Typing S={S} kind={job.kind} coachLocal={coachLocal} config={config} />}
-
-      {pending && !job && pending.kind === 'adapt' && <div className="msg coach" style={{ maxWidth: '100%', width: '100%' }}>
-        <AdaptProposal p={pending} onDone={refresh} />
-      </div>}
-      {pending && !job && pending.kind !== 'ask' && pending.kind !== 'adapt' && (pending.kind === 'create'
-        ? <PlanCard p={pending} S={S} update={update} toast={toast} nav={nav} refresh={refresh} />
-        : pending.kind === 'debrief'
-          ? <DebriefCard p={pending} S={S} update={update} toast={toast} refresh={refresh} />
-          : <ReviewCard p={pending} S={S} update={update} toast={toast} refresh={refresh} />)}
 
       <div ref={endRef} />
     </div>
 
     <div className="composer">
-      {idle && !busy && <div className="chips-row">
-        <button className="qchip" onClick={askReview}><Icon name="sparkles" />{t('Review my training')}</button>
-        {!!lastWorkout && <button className="qchip" onClick={askDebrief}><Icon name="checkCircle" />{t('Last workout')}</button>}
-        {!!(S.routines || []).length && <button className="qchip" onClick={pickRoutine}><Icon name="wrench" />{t('Improve a routine')}</button>}
-        {community && <button className="qchip" onClick={showCohort}><Icon name="person" />{t('Compare')}</button>}
+      {((idle && !busy) || (userTurns > 0 && !turnLimitReached)) && <div className="chips-row">
+        {idle && !busy && <>
+          <button className="qchip" onClick={askReview}><Icon name="sparkles" />{t('Review my training')}</button>
+          {!!lastWorkout && <button className="qchip" onClick={askDebrief}><Icon name="checkCircle" />{t('Last workout')}</button>}
+          {!!(S.routines || []).length && <button className="qchip" onClick={pickRoutine}><Icon name="wrench" />{t('Improve a routine')}</button>}
+          {community && <button className="qchip" onClick={showCohort}><Icon name="person" />{t('Compare')}</button>}
+        </>}
+        {userTurns > 0 && !turnLimitReached && <button type="button" className="qchip qchip-new" onClick={startNewChat}><Icon name="plusCircle" />{t('New conversation')}</button>}
+      </div>}
+      {turnLimitReached && <div className="genui-turn-banner" role="status">
+        <span>{t('This conversation has reached the 10-turn limit.')}</span>
+        <Button variant="primary" onClick={startNewChat}>{t('Start a new conversation')}</Button>
+      </div>}
+      {userTurns > 0 && !turnLimitReached && <div className="composer-meta">
+        <span className="composer-turns">{t('{0}/{1} turns', userTurns, MAX_GENUI_TURNS)}</span>
       </div>}
       <div className={'composer-in' + (expanded ? ' tall' : '')}>
-        <ChatInput value={text} onChange={setText} onSend={send} placeholder={placeholder} disabled={!!job}
+        <ChatInput value={text} onChange={setText} onSend={send} placeholder={placeholder} disabled={!!job || streaming || turnLimitReached}
           maxLength={maxMessageLen || 1000} expanded={expanded} setExpanded={setExpanded} />
-        <button className="send" onClick={send} disabled={!text.trim() || busy || !!job} aria-label={t('Send')}><Icon name="arrowUp" /></button>
+        <button className="send" onClick={send} disabled={!text.trim() || busy || !!job || streaming || turnLimitReached} aria-label={t('Send')}><Icon name="arrowUp" /></button>
       </div>
       {cap?.limit > 0 && <div className="composer-cap">{t('{0} of {1} Coach runs used today', cap.used, cap.limit)}</div>}
     </div>
@@ -271,7 +717,63 @@ function Bubble({ role, kind, at, children }) {
   </div>
 }
 
-function Message({ m, S, profile, openSheet }) {
+function Message({ m, msgIndex, S, profile, openSheet, update, toast, onSubmitForm, onAppliedProposal }) {
+  if (m.kind === 'genui') {
+    const nodes = normalizeGenUINodes(m)
+    const proseOnly = nodes.length > 0 && nodes.every(n => n?.type === 'prose')
+    if (proseOnly) {
+      const text = nodes.map(n => n.text || '').filter(Boolean).join('\n\n')
+      return <div className="msg coach" style={{ maxWidth: '100%', width: '100%' }}>
+        {!!text && <div className="bub">{text}</div>}
+        {m.at && <div className="msg-t">{stamp(m.at)}</div>}
+      </div>
+    }
+    const toggleChecklist = (listKey, itemId) => {
+      update(s => {
+        const list = s.coach?.chat
+        if (!Array.isArray(list)) return
+        const at = msgIndex >= 0 && msgIndex < list.length
+          ? msgIndex
+          : (m.id != null ? list.findIndex(x => x?.id === m.id) : -1)
+        if (at < 0) return
+        const cur = list[at]
+        const map = cur.checklistState || {}
+        const arr = Array.isArray(map[listKey]) ? map[listKey] : []
+        const next = arr.includes(itemId) ? arr.filter(x => x !== itemId) : [...arr, itemId]
+        s.coach.chat = list.map((x, i) => (i === at ? { ...x, checklistState: { ...map, [listKey]: next } } : x))
+      })
+    }
+    // Applying a suggestion makes it stick in history: mark the matching proposal node as
+    // applied so a reload shows "Accepted" instead of a live Apply button and stale-plan warning.
+    const applyProposal = payload => {
+      update(s => {
+        const list = s.coach?.chat
+        if (!Array.isArray(list)) return
+        const at = msgIndex >= 0 && msgIndex < list.length
+          ? msgIndex
+          : (m.id != null ? list.findIndex(x => x?.id === m.id) : -1)
+        if (at < 0) return
+        const matches = node => payload?.nodeId
+          ? node?.id === payload.nodeId
+          : node?.type === 'proposal_action'
+        const mark = node => (matches(node) ? { ...node, applied: true } : node)
+        s.coach.chat = list.map((x, i) => {
+          if (i !== at) return x
+          const next = { ...x }
+          if (Array.isArray(x.nodes)) next.nodes = x.nodes.map(mark)
+          if (Array.isArray(x.blocks)) next.blocks = x.blocks.map(mark)
+          return next
+        })
+      })
+      onAppliedProposal?.(payload)
+    }
+    return <div className="msg coach" style={{ maxWidth: '100%', width: '100%' }}>
+      <GenUIBriefing nodes={nodes} S={S} update={update} toast={toast}
+        onSubmitForm={onSubmitForm} onAppliedProposal={applyProposal}
+        checkedMap={m.checklistState || {}} onToggleChecklist={toggleChecklist} messageId={m.id} />
+      {m.at && <div className="msg-t">{stamp(m.at)}</div>}
+    </div>
+  }
   if (m.kind === 'intake') {
     const lines = profileLines(profile)
     return <Bubble role="user" at={m.at}>

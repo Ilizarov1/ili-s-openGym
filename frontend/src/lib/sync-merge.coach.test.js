@@ -4,7 +4,7 @@
    both directions, the way a 409 does on either device. */
 import { describe, expect, it } from 'vitest'
 import { COACH_CAPS, mergeCoach, mergeStates, stampChange } from './sync-merge.js'
-import { appendChat, appendLog, pushSnapshot, revertLast, CHAT_MAX, LOG_MAX, SNAPSHOT_MAX, CONSENT_VERSION } from './coach.js'
+import { appendChat, clearChat, appendLog, pushSnapshot, revertLast, CHAT_MAX, LOG_MAX, SNAPSHOT_MAX, CONSENT_VERSION } from './coach.js'
 import * as server from '../../../api/sync-stamps.js'
 
 const T = 1_800_000_000_000
@@ -126,6 +126,22 @@ describe('two devices talking to the Coach', () => {
     }
   })
 
+  it('clearChat stamps chatClearedAt so a 409 sync merge never resurrects cleared messages', () => {
+    const { B } = diverged()
+    const cleared = change(B, T + 1500, s => clearChat(s, T + 1500))
+    const afterClear = change(cleared, T + 1600, s => appendChat(s, { id: 'fresh1', role: 'user', kind: 'text', text: 'new topic', at: T + 1600 }))
+    for (const out of [mergeStates(cleared, B), mergeStates(B, cleared)]) {
+      expect(chatIds(out)).toEqual([])
+      expect(out.coach.chatClearedAt).toBe(T + 1500)
+      expect(logIds(out)).toEqual(['l1', 'l2'])
+    }
+    for (const out of [mergeStates(afterClear, B), mergeStates(B, afterClear)]) {
+      expect(chatIds(out)).toEqual(['fresh1'])
+      expect(out.coach.chatClearedAt).toBe(T + 1500)
+    }
+    expect(server.mergeCoach(clone(cleared.coach), clone(B.coach))).toEqual(mergeCoach(clone(cleared.coach), clone(B.coach)))
+  })
+
   it('a sign-in (prefer) keeps the preferred side as it is', () => {
     const { A, B } = diverged()
     expect(chatIds(mergeStates(A, B, { prefer: 'b' }))).toEqual(chatIds(B))
@@ -152,6 +168,18 @@ describe('the server joins what an older app sends', () => {
     expect(sent.coach.chat.map(m => m.id)).toEqual(['c0'])
   })
 
+  it('a stamped push from a stale client/tab cannot roll back chatClearedAt or resurrect cleared lines', () => {
+    const stored = base()
+    clearChat(stored, T + 500)
+    const stalePush = clone(base())
+    stalePush.coach.chat.push({ id: 'old1', role: 'coach', kind: 'text', text: 'stale', at: T + 100 })
+    const report = {}
+    server.stampPut(stored, stalePush, { overRead: true, stamped: true, now: T + 600, report })
+    expect(stalePush.coach.chatClearedAt).toBe(T + 500)
+    expect(stalePush.coach.chat).toEqual([])
+    expect(report.changed).toBe(true)
+  })
+
   it('matches the app’s mergeCoach and caps', () => {
     expect(server.COACH_CAPS).toEqual(COACH_CAPS)
     expect(COACH_CAPS).toEqual({ chat: CHAT_MAX, log: LOG_MAX, snapshots: SNAPSHOT_MAX })
@@ -160,6 +188,7 @@ describe('the server joins what an older app sends', () => {
     for (let n = 0; n < 200; n++) {
       const side = () => ({
         cadence: R() < 0.5 ? 'off' : { everyWorkouts: 4 },
+        ...(R() < 0.35 ? { chatClearedAt: Math.floor(R() * 80) } : {}),
         chat: Array.from({ length: Math.floor(R() * 50) }, () => ({ id: 'c' + Math.floor(R() * 60), at: Math.floor(R() * 100) })),
         log: Array.from({ length: Math.floor(R() * 60) }, () => R() < 0.1
           ? { id: 'r' + Math.floor(R() * 9), kind: 'revert', at: Math.floor(R() * 100), ...(R() < 0.5 ? { snap: `${Math.floor(R() * 5)}|p` } : { proposalId: 'p' }) }

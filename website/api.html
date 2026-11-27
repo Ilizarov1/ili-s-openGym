@@ -248,7 +248,7 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <p class="api-facts">
     <span>OpenAPI 3.1.0</span>
     <span>openGym v1.4.3</span>
-    <span>108 endpoints</span>
+    <span>109 endpoints</span>
     <span>AGPL-3.0-or-later</span>
   </p>
 
@@ -3009,6 +3009,125 @@ main.api-main .lead { color: var(--fg-2); max-width: 58ch; margin: 14px 0 0; fon
   <h2>AI Agent runtime</h2>
   <p class="sub">The agent runtime's server execution: runs, model configuration, sessions, confirmed memories and business-write proposals. Every route answers 503 <code>agent_disabled</code> when <code>AGENT_RUNTIME_DISABLED</code> is set. First version executes the <code>stub.v1</code> task.</p>
   <div class="eps">
+
+<details class="ep" id="op-postAgentCoachStream">
+  <summary>
+    <span class="m post">POST</span>
+    <span class="ep-path"><code>/api/agent/coach/stream</code></span>
+    <span class="ep-chev" aria-hidden="true"></span>
+    <span class="ep-sum">Stream an AG-UI generative-UI response from the AI Coach</span>
+  </summary>
+  <div class="ep-body">
+<p>Runs the LangGraph-orchestrated Coach GenUI v2.1 workflow and streams AG-UI compatible Server-Sent Events (<code>text/event-stream</code>). The run emits step/tool progress, then one flat, ordered list of narrative nodes exactly as the model writes them: the 5 light primitives (<code>prose</code>, <code>kpi_strip</code>, <code>comparison_table</code>, <code>checklist</code>, <code>callout</code>), the 5 business blocks (<code>exercise_trend</code>, <code>muscle_load</code>, <code>exercise_alternatives</code>, <code>quick_form</code>, <code>proposal_action</code>) and <code>fallback_notice</code> — 11 node types in total. Prose paragraphs and UI nodes interleave on the wire instead of being collected at the end. The model composes freely: any mix of prose and UI nodes, or prose alone. There is no forced chart, no forced checklist widget and no fixed card recipe; light scenario hints in the prompt are guidance only. While composing, the model may call the bounded <code>search_catalogue</code> tool (at most 3 rounds) to resolve real exercise ids; each call emits <code>TOOL_CALL_START</code> and <code>TOOL_CALL_RESULT</code> before the answer continues. v2 custom events: <code>genui.prose_delta</code> (partial prose text), <code>genui.node_pending</code> (a structured node began streaming), <code>genui.node_commit</code> (validated node) and <code>genui.node_drop</code> (a pending node was withdrawn because its line was malformed, it exceeded an explicit visual budget or it hit the node cap). <code>RUN_STARTED</code> and <code>RUN_FINISHED</code> carry <code>protocolVersion: 2</code>; <code>RUN_FINISHED</code> carries the authoritative <code>nodes</code> array plus the derived <code>text</code> and <code>blocks</code> for v1 consumers. Multi-turn context: <code>history</code> forwards every prior <code>user</code>/<code>assistant</code> turn verbatim to the model, up to 10 prior user turns per conversation. The whole answer is bounded by <code>MAX_GENUI_NODES = 12</code> nodes (prose included) as a safety cap. Heavy visuals (<code>exercise_trend</code> / <code>muscle_load</code>) are unrestricted by default. They are only capped when <code>maxVisuals</code> is supplied (or <code>COACH_GENUI_MAX_VISUALS</code> is set), in which case the effective budget is request value, then the env var, clamped to <code>0..4</code>. Write proposals are checked against the closed change whitelist (<code>validateReview</code>) before <code>genui.node_commit</code>; an unverified proposal is committed in place as <code>fallback_notice</code>.</p>
+    <p class="ep-auth"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span>Requires a session: the cookie set at sign-in, or <code>Authorization: Bearer &lt;token&gt;</code> from mobile-app pairing.</span></p>
+
+<p class="ep-h">Request body <span class="p-hint">(JSON)</span></p><div class="ptab">
+  <div class="prow">
+    <span class="p-name">text</span>
+    <span class="p-type">string <span class="p-hint">(&le; 4000 chars)</span></span>
+    <span class="p-desc">Free-form lifter question (required unless <code>formSubmission</code> is supplied).</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">formSubmission</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Structured answers submitted from a <code>quick_form</code> GenUI block.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">formSubmission.formId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">formSubmission.answers</span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">formSubmission.values</span>
+    <span class="p-type">object</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">plan</span>
+    <span class="p-type">object</span>
+    <span class="p-desc">Optional snapshot of <code>{ routines, week }</code> for grounded recommendations and proposal validation.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">lang</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Response language (for example <code>zh</code> or <code>en</code>); <code>zh</code> grounds every exercise name in the localized catalogue label.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">today</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Optional caller-local date (for example <code>2026-03-14</code>) injected into the model prompt.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">maxVisuals</span>
+    <span class="p-type">integer <span class="p-hint">(0&ndash;4)</span></span>
+    <span class="p-desc">Optional explicit heavy-visual cap (<code>exercise_trend</code> / <code>muscle_load</code>) for this answer, clamped to <code>0..4</code>. Omitted means unrestricted unless <code>COACH_GENUI_MAX_VISUALS</code> is set.</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">history</span>
+    <span class="p-type">object[]</span>
+    <span class="p-desc">Prior conversation turns (<code>user</code> and <code>assistant</code> messages) forwarded verbatim to the model. Up to 10 prior user turns are allowed per conversation; 10 or more returns HTTP 429 (<code>turn_limit</code>).</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">history[].role<em class="p-req" title="required">required</em></span>
+    <span class="p-type">&quot;user&quot; | &quot;assistant&quot;</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">history[].content<em class="p-req" title="required">required</em></span>
+    <span class="p-type">string <span class="p-hint">(&le; 2400 chars)</span></span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">profileId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc">Optional agent profile id (defaults to the user's available profile or fixture).</span>
+  </div>
+  <div class="prow">
+    <span class="p-name">threadId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">runId</span>
+    <span class="p-type">string</span>
+    <span class="p-desc"></span>
+  </div>
+  <div class="prow">
+    <span class="p-name">fixture</span>
+    <span class="p-type">boolean</span>
+    <span class="p-desc">Force deterministic fixture streaming output for tests/demos.</span>
+  </div>
+</div>
+    <p class="ep-h">Responses</p>
+    <div class="ptab">
+  <div class="prow rrow">
+    <span class="r-code s2">200</span>
+    <span class="p-desc">AG-UI Server-Sent Events stream (<code>data: &lt;JSON&gt;</code> frames and <code>: ping</code> heartbeats).</span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">400</span>
+    <span class="p-desc">The body, task, profile or attachment reference is not valid.<span class="r-sig"><code>{&quot;error&quot;:&quot;requestId is invalid&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">401</span>
+    <span class="p-desc">No session, expired/revoked session, or a disabled account.<span class="r-sig"><code>{&quot;error&quot;:&quot;not signed in&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s4">429</span>
+    <span class="p-desc">The conversation has reached the 10-user-turn limit. Returned before the SSE stream is opened, so the response is <code>application/json</code>, not <code>text/event-stream</code>.<span class="r-sig"><code>{&quot;error&quot;:&quot;This conversation has reached the 10-turn limit. Start a new conversation to continue.&quot;}</code></span></span>
+  </div>
+  <div class="prow rrow">
+    <span class="r-code s5">503</span>
+    <span class="p-desc">The agent runtime is switched off on this instance (<code>AGENT_RUNTIME_DISABLED</code>).<span class="r-sig"><code>{&quot;error&quot;:&quot;The agent runtime is disabled on this instance.&quot;}</code></span></span>
+  </div>
+    </div>
+  </div>
+</details>
 
 <details class="ep" id="op-postAgentRun">
   <summary>

@@ -20,7 +20,7 @@ import { deleteRoutine } from './routines.js'
 import { POLICIES, POLICY_NAME, POLICY_DESC } from './progression.js'
 import { newProgramme, programmeById, saveProgramme, normalizeProgramme } from './programmes.js'
 import { ownRowsOf, cleanOwnRow, ownRowsLine } from './warmup-ramp.js'
-import { t, tn } from './i18n.js'
+import { t, tn, exerciseNameFor } from './i18n.js'
 import { snapshotKey } from './sync-merge.js'
 import { scheduleModeOf, startNewPass } from './rotation.js'
 import { queueOf } from './queue.js'
@@ -364,10 +364,32 @@ function trim(s) {
  * kinds — user: 'intake' (the questionnaire, rendered from the live profile), 'text';
  *         coach: 'text', 'applied', 'dismissed', 'reverted', 'error', 'nochange'.
  */
+/** Return only chat entries strictly newer than `coach.chatClearedAt`. */
+export function pruneClearedChat(coach) {
+  const list = Array.isArray(coach?.chat) ? coach.chat : []
+  const clearedAt = Number(coach?.chatClearedAt) || 0
+  return clearedAt > 0 ? list.filter(m => (Number(m?.at) || 0) > clearedAt) : list
+}
+
 export function appendChat(s, entry) {
   const c = coachOf(s)
-  c.chat = [...(c.chat || []), { id: entry.id || uid(), at: entry.at || Date.now(), ...entry }].slice(-CHAT_MAX)
+  const clearedAt = Number(c.chatClearedAt) || 0
+  const at = entry.at != null ? entry.at : Math.max(Date.now(), clearedAt > 0 ? clearedAt + 1 : 0)
+  const base = pruneClearedChat(c)
+  c.chat = [...base, { id: entry.id || uid(), ...entry, at }].slice(-CHAT_MAX)
   trim(s)
+}
+
+/**
+ * Clear the active conversation list while recording a `chatClearedAt` watermark so sync merges
+ * (`sync-merge.js` / `api/sync-stamps.js`) never resurrect cleared messages from another tab or
+ * server revision. Keeps profile, consent, log, snapshots, routines and workouts untouched.
+ */
+export function clearChat(s, now = Date.now()) {
+  const c = coachOf(s)
+  const latest = (c.chat || []).reduce((max, m) => Math.max(max, Number(m?.at) || 0), 0)
+  c.chatClearedAt = Math.max(Number(now) || Date.now(), Number(c.chatClearedAt) || 0, latest)
+  c.chat = []
 }
 
 /** A job just finished: remember how long it took, for the next typing bubble. */
@@ -562,20 +584,35 @@ const CHANGE_APPLY = {
   },
   'add-routine': (s, c) => {
     const a = c.after
+    // One id for the routine and every day it is scheduled on: the schedule names the routine
+    // it just created, so the two cannot drift apart.
+    const id = uid()
+    s.routines = s.routines || []
     s.routines.push({
-      id: uid(), name: a.name, emoji: a.emoji || '🏋️',
+      id, name: a.name, emoji: a.emoji || '🏋️',
       ...(POLICIES.includes(a.prog) ? { prog: a.prog } : {}),
       ex: a.ex.map(e => ({
         id: canonicalExId(e.id), sets: e.sets || 3, mode: e.mode || 'reps',
         // The same targets and defaults as 'add-exercise': a cardio entry used to get reps (#640).
         ...(e.mode === 'cardio' ? { min: e.min || 20, speed: e.speed || 8 }
           : e.mode === 'time' ? { sec: e.sec || 45 } : { reps: e.reps || 10 }),
+        ...(Number.isInteger(e.repsMin) ? { repsMin: e.repsMin } : {}),
         ...(Number.isInteger(e.repsMax) ? { repsMax: e.repsMax } : {}),
         ...(Number.isInteger(e.setsMax) ? { setsMax: e.setsMax } : {}),
+        ...(POLICIES.includes(e.prog) ? { prog: e.prog } : {}),
         ...(e.bodyweight != null ? { bodyweight: !!e.bodyweight } : {}),
         ...(e.side ? { side: true } : {})
       }))
     })
+    // A multi-day plan arrives with the weekdays it belongs on. `week[d]` replaces the slot, the
+    // same semantics as a `week` change; the snapshot applyChangeSet took first restores both
+    // the routine list and the schedule in one undo.
+    if (Array.isArray(a.weekdays) && a.weekdays.length) {
+      s.week = s.week || {}
+      for (const d of a.weekdays) {
+        if (Number.isInteger(d) && d >= 0 && d <= 6) s.week[d] = [id]
+      }
+    }
   },
   'remove-routine': (s, c) => {
     // The same delete as Plan and RoutineEdit. It used to compare each weekday with ===, which
@@ -687,10 +724,12 @@ export function recordDebrief(s, proposal) {
 
 /* ============================ display helpers ============================ */
 
-export const exName = id => EXIDX[id]?.n || t('Unknown exercise')
+export const exName = id => (EXIDX[id] ? exerciseNameFor(EXIDX[id]) : t('Unknown exercise'))
 // Catalogue names are lower-case; a title reads better with each word capitalised, and doing it
 // here rather than with CSS keeps a German sentence around the name from being Title Cased too.
-const cap = s => String(s || '').replace(/(^|\s)(\p{L})/gu, (m, sp, ch) => sp + ch.toUpperCase())
+// A name opening a bracketed alternative ("(Barbell) Bench Press") is capitalised too; CJK has no
+// case, so this leaves translated Chinese names untouched.
+const cap = s => String(s || '').replace(/(^|[\s(])(\p{L})/gu, (m, sp, ch) => sp + ch.toUpperCase())
 export const exTitle = id => cap(exName(id))
 
 /** Human label for a change, used on the review screen and in the log. */

@@ -472,9 +472,20 @@ export function validateReview(data, plan, ctx = {}) {
         if (!ex.length) { errors.push(`${where}.after.ex must list at least one exercise from the library`); return; }
         const odd = ex.find(e => e.side && isInt(e.reps, 1, 100) && e.reps % 2);
         if (odd) { errors.push(ODD_PER_SIDE(`${where}.after.ex "${odd.id}"`)); return; }
+        // Optional training days for the new routine. The apply path adds the routine first,
+        // then schedules these, so a plan built from nothing can be a whole week at once.
+        let weekdays = [];
+        if (a.weekdays !== undefined) {
+          if (!Array.isArray(a.weekdays)) { errors.push(`${where}.after.weekdays must list weekday numbers 0–6`); return; }
+          if (a.weekdays.length > 0 && a.weekdays.some(d => !isInt(d, 0, 6))) {
+            errors.push(`${where}.after.weekdays must list weekday numbers 0–6`); return;
+          }
+          weekdays = [...new Set(a.weekdays)];
+        }
         out.after = {
           name: clampStr(a.name, 40), emoji: glyphStr(a.emoji),
           ...(POLICIES.includes(a.prog) ? { prog: a.prog } : {}),
+          ...(weekdays.length ? { weekdays } : {}),
           ex: ex.map(e => ({
             id: e.id, name: libraryName(e.id),
             sets: isInt(e.sets, 1, 10) ? e.sets : 3,
@@ -593,6 +604,7 @@ export function validateReview(data, plan, ctx = {}) {
   const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
   const byRoutine = new Map();
   const weekdays = new Set();
+  const addedWeekdays = new Set();
   const removedRoutines = new Set();
   const addsPerRoutine = new Map();
   let addedRoutines = 0;
@@ -627,8 +639,16 @@ export function validateReview(data, plan, ctx = {}) {
     if (ch.type === 'add-exercise') addsPerRoutine.set(rid, (addsPerRoutine.get(rid) || 0) + 1);
     if (ch.type === 'week') {
       const d = ch.target.weekday;
-      if (weekdays.has(d)) errors.push(`two changes both reschedule weekday ${d} — only one can win`);
+      if (weekdays.has(d) || addedWeekdays.has(d)) errors.push(`two changes both reschedule weekday ${d} — only one can win`);
       weekdays.add(d);
+    }
+    // A routine added with weekdays schedules them just like a week change does: two proposals
+    // that both claim one day cannot both be applied, whichever of them comes first.
+    if (ch.type === 'add-routine' && Array.isArray(ch.after?.weekdays)) {
+      for (const d of ch.after.weekdays) {
+        if (weekdays.has(d) || addedWeekdays.has(d)) errors.push(`two changes both schedule weekday ${d} — only one can win`);
+        else addedWeekdays.add(d);
+      }
     }
   });
 

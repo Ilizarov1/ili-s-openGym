@@ -310,6 +310,31 @@ describe('applying changes', () => {
     expect(other).toMatchObject({ mode: 'cardio', min: 20, speed: 8 })
   })
 
+  it('a new routine takes the weekdays it was proposed for, and one undo puts both back', () => {
+    const s = state()
+    const before = JSON.parse(JSON.stringify(s.week))
+    // Applied in place, the way the store's update() does, so the snapshot and the draft are real.
+    applyChangeSet(s, proposal([change({
+      id: 'c1', type: 'add-routine', target: {}, before: null,
+      after: {
+        name: 'Push', weekdays: [1, 4],
+        ex: [{ id: '0001', sets: 4, reps: 8, repsMin: 6, repsMax: 10, prog: 'linear', mode: 'reps' }]
+      }
+    })]), ['c1'])
+
+    const created = s.routines.at(-1)
+    expect(s.routines).toHaveLength(3)
+    expect(created).toMatchObject({ name: 'Push' })
+    expect(created.ex[0]).toMatchObject({ repsMin: 6, repsMax: 10, prog: 'linear' })
+    expect(s.week[1]).toEqual([created.id])
+    expect(s.week[4]).toEqual([created.id])
+
+    // Undo takes the routine and its schedule away together, and restores what was there.
+    expect(revertLast(s)).toBe(true)
+    expect(s.routines.map(r => r.id)).toEqual(['r1', 'r2'])
+    expect(s.week).toEqual(before)
+  })
+
   it('adds, renames and removes routines, clearing any day that pointed at one', () => {
     const added = apply(state(), proposal([change({
       type: 'add-routine', target: {}, before: null,

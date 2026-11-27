@@ -347,12 +347,28 @@ export function restartedState(cur) {
   return s
 }
 
+// Coach chat clears only move forward: once `chatClearedAt` is set on either side (unless a full
+// profile reset supersedes it), no pull, adopt, or tab-join may show pre-clear messages again.
+const enforceCoachClear = (S, prev = null) => {
+  if (!S?.coach || typeof S.coach !== 'object') return S
+  const reset = prev && (Number(S.resetAt) || 0) > (Number(prev.resetAt) || 0)
+  const clearedAt = Math.max(
+    Number(S.coach.chatClearedAt) || 0,
+    !reset ? (Number(prev?.coach?.chatClearedAt) || 0) : 0,
+  )
+  if (clearedAt > 0) {
+    if ((Number(S.coach.chatClearedAt) || 0) < clearedAt) S.coach.chatClearedAt = clearedAt
+    if (Array.isArray(S.coach.chat)) S.coach.chat = S.coach.chat.filter(m => (Number(m?.at) || 0) > clearedAt)
+  }
+  return S
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(KEY)
     if (raw) {
       const saved = JSON.parse(raw)
-      const s = sanitizeAccent(Object.assign(clone(DEF), saved))
+      const s = enforceCoachClear(sanitizeAccent(Object.assign(clone(DEF), saved)))
       if (!saved.lang) s.lang = detectedLang()
       return s
     }
@@ -371,7 +387,7 @@ const hasData = st => !!((st.workouts || []).length || (st.routines || []).lengt
 // session belongs to the device that is currently running it.
 export function restoredStateFor(local, remote, dirty = false) {
   if (!remote || (hasData(local) && (dirty || (remote._ts || 0) < (local._ts || 0)))) return null
-  const next = sanitizeAccent(Object.assign(clone(DEF), remote))
+  const next = enforceCoachClear(sanitizeAccent(Object.assign(clone(DEF), remote)), local)
   if (local.active) next.active = local.active
   return next
 }
@@ -646,8 +662,10 @@ export const useStore = create((set, get) => {
     if (sandbox) { set({ S }); return }
     if (refuseStale(S)) return
     const { base, owed } = metaOf()   // the copy being replaced; the new one stands where it stood
-    const joined = joinSaved(S, get()?.S)
+    const prevState = get()?.S
+    const joined = joinSaved(S, prevState)
     if (joined) S = joined
+    enforceCoachClear(S, prevState)
     // A join holds another tab's changes, which this copy then owes the server too.
     if (stamp || joined) S._ts = Math.max(Date.now(), (base?.ts || 0) + 1, Number(S._ts) || 0)
     // Every copy that enters the store — an edit, a pull, an adoption, a restored backup — has its
@@ -788,7 +806,7 @@ export const useStore = create((set, get) => {
     return !a || fu === tu ? a : inUnitOf({ unit: fu, active: a }, to).active
   }
   // Take the server's copy as this device's own, timestamp and all (see persist).
-  const adopt = (next, rev) => { persist(next, false, false); writeSync(rev, next._ts, next._wid); markOwed(false) }
+  const adopt = (next, rev) => { enforceCoachClear(next, get()?.S); persist(next, false, false); writeSync(rev, next._ts, next._wid); markOwed(false) }
 
   const doPush = async (attempt = 0) => {
     const S = get().S
@@ -939,7 +957,7 @@ export const useStore = create((set, get) => {
     if (readOwner() !== seenOwner || readWidOwner() !== (seenOwner || '')) return false
     const theirs = readSaved()
     if (!theirs) return false
-    const S = sanitizeAccent(theirs)
+    const S = enforceCoachClear(sanitizeAccent(theirs))
     seenWid = readWid()
     handedOver = false
     meta.set(S, { base: readStoredSync(), owed: storedOwed() })
@@ -988,6 +1006,7 @@ export const useStore = create((set, get) => {
     seenWid = wid
     if (sameCopy(merged, mine)) return
     if (sameCopy(merged, theirs)) {
+      enforceCoachClear(merged, mine)
       merged._ts = Math.max(Number(theirs._ts) || 0, Number(mine._ts) || 0)
       meta.set(merged, { base: readStoredSync(), owed: storedOwed() })
       registerCustom(merged.customEx)

@@ -35,6 +35,9 @@ const PLAN = {
 };
 const change = over => ({ id: 'c1', type: 'sets', target: { routineId: 'r1', exId: '0001' }, before: 3, after: 4, why: 'stalled twice', ...over });
 const review = changes => validateReview({ coach_contract: 1, summary: 's', changes }, PLAN);
+// The athlete who has never trained: the Coach must still be able to build a first plan.
+const EMPTY_PLAN = { routines: [], week: {} };
+const reviewEmpty = changes => validateReview({ coach_contract: 1, summary: 's', changes }, EMPTY_PLAN);
 
 /* ---------------- created plans ---------------- */
 
@@ -281,6 +284,72 @@ test('a new routine is refused whole when it names an exercise nobody has', () =
   const r = withEx([{ id: '0001', sets: 3, reps: 10 }, { id: 'not-a-real-exercise', sets: 3, reps: 10 }]);
   assert.equal(r.ok, false);
   assert.match(r.errors.join(' '), /not-a-real-exercise/, 'and the repair round is told which one');
+});
+
+test('a new routine can be proposed from an empty plan, with or without weekdays', () => {
+  const add = over => change({
+    type: 'add-routine', target: {},
+    after: { name: 'Push', ex: [{ id: '0001', sets: 3, reps: 10 }], ...over },
+  });
+  const one = reviewEmpty([add({ weekdays: [1] })]);
+  assert.equal(one.ok, true);
+  assert.deepEqual(one.proposal.changes[0].after.weekdays, [1]);
+
+  const multi = reviewEmpty([
+    change({ id: 'c1', type: 'add-routine', target: {}, after: { name: 'Push', weekdays: [1, 3], ex: [{ id: '0001', sets: 3, reps: 10 }] } }),
+    change({ id: 'c2', type: 'add-routine', target: {}, after: { name: 'Pull', weekdays: [5], ex: [{ id: '0007', sets: 3, sec: 45 }] } })
+  ]);
+  assert.equal(multi.ok, true);
+  assert.deepEqual(multi.proposal.changes.map(c => c.after.weekdays), [[1, 3], [5]]);
+
+  // Leaving the days out, or sending none, schedules nothing today — the routine still arrives.
+  const absent = reviewEmpty([add({ weekdays: undefined })]);
+  assert.equal(absent.ok, true);
+  assert.equal(absent.proposal.changes[0].after.weekdays, undefined);
+  const empty = reviewEmpty([add({ weekdays: [] })]);
+  assert.equal(empty.ok, true);
+  assert.equal(empty.proposal.changes[0].after.weekdays, undefined);
+
+  // Repeats collapse instead of colliding with themselves.
+  const deduped = reviewEmpty([add({ weekdays: [2, 2, 4] })]);
+  assert.equal(deduped.ok, true);
+  assert.deepEqual(deduped.proposal.changes[0].after.weekdays, [2, 4]);
+});
+
+test('two new routines cannot claim the same weekday', () => {
+  const r = reviewEmpty([
+    change({ id: 'c1', type: 'add-routine', target: {}, after: { name: 'Push', weekdays: [1, 3], ex: [{ id: '0001', sets: 3, reps: 10 }] } }),
+    change({ id: 'c2', type: 'add-routine', target: {}, after: { name: 'Pull', weekdays: [3], ex: [{ id: '0007', sets: 3, sec: 45 }] } })
+  ]);
+  assert.equal(r.ok, false);
+  assert.ok(r.errors.some(e => e.includes('weekday 3')), r.errors.join(' '));
+
+  // An add-routine and a week change claiming one day collide whichever order they arrive in.
+  const add = change({ id: 'c2', type: 'add-routine', target: {}, after: { name: 'Push', weekdays: [2], ex: [{ id: '0001', sets: 3, reps: 10 }] } });
+  const week = change({ id: 'c1', type: 'week', target: { weekday: 2 }, after: 'rest' });
+  for (const changes of [[week, add], [add, week]]) {
+    const r2 = reviewEmpty(changes);
+    assert.equal(r2.ok, false);
+    assert.ok(r2.errors.some(e => e.includes('weekday 2')), r2.errors.join(' '));
+  }
+});
+
+test('add-routine weekdays must be distinct whole numbers 0-6', () => {
+  const withWeekdays = weekdays => reviewEmpty([
+    change({ type: 'add-routine', target: {}, after: { name: 'Push', weekdays, ex: [{ id: '0001', sets: 3, reps: 10 }] } })
+  ]);
+  for (const weekdays of [[7], [-1], [1, 8], [1.5], 'mon', null]) {
+    const r = withWeekdays(weekdays);
+    assert.equal(r.ok, false, JSON.stringify(weekdays));
+    assert.ok(r.errors.some(e => e.includes('weekdays must list weekday numbers 0–6')), JSON.stringify(r.errors));
+  }
+});
+
+test('an empty plan still refuses changes that need an existing routine', () => {
+  assert.equal(reviewEmpty([change({ type: 'sets', target: { routineId: 'r1', exId: '0001' }, after: 4 })]).ok, false);
+  assert.equal(reviewEmpty([change({ type: 'swap-exercise', target: { routineId: 'r1', exId: '0001' }, after: { id: '0009' } })]).ok, false);
+  // add-routine is how such a plan grows.
+  assert.equal(reviewEmpty([change({ type: 'add-routine', target: {}, after: { name: 'Push', ex: [{ id: '0001', sets: 3, reps: 10 }] } })]).ok, true);
 });
 
 test('before is read off the plan, never taken from the answer', () => {

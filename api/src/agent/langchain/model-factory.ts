@@ -35,6 +35,8 @@ export interface CreateLangChainChatModelOptions {
   fixtureInput?: ModelInput;
   lateDelayMs?: number;
   fetchImpl?: typeof fetch;
+  /** Stream provider tokens instead of buffering the whole completion. */
+  streaming?: boolean;
 }
 
 export function resolveServerOpenAIBaseUrl(
@@ -83,6 +85,7 @@ export function createLangChainChatModel(options: CreateLangChainChatModelOption
     signal: options.signal,
     omitAuthHeader: !resolved.apiKey,
     fetchImpl: options.fetchImpl,
+    streaming: options.streaming === true,
   });
 
   const modelKwargs: Record<string, unknown> = {};
@@ -101,6 +104,7 @@ export function createLangChainChatModel(options: CreateLangChainChatModelOption
     timeout: timeoutMs,
     verbose: false,
     useResponsesApi: false,
+    streaming: options.streaming === true,
     configuration: {
       baseURL,
       fetch: boundedFetch,

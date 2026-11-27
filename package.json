@@ -1,4 +1,9 @@
 {
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:build": "node scripts/dev.mjs --build",
+    "dev:demo": "node scripts/dev.mjs --demo"
+  },
   "devDependencies": {
     "js-yaml": "^4.1.0"
   }

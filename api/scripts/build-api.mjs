@@ -65,6 +65,9 @@ const required = [
   'integrations/index.js',
   'agent-runtime/index.js',
   'agent-runtime/contracts.d.ts',
+  'agent-runtime/genui/index.js',
+  'agent-runtime/genui/protocol.js',
+  'agent-runtime/tasks/coach-genui.js',
   'agent-runtime/exercise-search-diagnostics.js',
   'agent-runtime/tasks/exercise-search.js',
   'agent-runtime/tasks/exercise-search-vocabulary.json',
@@ -81,6 +84,8 @@ const required = [
   'src/agent/retrieval/fixture-retrieval.js',
   'src/agent/langchain/index.js',
   'src/agent/langchain/graph-runner.js',
+  'src/agent/coach-genui.controller.js',
+  'src/agent/coach-genui.service.js',
 ];
 
 const missing = required.filter(f => !fs.existsSync(path.join(dist, f)));

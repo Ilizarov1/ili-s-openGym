@@ -3834,6 +3834,118 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /api/agent/coach/stream:
+    post:
+      tags: [agent]
+      operationId: postAgentCoachStream
+      summary: Stream an AG-UI generative-UI response from the AI Coach
+      description: |
+        Runs the LangGraph-orchestrated Coach GenUI v2.1 workflow and streams AG-UI compatible
+        Server-Sent Events (`text/event-stream`). The run emits step/tool progress, then one
+        flat, ordered list of narrative nodes exactly as the model writes them: the 5 light
+        primitives (`prose`, `kpi_strip`, `comparison_table`, `checklist`, `callout`), the 5
+        business blocks (`exercise_trend`, `muscle_load`, `exercise_alternatives`,
+        `quick_form`, `proposal_action`) and `fallback_notice` — 11 node types in total.
+        Prose paragraphs and UI nodes interleave on the wire instead of being collected at
+        the end.
+        The model composes freely: any mix of prose and UI nodes, or prose alone. There is no
+        forced chart, no forced checklist widget and no fixed card recipe; light scenario hints
+        in the prompt are guidance only.
+        While composing, the model may call the bounded `search_catalogue` tool (at most 3
+        rounds) to resolve real exercise ids; each call emits `TOOL_CALL_START` and
+        `TOOL_CALL_RESULT` before the answer continues.
+        v2 custom events: `genui.prose_delta` (partial prose text), `genui.node_pending`
+        (a structured node began streaming), `genui.node_commit` (validated node) and
+        `genui.node_drop` (a pending node was withdrawn because its line was malformed, it
+        exceeded an explicit visual budget or it hit the node cap). `RUN_STARTED` and
+        `RUN_FINISHED` carry `protocolVersion: 2`; `RUN_FINISHED` carries the authoritative
+        `nodes` array plus the derived `text` and `blocks` for v1 consumers.
+        Multi-turn context: `history` forwards every prior `user`/`assistant` turn verbatim to
+        the model, up to 10 prior user turns per conversation. The whole answer is bounded by
+        `MAX_GENUI_NODES = 12` nodes (prose included) as a safety cap.
+        Heavy visuals (`exercise_trend` / `muscle_load`) are unrestricted by default. They are
+        only capped when `maxVisuals` is supplied (or `COACH_GENUI_MAX_VISUALS` is set), in
+        which case the effective budget is request value, then the env var, clamped to `0..4`.
+        Write proposals are checked against the closed change whitelist (`validateReview`)
+        before `genui.node_commit`; an unverified proposal is committed in place as
+        `fallback_notice`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                text:
+                  type: string
+                  maxLength: 4000
+                  description: Free-form lifter question (required unless `formSubmission` is supplied).
+                formSubmission:
+                  type: object
+                  description: Structured answers submitted from a `quick_form` GenUI block.
+                  properties:
+                    formId: { type: string }
+                    answers: { type: object, additionalProperties: true }
+                    values: { type: object, additionalProperties: true }
+                plan:
+                  type: object
+                  description: Optional snapshot of `{ routines, week }` for grounded recommendations and proposal validation.
+                lang:
+                  type: string
+                  description: Response language (for example `zh` or `en`); `zh` grounds every exercise name in the localized catalogue label.
+                today:
+                  type: string
+                  description: Optional caller-local date (for example `2026-03-14`) injected into the model prompt.
+                maxVisuals:
+                  type: integer
+                  minimum: 0
+                  maximum: 4
+                  description: |
+                    Optional explicit heavy-visual cap (`exercise_trend` / `muscle_load`) for this answer,
+                    clamped to `0..4`. Omitted means unrestricted unless `COACH_GENUI_MAX_VISUALS` is set.
+                history:
+                  type: array
+                  maxItems: 24
+                  description: Prior conversation turns (`user` and `assistant` messages) forwarded verbatim to the model. Up to 10 prior user turns are allowed per conversation; 10 or more returns HTTP 429 (`turn_limit`).
+                  items:
+                    type: object
+                    required: [role, content]
+                    properties:
+                      role:
+                        type: string
+                        enum: [user, assistant]
+                      content:
+                        type: string
+                        maxLength: 2400
+                profileId:
+                  type: string
+                  description: Optional agent profile id (defaults to the user's available profile or fixture).
+                threadId:
+                  type: string
+                runId:
+                  type: string
+                fixture:
+                  type: boolean
+                  description: Force deterministic fixture streaming output for tests/demos.
+      responses:
+        '200':
+          description: "AG-UI Server-Sent Events stream (`data: <JSON>` frames and `: ping` heartbeats)."
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400': { $ref: '#/components/responses/AgentBadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429':
+          description: |
+            The conversation has reached the 10-user-turn limit. Returned before the SSE stream
+            is opened, so the response is `application/json`, not `text/event-stream`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentError' }
+              example: { error: "This conversation has reached the 10-turn limit. Start a new conversation to continue.", code: turn_limit }
+        '503': { $ref: '#/components/responses/AgentDisabled' }
+
   /api/agent/runs:
     post:
       tags: [agent]

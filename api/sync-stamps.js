@@ -109,7 +109,7 @@ export function highestStamp(S) {
   let m = 0;
   const see = v => { const n = Math.abs(Number(v) || 0); if (n > m) m = n; };
   if (!S || typeof S !== 'object') return 0;
-  see(S._ts); see(S.unitSet?.at); see(S.resetAt);
+  see(S._ts); see(S.unitSet?.at); see(S.resetAt); see(S.coach?.chatClearedAt);
   if (isMap(S.edited)) for (const v of Object.values(S.edited)) see(v);
   if (isMap(S.deleted)) for (const f of Object.values(S.deleted)) if (isMap(f)) for (const v of Object.values(f)) see(v);
   for (const f of ENTRY_LISTS) {
@@ -424,6 +424,11 @@ export function mergeCoach(win, other) {
     if (!Array.isArray(win[f]) && !Array.isArray(other[f])) continue;
     out[f] = clone(unionInTime(win[f], other[f], coachKey[f]));
   }
+  const clearedAt = Math.max(Number(win.chatClearedAt) || 0, Number(other.chatClearedAt) || 0);
+  if (clearedAt > 0) {
+    out.chatClearedAt = clearedAt;
+    if (Array.isArray(out.chat)) out.chat = out.chat.filter(x => (Number(x?.at) || 0) > clearedAt);
+  }
   const used = new Set(), byProposal = [];
   for (const e of list(out.log)) {
     if (!isMap(e) || e.kind !== 'revert') continue;
@@ -619,6 +624,18 @@ export function stampPut(cur, next, { overRead = false, stamped = false, now = D
       if (rec) next._unstamped = rec;
     }
     if (!stamped && isMap(next.coach) && isMap(cur.coach)) next.coach = mergeCoach(next.coach, cur.coach);
+    // An explicit "New conversation" clear only moves forward, even when an older stamped client
+    // or stale tab pushes pre-clear messages over it (mirrors `resetAt` in sync.service.ts).
+    if (isMap(next.coach)) {
+      const clearedAt = Math.max(Number(cur.coach?.chatClearedAt) || 0, Number(next.coach.chatClearedAt) || 0);
+      if (clearedAt > 0) {
+        const hadOlder = (Number(next.coach.chatClearedAt) || 0) < clearedAt ||
+          (Array.isArray(next.coach.chat) && next.coach.chat.some(x => (Number(x?.at) || 0) <= clearedAt));
+        next.coach.chatClearedAt = clearedAt;
+        if (Array.isArray(next.coach.chat)) next.coach.chat = next.coach.chat.filter(x => (Number(x?.at) || 0) > clearedAt);
+        if (hadOlder && report) report.changed = true;
+      }
+    }
     if (isMap(next.challenges) && isMap(cur.challenges)) next.challenges = mergeChallenges(next.challenges, cur.challenges);
     if (before != null && content(next) !== before) report.changed = true;
   }

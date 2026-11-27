@@ -6,6 +6,7 @@
 // window it names, which is why an old proposal in the thread still draws its chart months
 // later, against the data as it was then.
 import { EXIDX } from './exercises.js'
+import { exerciseNameFor } from './i18n.js'
 import { sessionVolume, workoutAt } from './history.js'
 import { isWarmupRow } from './workout-model.js'
 import { bestSetOf } from './onerm.js'
@@ -16,7 +17,10 @@ const median = arr => {
   return a.length ? a[Math.floor(a.length / 2)] : null
 }
 const bpOf = (S, id) => EXIDX[id]?.bp || (S.customEx || []).find(c => c.id === id)?.bp || null
-const nameOf = (S, id) => EXIDX[id]?.n || (S.customEx || []).find(c => c.id === id)?.n || id
+const nameOf = (S, id) => {
+  const ex = EXIDX[id] || (S.customEx || []).find(c => c.id === id)
+  return ex ? exerciseNameFor(ex) : id
+}
 
 /** Workouts inside an inclusive ISO-date window; either bound may be missing. */
 export function windowWorkouts(S, { from, to } = {}) {

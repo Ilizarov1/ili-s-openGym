@@ -287,6 +287,13 @@ export function mergeCoach(win, other) {
     if (!Array.isArray(win[f]) && !Array.isArray(other[f])) continue
     out[f] = clone(unionInTime(win[f], other[f], coachKey[f]))
   }
+  // An explicit "New conversation" clear stamps `chatClearedAt`: keep the newer clear watermark
+  // and drop every chat line at or before it so another tab/device never resurrects cleared history.
+  const clearedAt = Math.max(Number(win.chatClearedAt) || 0, Number(other.chatClearedAt) || 0)
+  if (clearedAt > 0) {
+    out.chatClearedAt = clearedAt
+    if (Array.isArray(out.chat)) out.chat = out.chat.filter(x => (Number(x?.at) || 0) > clearedAt)
+  }
   // Snapshots an Undo on either side already used.
   const used = new Set(), byProposal = []
   for (const e of list(out.log)) {
@@ -1123,6 +1130,7 @@ export function highestStamp(S) {
   see(S._ts)
   see(S.unitSet?.at)
   see(S.resetAt)
+  see(S.coach?.chatClearedAt)
   if (isMap(S.edited)) for (const v of Object.values(S.edited)) see(v)
   if (isMap(S.deleted)) for (const f of Object.values(S.deleted)) if (isMap(f)) for (const v of Object.values(f)) see(v)
   for (const f of ['workouts', 'routines', 'customEx', 'equipProfiles', 'gymCards']) {

@@ -42,13 +42,14 @@ vi.mock('../lib/api.js', () => ({
   api: vi.fn(async (path, opts) => {
     const srv = mocks.server
     if (path === '/api/coach/status') {
-      const snap = { job: null, pending: null, cap: { used: srv.used, limit: 10 }, last: srv.last, maxMessageLen: 1000 }
+      const snap = { job: null, pending: srv.pending || null, cap: { used: srv.used, limit: 10 }, last: srv.last, maxMessageLen: 1000 }
       if (mocks.statusGate) { const gate = mocks.statusGate; mocks.statusGate = null; await gate }
       return snap
     }
     if (opts?.method === 'POST' && /^\/api\/coach\/(review|plan|debrief)$/.test(path)) {
       const id = 'job' + (++srv.n)
       srv.used++
+      srv.pending = null
       srv.last = { id, kind: path.endsWith('plan') ? 'create' : 'review', outcome: 'failed', errorClass: 'provider', at: Date.now() }
       return { job: { id } }
     }
@@ -121,8 +122,9 @@ describe('a Coach run that fails before the first poll', () => {
     expect(container.querySelector('.composer-cap').textContent).toBe('6 of 10 Coach runs used today')
   })
 
-  it('a message asking for a plan gets the error reply', async () => {
-    mocks.S = state([])                                       // no routines: a message asks for a plan
+  it('a message refining a pending created plan gets the error reply', async () => {
+    mocks.S = state([])
+    mocks.server.pending = { id: 'p0', kind: 'create', bundle: { name: 'Plan', routines: [{ name: 'Day A', ex: [] }], week: {} } }
     await mount()
     const ta = container.querySelector('.composer textarea')
     await act(async () => {

@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { insightsFor, sessionInsights, windowWorkouts } from './coach-insights.js'
 import { EXIDX } from './exercises.js'
+import { _setLangState } from './i18n-core.js'
 
 // Pick two real catalogue ids from different body parts so the body-part grouping is real.
 const ids = Object.keys(EXIDX)
@@ -94,4 +95,19 @@ describe('sessionInsights', () => {
     expect(r.lifts.every(l => l.prev === null)).toBe(true)
   })
   it('returns null for nothing', () => { expect(sessionInsights(S(), null)).toBeNull() })
+})
+
+describe('localized lift names', () => {
+  afterEach(() => { _setLangState('en', null, null, null, true, false) })
+
+  it('reads the loaded Chinese name pack in strength and lift rows', () => {
+    _setLangState('zh', {}, null, { [chest]: '杠铃卧推', [legs]: '深蹲' }, false, false)
+    const win = { from: '2026-08-01', to: '2026-08-15' }
+    const i = insightsFor(S(), win)
+    expect(i.strength.map(x => x.name)).toEqual(['杠铃卧推', '深蹲'])
+
+    const s = S()
+    const r = sessionInsights(s, s.workouts[3])
+    expect(r.lifts.find(l => l.id === chest).name).toBe('杠铃卧推')
+  })
 })

@@ -68,3 +68,12 @@ export {
   CATALOGUE_SEARCH_TOOL_ID,
   createCatalogueSearchTool,
 } from './tasks/catalogue-search-tool.js';
+export * from './genui/index.js';
+export {
+  COACH_GENUI_TASK_ID,
+  COACH_GENUI_SYSTEM_PROMPT,
+  buildCoachGenUISystemPrompt,
+  parseCoachGenUIOutput,
+  buildFixtureGenUIResponse,
+  createCoachGenUITask,
+} from './tasks/coach-genui.js';

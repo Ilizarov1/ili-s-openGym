@@ -28,6 +28,12 @@
 ## 4. 常用验证命令（PowerShell）
 
 ```powershell
+# 本地一键联启 NestJS API + Vite 前端（默认自动读取 .env / api/.env，数据落 ./data/dev）
+npm run dev
+# 强制重编后端后启动 / 仅启动纯前端离线 Demo
+npm run dev:build
+npm run dev:demo
+
 # 本地启动完整自托管容器栈
 Copy-Item .env.example .env -ErrorAction SilentlyContinue
 docker compose up -d --build

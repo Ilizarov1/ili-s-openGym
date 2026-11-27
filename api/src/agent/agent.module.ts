@@ -18,6 +18,8 @@ import { AgentService } from './agent.service.js';
 import { AgentSessionStore } from './agent-session.store.js';
 import { AgentSessionsController } from './agent-sessions.controller.js';
 import { AgentStore } from './agent.store.js';
+import { CoachGenUIController } from './coach-genui.controller.js';
+import { CoachGenUIService } from './coach-genui.service.js';
 import { RetrievalModule } from './retrieval/index.js';
 
 @Module({
@@ -28,6 +30,7 @@ import { RetrievalModule } from './retrieval/index.js';
     AgentSessionsController,
     AgentMemoriesController,
     AgentProposalsController,
+    CoachGenUIController,
   ],
   providers: [
     AgentStore,
@@ -41,6 +44,7 @@ import { RetrievalModule } from './retrieval/index.js';
     AgentMedia,
     AgentGateway,
     AgentService,
+    CoachGenUIService,
   ],
   exports: [AgentService],
 })
